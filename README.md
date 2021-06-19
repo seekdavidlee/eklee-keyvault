@@ -1,6 +1,9 @@
 # Introduction
 This project demostrates how we leverage Azure RBAC (Role Based Access Control) to secure access to an Azure Key Vault instance. Specifically, we are interested to use this project to understand how a user can access secrets.
 
+## Build Status
+![Build status](https://github.com/seekdavidlee/Eklee-KeyVault/actions/workflows/app.yml/badge.svg)
+
 # Setup
 The following identity settings need to be configured before the project can be successfully executed. For more info see https://aka.ms/dotnet-template-ms-identity-platform. 
 

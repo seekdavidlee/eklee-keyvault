@@ -24,10 +24,8 @@ namespace Eklee.KeyVault.Viewer.Core
 		}
 		public async Task<SecretItemList> ListSecrets()
 		{
-			var client = GetHttpClient();
-			client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", await GetAccessToken());
+			var client = await GetAuthenticatedHttpClient();
 			var json = await client.GetStringAsync($"{_keyVaultUrl}/secrets?{_version}");
-
 			var result = JsonConvert.DeserializeObject<SecretItemList>(json);
 			return result;
 		}
@@ -46,12 +44,17 @@ namespace Eklee.KeyVault.Viewer.Core
 			return await _tokenAcquisition.GetAccessTokenForUserAsync(scopes);
 		}
 
-		public async Task<SecretValue> GetSecretValue(string id)
+		private async Task<HttpClient> GetAuthenticatedHttpClient()
 		{
 			var client = GetHttpClient();
 			client.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", await GetAccessToken());
-			var json = await client.GetStringAsync($"{id}?{_version}");
+			return client;
+		}
 
+		public async Task<SecretValue> GetSecretValue(string id)
+		{
+			var client = await GetAuthenticatedHttpClient();
+			var json = await client.GetStringAsync($"{id}?{_version}");
 			var result = JsonConvert.DeserializeObject<SecretValue>(json);
 			return result;
 		}
