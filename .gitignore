@@ -272,5 +272,5 @@ __pycache__/
 .wd/
 properties/
 package-lock.json
-/Eklee.KeyVault.Viewer/appsettings.json
-/Eklee.KeyVault.Viewer/appsettings.Development.json
+*appsettings.json
+*appsettings.Development.json

@@ -2,7 +2,6 @@
 
   <PropertyGroup>
     <TargetFramework>net5.0</TargetFramework>
-    <UserSecretsId>aspnet-Eklee.KeyVault.Viewer-54D8BA8C-454A-4EFF-A223-5AD4C919532B</UserSecretsId>
   </PropertyGroup>
 
   <ItemGroup>
