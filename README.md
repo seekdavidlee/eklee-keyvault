@@ -45,4 +45,4 @@ Per documentation, the **Azure Key Vault Reader** role has the ability to "Read 
 
 We can start by assigning all users who has access to Secrets with the **Azure Key Vault Reader** role. As a best practice, we can create a Group in AAD and assign this role to the users for this Azure Key Vault.
 
-Next, if we intend for all users to have access to secrets, we can assign the **Azure Key Vault Secrets User** role to the same Group. Otherwise, we can selectively choose specific secrets and assign the role to authorized users.
+Next, if we intend for all users to have access to secrets, we can assign the **Azure Key Vault Secrets User** role to the same Group. Otherwise, we can selectively choose specific secrets and assign the role to authorized users. That said, the [best practice](https://docs.microsoft.com/en-us/azure/active-directory/roles/best-practices#6-use-groups-for-azure-ad-role-assignments-and-delegate-the-role-assignment) is to assign specific secrets to groups with the appropriate role. This way, we can delegate the assignment to one or more owners without having to invole Azure Administrators.
