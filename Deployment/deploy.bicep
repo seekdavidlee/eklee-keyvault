@@ -144,11 +144,11 @@ resource appsite 'Microsoft.Web/sites@2021-01-15' = {
         }
         {
           name: 'AzureAd:ClientId'
-          value: '@Microsoft.KeyVault(VaultName=${sharedKeyVault};SecretName=keyvault-viewer-client-secret)'
+          value: '@Microsoft.KeyVault(VaultName=${sharedKeyVault};SecretName=keyvault-viewer-client-id)'
         }
         {
           name: 'AzureAd:ClientSecret'
-          value: '@Microsoft.KeyVault(VaultName=${sharedKeyVault};SecretName=keyvault-viewer-client-id)'
+          value: '@Microsoft.KeyVault(VaultName=${sharedKeyVault};SecretName=keyvault-viewer-client-secret)'
         }
       ]
     }
