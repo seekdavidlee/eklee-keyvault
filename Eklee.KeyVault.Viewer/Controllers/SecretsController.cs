@@ -27,6 +27,7 @@ namespace Eklee.KeyVault.Viewer.Controllers
 		[AuthorizeForScopes(Scopes = new[] { MyConstants.UserImpersonationScope })]
 		public async Task<IActionResult> Index()
 		{
+			ViewData["Error"] = null;
 			ViewData["Title"] = _configuration["KeyVaultName"];
 
 			try
