@@ -48,7 +48,7 @@ jobs:
         with:
           resourceGroupName: ${{ secrets.RESOURCE_GROUP }}
           template: ./deployment/deploy.bicep
-          parameters: version=${{ github.run_number }} prefix=${{ secrets.PREFIX }} stackEnvironment=${{ needs.setup.outputs.build_env }} branch=${{ github.ref }} sharedKeyVault=${{ steps.resolve-vars.outputs.keyVaultName }} -keyVaultRefUserId=${{ steps.resolve-vars.outputs.keyVaultRefUserId }}
+          parameters: version=${{ github.run_number }} prefix=${{ secrets.PREFIX }} stackEnvironment=${{ needs.setup.outputs.build_env }} branch=${{ github.ref }} sharedKeyVault=${{ steps.resolve-vars.outputs.keyVaultName }} keyVaultRefUserId=${{ steps.resolve-vars.outputs.keyVaultRefUserId }}
 
       - id: buid-and-deploy
         name: Build and deploy
