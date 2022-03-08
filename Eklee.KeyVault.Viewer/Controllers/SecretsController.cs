@@ -27,17 +27,12 @@ namespace Eklee.KeyVault.Viewer.Controllers
 		[AuthorizeForScopes(Scopes = new[] { MyConstants.UserImpersonationScope })]
 		public async Task<IActionResult> Index()
 		{
-			ViewData["Error"] = null;
 			ViewData["Title"] = _configuration["KeyVaultName"];
 
 			try
 			{
 				var list = await _keyVaultClient.ListSecrets();
-				if (list == null)
-				{
-					ViewData["Error"] = "No secrets to view.";
-				}
-				else
+				if (list != null)
 				{
 					ViewData["secrets"] = list.Value;
 				}
