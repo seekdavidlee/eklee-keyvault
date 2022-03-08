@@ -31,7 +31,15 @@ namespace Eklee.KeyVault.Viewer.Controllers
 
 			try
 			{
-				ViewData["secrets"] = (await _keyVaultClient.ListSecrets()).Value;
+				var list = await _keyVaultClient.ListSecrets();
+				if (list == null)
+				{
+					ViewData["Error"] = "No secrets to view.";
+				}
+				else
+				{
+					ViewData["secrets"] = list.Value;
+				}
 			}
 			catch (HttpRequestException e)
 			{
