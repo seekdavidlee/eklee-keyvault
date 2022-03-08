@@ -60,6 +60,9 @@ resource appsite 'Microsoft.Web/sites@2021-01-15' = {
   tags: tags
   identity: {
     type: 'UserAssigned'
+    userAssignedIdentities: {
+      '${keyVaultRefUserId}': {}
+    }
   }
   properties: {
     keyVaultReferenceIdentity: keyVaultRefUserId
