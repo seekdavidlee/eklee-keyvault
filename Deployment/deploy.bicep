@@ -25,8 +25,8 @@ resource akv 'Microsoft.KeyVault/vaults@2021-11-01-preview' = {
     }
     enableRbacAuthorization: true
     softDeleteRetentionInDays: 7
-    enableSoftDelete: true
-    enablePurgeProtection: false
+    enableSoftDelete: false
+    enablePurgeProtection: true
     tenantId: subscription().tenantId
   }
 }
