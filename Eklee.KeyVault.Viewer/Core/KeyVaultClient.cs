@@ -25,7 +25,7 @@ namespace Eklee.KeyVault.Viewer.Core
 		public async Task<SecretItemList> ListSecrets()
 		{
 			var client = await GetAuthenticatedHttpClient();
-			var json = await client.GetStringAsync($"{_keyVaultUrl}/secrets?{_version}");
+			var json = await client.GetStringAsync($"{_keyVaultUrl}/secrets?maxresults=1000&{_version}");
 			var result = JsonConvert.DeserializeObject<SecretItemList>(json);
 			return result;
 		}

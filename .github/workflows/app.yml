@@ -1,16 +1,55 @@
-on: push
+on: 
+  push:
+    paths-ignore: 
+      - 'README.md'
 
 jobs:
+  setup:
+    name: Choose Secrets Environment Job
+    runs-on: windows-latest
+    steps:
+      - id: setup
+        name: Setup Environment Setp
+        run: |
+            if ('${{ github.ref }}' -eq 'refs/heads/main') { 
+              echo "::set-output name=build_env::prod"
+            } else {
+              echo "::set-output name=build_env::dev"
+            }
+    outputs:
+      build_env: ${{ steps.setup.outputs.build_env }}
+
   build_project:
     name: Build Project
     runs-on: windows-latest
+    needs: setup
+    environment: ${{ needs.setup.outputs.build_env }}
     steps:
       - uses: actions/checkout@v2
-      - name: Setup .NET SDK 5.0.x
-        uses: actions/setup-dotnet@v1.7.2
+
+      - name: Setup .NET 6
+        uses: actions/setup-dotnet@v1
         with:
-          dotnet-version: '5.0.x'
-      - name: Install dependencies
-        run: dotnet restore
-      - name: Build
-        run: dotnet build --configuration Release --no-restore
+          dotnet-version: '6.0.x'
+
+      - name: Azure CLI Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+          enable-AzPSSession: true
+
+      - id: resolve-vars
+        name: Resolve variables
+        run: .\Deployment\ResolveVars.ps1 -BUILD_ENV ${{ needs.setup.outputs.build_env }} -RESOURCE_GROUP ${{ secrets.RESOURCE_GROUP }}
+
+      - name: Build azure environment
+        id: deploy
+        uses: azure/arm-deploy@v1
+        with:
+          resourceGroupName: ${{ secrets.RESOURCE_GROUP }}
+          template: ./deployment/deploy.bicep
+          parameters: version=${{ github.run_number }} prefix=${{ secrets.PREFIX }} stackEnvironment=${{ needs.setup.outputs.build_env }} branch=${{ github.ref }} sharedKeyVault=${{ steps.resolve-vars.outputs.keyVaultName }} -keyVaultRefUserId=${{ steps.resolve-vars.outputs.keyVaultRefUserId }}
+
+      - id: buid-and-deploy
+        name: Build and deploy
+        run: .\Deployment\Build.ps1 -ResourceGroup ${{ secrets.RESOURCE_GROUP }} -ServiceName ${{ steps.deploy.outputs.appName }}
