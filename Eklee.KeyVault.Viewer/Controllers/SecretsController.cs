@@ -34,7 +34,7 @@ namespace Eklee.KeyVault.Viewer.Controllers
 				var list = await _keyVaultClient.ListSecrets();
 				if (list != null)
 				{
-					ViewData["secrets"] = list.Value;
+					ViewData["secrets"] = list;
 				}
 			}
 			catch (HttpRequestException e)
@@ -44,6 +44,10 @@ namespace Eklee.KeyVault.Viewer.Controllers
 				if (e.StatusCode == System.Net.HttpStatusCode.Forbidden)
 				{
 					ViewData["Error"] = "You do NOT have access to this Azure Key Vault. Please consult the Key Vault Administrator for access.";
+				}
+				else
+				{
+					ViewData["Error"] = "An error has occured.";
 				}
 			}
 
