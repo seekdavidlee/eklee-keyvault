@@ -1,5 +1,7 @@
 param([string]$ResourceGroup, [string]$ServiceName)
 
+$ErrorActionPreference = "Stop"
+
 dotnet publish -c Release -o out
 $appFileName = "pub.zip"
 Compress-Archive out\* -DestinationPath $appFileName -Force

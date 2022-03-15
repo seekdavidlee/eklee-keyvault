@@ -1,6 +1,10 @@
 param(
-    [string]$BUILD_ENV,
-    [string]$RESOURCE_GROUP)
+    [string]$BUILD_ENV)
+
+$ErrorActionPreference = "Stop"
+
+$groupName = (az group list --tag stack-name=keyvault-viewer | ConvertFrom-Json).name
+Write-Host "::set-output name=resourceGroupName::$groupName"
 
 $platformRes = (az resource list --tag stack-name=platform | ConvertFrom-Json)
 if (!$platformRes) {
@@ -16,5 +20,5 @@ $akvName = ($platformRes | Where-Object { $_.type -eq 'Microsoft.KeyVault/vaults
 
 Write-Host "::set-output name=keyVaultName::$akvName"
 
-$keyVaultRefUserId = (az identity list -g $RESOURCE_GROUP | ConvertFrom-Json).id
+$keyVaultRefUserId = (az identity list -g $groupName | ConvertFrom-Json).id
 Write-Host "::set-output name=keyVaultRefUserId::$keyVaultRefUserId"

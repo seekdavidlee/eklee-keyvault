@@ -40,16 +40,16 @@ jobs:
 
       - id: resolve-vars
         name: Resolve variables
-        run: .\Deployment\ResolveVars.ps1 -BUILD_ENV ${{ needs.setup.outputs.build_env }} -RESOURCE_GROUP ${{ secrets.RESOURCE_GROUP }}
+        run: .\Deployment\ResolveVars.ps1 -BUILD_ENV ${{ needs.setup.outputs.build_env }}
 
       - name: Build azure environment
         id: deploy
         uses: azure/arm-deploy@v1
         with:
-          resourceGroupName: ${{ secrets.RESOURCE_GROUP }}
+          resourceGroupName: ${{ steps.resolve-vars.outputs.resourceGroupName }}
           template: ./deployment/deploy.bicep
           parameters: version=${{ github.run_number }} prefix=${{ secrets.PREFIX }} stackEnvironment=${{ needs.setup.outputs.build_env }} branch=${{ github.ref }} sharedKeyVault=${{ steps.resolve-vars.outputs.keyVaultName }} keyVaultRefUserId=${{ steps.resolve-vars.outputs.keyVaultRefUserId }}
 
       - id: buid-and-deploy
         name: Build and deploy
-        run: .\Deployment\Build.ps1 -ResourceGroup ${{ secrets.RESOURCE_GROUP }} -ServiceName ${{ steps.deploy.outputs.appName }}
+        run: .\Deployment\Build.ps1 -ResourceGroup ${{ steps.resolve-vars.outputs.resourceGroupName }} -ServiceName ${{ steps.deploy.outputs.appName }}
