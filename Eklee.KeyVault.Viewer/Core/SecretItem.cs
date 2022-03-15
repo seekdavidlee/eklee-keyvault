@@ -5,6 +5,8 @@ namespace Eklee.KeyVault.Viewer.Core
 	public class SecretItemList
 	{
 		public List<SecretItem> Value { get; set; }
+
+		public string NextLink { get; set; }
 	}
 
 	public class SecretValue

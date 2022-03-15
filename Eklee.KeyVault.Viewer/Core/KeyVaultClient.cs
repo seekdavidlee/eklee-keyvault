@@ -2,6 +2,7 @@
 using Microsoft.Identity.Web;
 using Newtonsoft.Json;
 using System;
+using System.Collections.Generic;
 using System.Net.Http;
 using System.Net.Http.Headers;
 using System.Threading.Tasks;
@@ -22,12 +23,22 @@ namespace Eklee.KeyVault.Viewer.Core
 			var keyVaultName = configuration["KeyVaultName"];
 			_keyVaultUrl = $"https://{keyVaultName}.vault.azure.net";
 		}
-		public async Task<SecretItemList> ListSecrets()
+		public async Task<IEnumerable<SecretItem>> ListSecrets()
 		{
+			var secrets = new List<SecretItem>();
 			var client = await GetAuthenticatedHttpClient();
-			var json = await client.GetStringAsync($"{_keyVaultUrl}/secrets?{_version}");
+			var json = await client.GetStringAsync($"{_keyVaultUrl}/secrets?maxresults=25&{_version}");
 			var result = JsonConvert.DeserializeObject<SecretItemList>(json);
-			return result;
+			secrets.AddRange(result.Value);
+
+			while (!string.IsNullOrEmpty(result.NextLink))
+			{
+				json = await client.GetStringAsync(result.NextLink);
+				result = JsonConvert.DeserializeObject<SecretItemList>(json);
+				secrets.AddRange(result.Value);
+			}
+
+			return secrets;
 		}
 
 		private HttpClient _httpClient;
