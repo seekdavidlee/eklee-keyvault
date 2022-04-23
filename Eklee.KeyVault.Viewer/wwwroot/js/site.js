@@ -9,25 +9,37 @@ function CopySecret(id, name) {
 		success: function (result) {
 
 			var text = $("#" + name).text();
-			$("#" + name).text("Copying...");
+			if (text === "Done") {
+				$("#" + name).text("Copy to Clipboard");
+				$("#hd" + name).css('visibility', 'hidden');
+				$("#h" + name).val('');
+			} else {
+				$("#" + name).text("Copying...");
 
-			navigator.clipboard.writeText(result).then(() => {
-				$("#" + name).text("Copied!");
-				setTimeout(function () {
-					$("#" + name).text(text);
-				}, 5000);
-			}, () => {
+				navigator.clipboard.writeText(result).then(() => {
+					$("#" + name).text("Copied!");
+					setTimeout(function () {
+						$("#" + name).text(text);
+					}, 5000);
+				}, () => {
 
-				$("#" + name).text("Done");
-				try {
+					$("#" + name).text("Done");
+					try {
 
-					$("#hd" + name).css('visibility', 'visible');
-					$("#h" + name).val(result);
-					$("#h" + name).select();
-				} catch (e) {
-					alert("Error: " + e);
-				}
-			});
+						$("#hd" + name).css('visibility', 'visible');
+						$("#h" + name).val(result);
+
+						setTimeout(function () {
+							var id = "h" + name;
+							document.getElementById(id).focus();
+							document.getElementById(id).select();
+						}, 500);
+
+					} catch (e) {
+						alert("Error: " + e);
+					}
+				});
+			}
 		},
 		error: function (err) {
 			if (err.status === 403) {
