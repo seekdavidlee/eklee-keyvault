@@ -7,6 +7,9 @@ function CopySecret(id, name) {
 	$.ajax({
 		url: "/secrets/value?id=" + id,
 		success: function (result) {
+
+			$("#" + name).text("Copying...");
+
 			navigator.clipboard.writeText(result).then(() => {
 				$("#" + name).text("Copied!");
 
@@ -15,14 +18,20 @@ function CopySecret(id, name) {
 					$("#" + name).text(text);
 				}, 5000);
 			}, () => {
-				$("#h_" + name).style.visibility = "visible";
-				$("#h_" + name).val(result);
-				$("#" + name).text("Unable to copy. Please select and copy from below.");
 
-				var text = $("#" + name).text();
-				setTimeout(function () {
-					$("#" + name).text(text);
-				}, 5000);
+				$("#" + name).text("Unable to copy. Please select and copy from below.");
+				try {
+
+					$("#h_" + name).style.visibility = "visible";
+					$("#h_" + name).val(result);
+
+					var text = $("#" + name).text();
+					setTimeout(function () {
+						$("#" + name).text(text);
+					}, 5000);
+				} catch (e) {
+					alert("Error: " + e);
+				}
 			});
 		},
 		error: function (err) {
