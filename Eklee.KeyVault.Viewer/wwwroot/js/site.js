@@ -28,13 +28,9 @@ function CopySecret(id, name) {
 
 						$("#hd" + name).css('visibility', 'visible');
 						$("#h" + name).val(result);
-
-						setTimeout(function () {
-							var id = "h" + name;
-							document.getElementById(id).focus();
-							document.getElementById(id).select();
-						}, 500);
-
+						$("#h" + name).focus(() => {
+							$("#h" + name).select();
+						});
 					} catch (e) {
 						alert("Error: " + e);
 					}
