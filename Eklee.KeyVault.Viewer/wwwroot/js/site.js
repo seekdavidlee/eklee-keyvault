@@ -10,10 +10,10 @@ function CopySecret(id, name) {
 
 			$("#" + name).text("Copying...");
 
-			navigator.clipboard.writeText(result).then(() => {
-				$("#" + name).text("Copied!");
+			var text = $("#" + name).text();
 
-				var text = $("#" + name).text();
+			navigator.clipboard.writeText(result).then(() => {
+				$("#" + name).text("Copied!");				
 				setTimeout(function () {
 					$("#" + name).text(text);
 				}, 5000);
@@ -22,10 +22,8 @@ function CopySecret(id, name) {
 				$("#" + name).text("Done");
 				try {
 
-					$("#h" + name).css('visibility', 'visible');
+					$("#hd" + name).css('visibility', 'visible');
 					$("#h" + name).val(result);
-
-					var text = $("#" + name).text();
 					setTimeout(function () {
 						$("#" + name).text(text);
 					}, 5000);
