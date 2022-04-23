@@ -7,13 +7,19 @@ function CopySecret(id, name) {
 	$.ajax({
 		url: "/secrets/value?id=" + id,
 		success: function (result) {
-			CopyToClipboard(result);
-			var text = $("#" + name).text();
-			$("#" + name).text("Copied!");
+			try {
+				navigator.clipboard.writeText(result);
+				$("#" + name).text("Copied!");
+			} catch {
+				$("#h_" + name).style.visibility = "visible";
+				$("#h_" + name).val(result);
+				$("#" + name).text("Unable to copy. Please select and copy from below.");
+			}
 
+			var text = $("#" + name).text();
 			setTimeout(function () {
 				$("#" + name).text(text);
-			}, 4000);
+			}, 5000);
 		},
 		error: function (err) {
 			if (err.status === 403) {
@@ -23,19 +29,6 @@ function CopySecret(id, name) {
 			}
 		}
 	});
-}
-
-function CopyToClipboard(val) {
-	var hiddenClipboard = $('#_hiddenClipboard_');
-	if (!hiddenClipboard.length) {
-		$('body').append('<textarea readonly style="position:absolute;top: -9999px;" id="_hiddenClipboard_"></textarea>');
-		hiddenClipboard = $('#_hiddenClipboard_');
-	}
-	hiddenClipboard.html(val);
-	hiddenClipboard.select();
-	document.execCommand('copy');
-	document.getSelection().removeAllRanges();
-	hiddenClipboard.remove();
 }
 
 $(function () {
