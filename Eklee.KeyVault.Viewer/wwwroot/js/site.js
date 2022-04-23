@@ -23,7 +23,7 @@ function CopySecret(id, name) {
 
 					$("#hd" + name).css('visibility', 'visible');
 					$("#h" + name).val(result);
-					$("#h" + name).setSelectionRange(0, result.length);
+					$("#h" + name).select();
 				} catch (e) {
 					alert("Error: " + e);
 				}
