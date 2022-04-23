@@ -22,7 +22,7 @@ function CopySecret(id, name) {
 				$("#" + name).text("Unable to copy. Please select and copy from below.");
 				try {
 
-					$("#h" + name).style.visibility = "visible";
+					$("#h" + name).css('visibility', 'visible');
 					$("#h" + name).val(result);
 
 					var text = $("#" + name).text();
