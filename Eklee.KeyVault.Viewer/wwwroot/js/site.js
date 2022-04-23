@@ -7,13 +7,35 @@ function CopySecret(id, name) {
 	$.ajax({
 		url: "/secrets/value?id=" + id,
 		success: function (result) {
-			CopyToClipboard(result);
-			var text = $("#" + name).text();
-			$("#" + name).text("Copied!");
 
-			setTimeout(function () {
-				$("#" + name).text(text);
-			}, 4000);
+			var text = $("#" + name).text();
+			if (text === "Done") {
+				$("#" + name).text("Copy to Clipboard");
+				$("#hd" + name).css('visibility', 'hidden');
+				$("#h" + name).val('');
+			} else {
+				$("#" + name).text("Copying...");
+
+				navigator.clipboard.writeText(result).then(() => {
+					$("#" + name).text("Copied!");
+					setTimeout(function () {
+						$("#" + name).text(text);
+					}, 5000);
+				}, () => {
+
+					$("#" + name).text("Done");
+					try {
+
+						$("#hd" + name).css('visibility', 'visible');
+						$("#h" + name).val(result);
+						$("#h" + name).focus(() => {
+							$("#h" + name).select();
+						});
+					} catch (e) {
+						alert("Error: " + e);
+					}
+				});
+			}
 		},
 		error: function (err) {
 			if (err.status === 403) {
@@ -23,19 +45,6 @@ function CopySecret(id, name) {
 			}
 		}
 	});
-}
-
-function CopyToClipboard(val) {
-	var hiddenClipboard = $('#_hiddenClipboard_');
-	if (!hiddenClipboard.length) {
-		$('body').append('<textarea readonly style="position:absolute;top: -9999px;" id="_hiddenClipboard_"></textarea>');
-		hiddenClipboard = $('#_hiddenClipboard_');
-	}
-	hiddenClipboard.html(val);
-	hiddenClipboard.select();
-	document.execCommand('copy');
-	document.getSelection().removeAllRanges();
-	hiddenClipboard.remove();
 }
 
 $(function () {
