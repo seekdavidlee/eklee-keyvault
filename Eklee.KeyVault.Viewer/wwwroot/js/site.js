@@ -19,7 +19,7 @@ function CopySecret(id, name) {
 				}, 5000);
 			}, () => {
 
-				$("#" + name).text("Unable to copy. Please select and copy from below.");
+				$("#" + name).text("Done");
 				try {
 
 					$("#h" + name).css('visibility', 'visible');
