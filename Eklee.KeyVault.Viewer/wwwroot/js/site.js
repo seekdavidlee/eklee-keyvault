@@ -8,12 +8,11 @@ function CopySecret(id, name) {
 		url: "/secrets/value?id=" + id,
 		success: function (result) {
 
+			var text = $("#" + name).text();
 			$("#" + name).text("Copying...");
 
-			var text = $("#" + name).text();
-
 			navigator.clipboard.writeText(result).then(() => {
-				$("#" + name).text("Copied!");				
+				$("#" + name).text("Copied!");
 				setTimeout(function () {
 					$("#" + name).text(text);
 				}, 5000);
@@ -24,9 +23,7 @@ function CopySecret(id, name) {
 
 					$("#hd" + name).css('visibility', 'visible');
 					$("#h" + name).val(result);
-					setTimeout(function () {
-						$("#" + name).text(text);
-					}, 5000);
+					$("#h" + name).setSelectionRange(0, result.length);
 				} catch (e) {
 					alert("Error: " + e);
 				}
