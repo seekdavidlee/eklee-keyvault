@@ -22,8 +22,8 @@ function CopySecret(id, name) {
 				$("#" + name).text("Unable to copy. Please select and copy from below.");
 				try {
 
-					$("#h_" + name).style.visibility = "visible";
-					$("#h_" + name).val(result);
+					$("#h" + name).style.visibility = "visible";
+					$("#h" + name).val(result);
 
 					var text = $("#" + name).text();
 					setTimeout(function () {
