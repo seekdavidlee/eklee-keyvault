@@ -9,7 +9,7 @@ The following identity settings need to be configured before the project can be 
 
 The Domain name would be your Azure Active Directory, usually in the form of [tenant name].onmicrosoft.com. The Tenant Id would also be found in your Azure Active Directory, in the form of a GUID. 
 
-The Client Id and Client Secret would be part of your App Registration process. You can follow the process here to create your App Registration: https://docs.microsoft.com/en-us/azure/active-directory/develop/quickstart-register-app. As a further note when you create your App Registration, your Redirect Url would initially be http://localhost:[port number]. 
+The Client Id and Client Secret would be part of your App Registration process. You can follow the process here to create your App Registration: https://docs.microsoft.com/en-us/azure/active-directory/develop/quickstart-register-app. As a further note when you create your App Registration, your Redirect Url would initially be http://localhost:port_number. 
 
 The Azure Key Vault name would be the name of your Azure Key Vault. For more information, pay attention to the Azure Key Vault Setup section below.
 
