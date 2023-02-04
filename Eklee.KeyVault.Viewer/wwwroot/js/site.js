@@ -1,9 +1,4 @@
-﻿// Please see documentation at https://docs.microsoft.com/aspnet/core/client-side/bundling-and-minification
-// for details on configuring this project to bundle and minify static web assets.
-
-// Write your JavaScript code.
-function CopySecret(id, name) {
-
+﻿function CopySecret(id, name) {
 	$.ajax({
 		url: "/secrets/value?id=" + id,
 		success: function (result) {
@@ -46,8 +41,30 @@ function CopySecret(id, name) {
 		}
 	});
 }
-
+const searchStartLength = 3;
 $(function () {
 	$('#notifyMsg').hide();
 	$('#errNotifyMsg').hide();
+
+	$("#searchText").on("keyup", function () {
+		var searchText = $("#searchText").val();
+		var length = searchText.length;
+		if (length >= searchStartLength) {
+
+			$("tr").each(function () {
+				var tr = $(this);
+				var name = tr.attr('name');
+				if (name && name.length >= searchStartLength) {
+
+					if (name.search(searchText) > -1) {
+						tr.show();
+					} else {
+						tr.hide();
+					}
+				}
+			});
+		} else {
+			$("tr").show();
+		}
+	});
 });
