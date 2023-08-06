@@ -1,0 +1,36 @@
+{
+    "resource-group-location": "centralus",
+    "managed-identity": {
+        "resource-group-name": "ard",
+        "name": "platform-managed-identity"
+    },
+    "version": "0.1.0",
+    "unique-resource-variables": {
+        "resources1": [
+            {
+                "ard-resource-id": "app-keyvault",
+                "resource-type": "Microsoft.KeyVault/vaults"
+            },
+            {
+                "ard-resource-id": "app-apm",
+                "resource-type": "Microsoft.Insights/components"
+            },
+            {
+                "ard-resource-id": "app-svcplan",
+                "resource-type": "Microsoft.Web/serverfarms"
+            },
+            {
+                "ard-resource-id": "app-svc",
+                "resource-type": "Microsoft.Web/sites"
+            }
+        ]
+    },
+    "groups": [
+        {
+            "resource-group-name": "keyvault-viewer-@(ard.Environment)",
+            "unique-resources-variable-key": "resources1",
+            "ard-solution-id": "keyvault-viewer",
+            "ard-environment": "@(ard.Environment)"
+        }
+    ]
+}

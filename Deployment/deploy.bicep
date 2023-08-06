@@ -1,23 +1,15 @@
 param prefix string
-param stackEnvironment string
-param branch string
-param location string = 'centralus'
-param version string
+param kvName string = '${prefix}${uniqueString(resourceGroup().name)}'
+param location string = resourceGroup().location
+param appInsightsName string = '${prefix}${uniqueString(resourceGroup().name)}'
+param appPlanName string = '${prefix}${uniqueString(resourceGroup().name)}'
+param appName string = '${prefix}${uniqueString(resourceGroup().name)}'
 param sharedKeyVault string
 param keyVaultRefUserId string
 
-var stackName = '${prefix}${stackEnvironment}'
-var tags = {
-  'stack-name': 'keyvault-viewer'
-  'stack-environment': stackEnvironment
-  'stack-version': version
-  'stack-branch': branch
-}
-
-resource akv 'Microsoft.KeyVault/vaults@2021-11-01-preview' = {
-  name: stackName
+resource akv 'Microsoft.KeyVault/vaults@2023-02-01' = {
+  name: kvName
   location: location
-  tags: tags
   properties: {
     sku: {
       name: 'standard'
@@ -32,9 +24,8 @@ resource akv 'Microsoft.KeyVault/vaults@2021-11-01-preview' = {
 }
 
 resource appinsights 'Microsoft.Insights/components@2020-02-02' = {
-  name: stackName
+  name: appInsightsName
   location: location
-  tags: tags
   kind: 'web'
   properties: {
     Application_Type: 'web'
@@ -43,21 +34,17 @@ resource appinsights 'Microsoft.Insights/components@2020-02-02' = {
   }
 }
 
-var appPlanName = 'F1'
-
-resource appplan 'Microsoft.Web/serverfarms@2021-01-15' = {
-  name: stackName
+resource appplan 'Microsoft.Web/serverfarms@2022-09-01' = {
+  name: appPlanName
   location: location
-  tags: tags
   sku: {
-    name: appPlanName
+    name: 'F1'
   }
 }
 
-resource appsite 'Microsoft.Web/sites@2021-01-15' = {
-  name: stackName
+resource appsite 'Microsoft.Web/sites@2022-09-01' = {
+  name: appName
   location: location
-  tags: tags
   identity: {
     type: 'UserAssigned'
     userAssignedIdentities: {
