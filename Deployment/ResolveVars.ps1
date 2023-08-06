@@ -8,7 +8,7 @@ dotnet tool install --global Eklee.AzureResourceDiscovery --version 0.1.7-alpha
 function GetResourceAndSetInOutput {
     param ($SolutionId, $ResourceId, $EnvName, $OutputKey, [switch]$UseId)
 
-    $json = dotnet run -- -l resource --ard-rid $ResourceId --ard-sol $SolutionId --ard-env $EnvName --disable-console-logging
+    $json = ard -- -l resource --ard-rid $ResourceId --ard-sol $SolutionId --ard-env $EnvName --disable-console-logging
     if ($LastExitCode -ne 0) {
         throw "Error with resource $ResourceId lookup."
     }
