@@ -41,8 +41,8 @@ $groupName = $obj.Name
 "resourceGroupName=$groupName" >> $env:GITHUB_OUTPUT
 "prefix=vs" >> $env:GITHUB_OUTPUT
 
-GetResourceAndSetInOutput -SolutionId "shared-services" -EnvName $BUILD_ENV -ResourceId 'shared-key-vault' -OutputKey "sharedkeyVaultName"
-GetResourceAndSetInOutput -SolutionId "shared-services" -EnvName $BUILD_ENV -ResourceId 'shared-managed-identity' -OutputKey "keyVaultRefUserId" -UseId
+GetResourceAndSetInOutput -SolutionId "shared-services" -EnvName "prod" -ResourceId 'shared-key-vault' -OutputKey "sharedkeyVaultName"
+GetResourceAndSetInOutput -SolutionId "shared-services" -EnvName "prod" -ResourceId 'shared-managed-identity' -OutputKey "keyVaultRefUserId" -UseId
 
 GetResourceAndSetInOutput -SolutionId $solutionId -EnvName $BUILD_ENV -ResourceId 'app-keyvault' -OutputKey "keyVaultName"
 GetResourceAndSetInOutput -SolutionId $solutionId -EnvName $BUILD_ENV -ResourceId 'app-apm' -OutputKey "appInsightsName"
