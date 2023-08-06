@@ -26,7 +26,7 @@ function GetResourceAndSetInOutput {
         $objValue = $obj.Id
     }
 
-    "$OutputKey=$objValue" >> $env:GITHUB_ENV
+    "$OutputKey=$objValue" >> $env:GITHUB_OUTPUT
 
     return
 }
@@ -38,8 +38,8 @@ if ($LastExitCode -ne 0) {
 }
 $obj = $json | ConvertFrom-Json
 $groupName = $obj.Name
-"resourceGroupName=$groupName" >> $env:GITHUB_ENV
-"prefix=vs" >> $env:GITHUB_ENV
+"resourceGroupName=$groupName" >> $env:GITHUB_OUTPUT
+"prefix=vs" >> $env:GITHUB_OUTPUT
 
 GetResourceAndSetInOutput -SolutionId "shared-services" -EnvName $BUILD_ENV -ResourceId 'shared-key-vault' -OutputKey "sharedkeyVaultName"
 GetResourceAndSetInOutput -SolutionId "shared-services" -EnvName $BUILD_ENV -ResourceId 'shared-managed-identity' -OutputKey "keyVaultRefUserId" -UseId
