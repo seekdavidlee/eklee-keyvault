@@ -52,13 +52,13 @@ jobs:
           resourceGroupName: ${{ steps.resolve-vars.outputs.resourceGroupName }}
           template: ./deployment/deploy.bicep
           parameters: |
-            prefix=${{ steps.resolve-vars.outputs.prefix }} `
-            sharedKeyVault=${{ steps.resolve-vars.outputs.sharedkeyVaultName }} `
-            keyVaultRefUserId=${{ steps.resolve-vars.outputs.keyVaultRefUserId }} `
-            kvName=${{ steps.resolve-vars.outputs.keyVaultName }} `
-            appInsightsName=${{ steps.resolve-vars.outputs.appInsightsName }} `
-            appPlanName=${{ steps.resolve-vars.outputs.appPlanName }} `
-            appName=${{ steps.resolve-vars.outputs.appName }} `
+            prefix="${{ steps.resolve-vars.outputs.prefix }}" `
+            sharedKeyVault="${{ steps.resolve-vars.outputs.sharedkeyVaultName }}" `
+            keyVaultRefUserId="${{ steps.resolve-vars.outputs.keyVaultRefUserId }}" `
+            kvName="${{ steps.resolve-vars.outputs.keyVaultName }}" `
+            appInsightsName="${{ steps.resolve-vars.outputs.appInsightsName }}" `
+            appPlanName="${{ steps.resolve-vars.outputs.appPlanName }}" `
+            appName="${{ steps.resolve-vars.outputs.appName }}" `
 
       - id: buid-and-deploy
         name: Build and deploy
