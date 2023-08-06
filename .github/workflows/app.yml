@@ -12,9 +12,9 @@ jobs:
         name: Setup Environment Setp
         run: |
             if ('${{ github.ref }}' -eq 'refs/heads/main') { 
-              echo "::set-output name=build_env::prod"
+              "build_env=prod" >> $env:GITHUB_OUTPUT
             } else {
-              echo "::set-output name=build_env::dev"
+              "build_env=dev" >> $env:GITHUB_OUTPUT
             }
     outputs:
       build_env: ${{ steps.setup.outputs.build_env }}
@@ -58,7 +58,7 @@ jobs:
             kvName="${{ steps.resolve-vars.outputs.keyVaultName }}" `
             appInsightsName="${{ steps.resolve-vars.outputs.appInsightsName }}" `
             appPlanName="${{ steps.resolve-vars.outputs.appPlanName }}" `
-            appName="${{ steps.resolve-vars.outputs.appName }}" `
+            appName="${{ steps.resolve-vars.outputs.appName }}"
 
       - id: buid-and-deploy
         name: Build and deploy
