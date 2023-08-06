@@ -6,14 +6,18 @@ $ErrorActionPreference = "Stop"
 dotnet tool install --global Eklee.AzureResourceDiscovery --version 0.1.7-alpha
 
 function GetResourceAndSetInOutput {
-    param ($SolutionId, $ResourceId, $EnvName, $OutputKey, [switch]$UseId)
+    param ($SolutionId, $ResourceId, $EnvName, $OutputKey, [switch]$UseId, [switch]$ThrowIfMissing)
 
     $json = ard -- -l resource --ard-rid $ResourceId --ard-sol $SolutionId --ard-env $EnvName --disable-console-logging
     if ($LastExitCode -ne 0) {
         throw "Error with resource $ResourceId lookup."
     }
 
-    if (! $json ) {
+    if (!$json ) {
+
+        if ($ThrowIfMissing) {
+            throw "Value for $OutputKey is missing!"
+        }
         return
     }
 
@@ -24,6 +28,10 @@ function GetResourceAndSetInOutput {
     }
     else {
         $objValue = $obj.Id
+    }
+
+    if ($ThrowIfMissing -and !$objValue) {
+        throw "Value for $OutputKey is missing!"
     }
 
     "$OutputKey=$objValue" >> $env:GITHUB_OUTPUT
@@ -41,8 +49,8 @@ $groupName = $obj.Name
 "resourceGroupName=$groupName" >> $env:GITHUB_OUTPUT
 "prefix=vs" >> $env:GITHUB_OUTPUT
 
-GetResourceAndSetInOutput -SolutionId "shared-services" -EnvName "prod" -ResourceId 'shared-key-vault' -OutputKey "sharedkeyVaultName"
-GetResourceAndSetInOutput -SolutionId "shared-services" -EnvName "prod" -ResourceId 'shared-managed-identity' -OutputKey "keyVaultRefUserId" -UseId
+GetResourceAndSetInOutput -SolutionId "shared-services" -EnvName "prod" -ResourceId 'shared-key-vault' -OutputKey "sharedkeyVaultName" -ThrowIfMissing
+GetResourceAndSetInOutput -SolutionId "shared-services" -EnvName "prod" -ResourceId 'shared-managed-identity' -OutputKey "keyVaultRefUserId" -UseId -ThrowIfMissing
 
 GetResourceAndSetInOutput -SolutionId $solutionId -EnvName $BUILD_ENV -ResourceId 'app-keyvault' -OutputKey "keyVaultName"
 GetResourceAndSetInOutput -SolutionId $solutionId -EnvName $BUILD_ENV -ResourceId 'app-apm' -OutputKey "appInsightsName"
