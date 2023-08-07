@@ -24,15 +24,13 @@ function GetResourceAndSetInOutput {
     $obj = $json | ConvertFrom-Json
 
     if ($UseId) {
-        $objValue = $obj.Name
+        $objValue = $obj.Id
     }
     else {
-        $objValue = $obj.Id
+        $objValue = $obj.Name
     }
 
     if ($ThrowIfMissing -and !$objValue) {
-
-        Write-Host $json
         throw "Value for $OutputKey is missing!"
     }
 
