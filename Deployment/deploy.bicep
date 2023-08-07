@@ -1,14 +1,19 @@
 param prefix string
-param kvName string = '${prefix}${uniqueString(resourceGroup().name)}'
+param kvName string = ''
 param location string = resourceGroup().location
-param appInsightsName string = '${prefix}${uniqueString(resourceGroup().name)}'
-param appPlanName string = '${prefix}${uniqueString(resourceGroup().name)}'
-param appName string = '${prefix}${uniqueString(resourceGroup().name)}'
+param appInsightsName string = ''
+param appPlanName string = ''
+param appName string = ''
 param sharedKeyVault string
 param keyVaultRefUserId string
 
+var kvNameStr = empty(kvName) ? '${prefix}${uniqueString(resourceGroup().name)}' : kvName
+var appInsightsNameStr = empty(appInsightsName) ? '${prefix}${uniqueString(resourceGroup().name)}' : appInsightsName
+var appPlanNameStr = empty(appPlanName) ? '${prefix}${uniqueString(resourceGroup().name)}' : appPlanName
+var appNameStr = empty(appName) ? '${prefix}${uniqueString(resourceGroup().name)}' : appName
+
 resource akv 'Microsoft.KeyVault/vaults@2023-02-01' = {
-  name: kvName
+  name: kvNameStr
   location: location
   properties: {
     sku: {
@@ -24,7 +29,7 @@ resource akv 'Microsoft.KeyVault/vaults@2023-02-01' = {
 }
 
 resource appinsights 'Microsoft.Insights/components@2020-02-02' = {
-  name: appInsightsName
+  name: appInsightsNameStr
   location: location
   kind: 'web'
   properties: {
@@ -35,7 +40,7 @@ resource appinsights 'Microsoft.Insights/components@2020-02-02' = {
 }
 
 resource appplan 'Microsoft.Web/serverfarms@2022-09-01' = {
-  name: appPlanName
+  name: appPlanNameStr
   location: location
   sku: {
     name: 'F1'
@@ -43,7 +48,7 @@ resource appplan 'Microsoft.Web/serverfarms@2022-09-01' = {
 }
 
 resource appsite 'Microsoft.Web/sites@2022-09-01' = {
-  name: appName
+  name: appNameStr
   location: location
   identity: {
     type: 'UserAssigned'
