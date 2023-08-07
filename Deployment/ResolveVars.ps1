@@ -24,7 +24,7 @@ function GetResourceAndSetInOutput {
     $obj = $json | ConvertFrom-Json
 
     if ($UseId) {
-        $objValue = $obj.Id
+        $objValue = $obj.ResourceId
     }
     else {
         $objValue = $obj.Name
