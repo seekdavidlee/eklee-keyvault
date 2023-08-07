@@ -8,12 +8,12 @@ dotnet tool install --global Eklee.AzureResourceDiscovery --version 0.1.7-alpha
 function GetResourceAndSetInOutput {
     param ($SolutionId, $ResourceId, $EnvName, $OutputKey, [switch]$UseId, [switch]$ThrowIfMissing)
 
-    $json = ard -- -l resource --ard-rid $ResourceId --ard-sol $SolutionId --ard-env $EnvName --disable-console-logging
+    $json = ard -l resource --ard-rid $ResourceId --ard-sol $SolutionId --ard-env $EnvName --disable-console-logging
     if ($LastExitCode -ne 0) {
         throw "Error with resource $ResourceId lookup."
     }
 
-    if (!$json ) {
+    if (!$json) {
 
         if ($ThrowIfMissing) {
             throw "Value for $OutputKey is missing!"
@@ -31,6 +31,8 @@ function GetResourceAndSetInOutput {
     }
 
     if ($ThrowIfMissing -and !$objValue) {
+
+        Write-Host $json
         throw "Value for $OutputKey is missing!"
     }
 
