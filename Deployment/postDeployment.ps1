@@ -42,8 +42,8 @@ $solutionId = "keyvault-viewer"
 
 $kv = GetResource -solutionId $solutionId -environmentName $EnvironmentName -resourceId "app-keyvault"
 
-$groupId = CreateGroupIfNotExist -GroupName "app-keyvault Secrets Admins" -NickName"app-keyvault-secrets-admin"
+$groupId = CreateGroupIfNotExist -GroupName "app-keyvault Secrets Admins" -NickName "app-keyvault-secrets-admin"
 az role assignment create --assignee $groupId --role "Key Vault Secrets Officer" --scope $kv.ResourceId
 
-$groupId = CreateGroupIfNotExist -GroupName "app-keyvault Secrets Reader" -NickName"app-keyvault-secrets-reader"
-az role assignment create --assignee $groupId --role "Key Vault Secrets Reader" --scope $kv.ResourceId
+$groupId = CreateGroupIfNotExist -GroupName "app-keyvault Secrets User" -NickName "app-keyvault-secrets-user"
+az role assignment create --assignee $groupId --role "Key Vault Secrets User" --scope $kv.ResourceId
