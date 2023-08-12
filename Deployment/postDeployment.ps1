@@ -38,7 +38,17 @@ function CreateAdGroupIfNotExist {
     return $groupId
 }
 
+$sharedKv = GetResource -solutionId "shared-services" -environmentName "prod" -resourceId "shared-key-vault"
+$sharedKvName = $sharedKv.Name
+$appId = az keyvault secret show --name "keyvault-viewer-client-id" --vault-name $sharedKvName --query "value" | ConvertFrom-Json
+
 $solutionId = "keyvault-viewer"
+
+$svc = GetResource -solutionId $solutionId -environmentName $EnvironmentName -resourceId "app-svc"
+$svcName = $svc.Name
+az ad app update --id $appId --web-redirect-uris "https://$svcName.azurewebsites.net/signin-oidc"
+
+Write-Host "Url: https://$svcName.azurewebsites.net/signin-oidc"
 
 $kv = GetResource -solutionId $solutionId -environmentName $EnvironmentName -resourceId "app-keyvault"
 
