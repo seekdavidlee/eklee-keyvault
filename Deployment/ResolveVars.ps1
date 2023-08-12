@@ -3,7 +3,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-dotnet tool install --global Eklee.AzureResourceDiscovery --version 0.1.7-alpha
+dotnet tool install --global azsolutionmanager --version 0.1.0-beta
 
 function GetResourceAndSetInOutput {
     param ($SolutionId, $ResourceId, $EnvName, $OutputKey, [switch]$UseId, [switch]$ThrowIfMissing)
