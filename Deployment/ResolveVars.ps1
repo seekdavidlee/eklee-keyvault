@@ -8,7 +8,7 @@ dotnet tool install --global Eklee.AzureResourceDiscovery --version 0.1.7-alpha
 function GetResourceAndSetInOutput {
     param ($SolutionId, $ResourceId, $EnvName, $OutputKey, [switch]$UseId, [switch]$ThrowIfMissing)
 
-    $json = ard -l resource --ard-rid $ResourceId --ard-sol $SolutionId --ard-env $EnvName --disable-console-logging
+    $json = asm lookup --type resource --asm-rid $ResourceId --asm-sol $SolutionId --asm-env $EnvName 
     if ($LastExitCode -ne 0) {
         throw "Error with resource $ResourceId lookup."
     }
@@ -40,7 +40,7 @@ function GetResourceAndSetInOutput {
 }
 
 $solutionId = "keyvault-viewer"
-$json = ard -l group --ard-sol $solutionId --ard-env $BUILD_ENV --disable-console-logging
+$json = asm lookup --type group --asm-sol $solutionId --asm-env $BUILD_ENV 
 if ($LastExitCode -ne 0) {
     throw "Error with group lookup."
 }
