@@ -48,7 +48,7 @@ $svc = GetResource -solutionId $solutionId -environmentName $EnvironmentName -re
 $svcName = $svc.Name
 az ad app update --id $appId --web-redirect-uris "https://$svcName.azurewebsites.net/signin-oidc"
 
-Write-Host "Url: https://$svcName.azurewebsites.net/signin-oidc"
+Write-Host "Url: https://$svcName.azurewebsites.net"
 
 $kv = GetResource -solutionId $solutionId -environmentName $EnvironmentName -resourceId "app-keyvault"
 
