@@ -1,5 +1,7 @@
 param([string]$EnvironmentName)
 
+asm apply -f .\manifest.json --asm-env $EnvironmentName --logging Info
+
 $groupName = "GitHub Deployment"
 $groups = az ad group list --display-name $groupName | ConvertFrom-Json
 
