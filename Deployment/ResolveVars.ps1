@@ -3,12 +3,12 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-dotnet tool install --global azsolutionmanager --version 0.1.0-beta
+dotnet tool install --global azsolutionmanager --version 0.1.2-beta
 
 function GetResourceAndSetInOutput {
     param ($SolutionId, $ResourceId, $EnvName, $OutputKey, [switch]$UseId, [switch]$ThrowIfMissing)
 
-    $json = asm lookup --type resource --asm-rid $ResourceId --asm-sol $SolutionId --asm-env $EnvName 
+    $json = asm lookup --type resource --asm-rid $ResourceId --asm-sol $SolutionId --asm-env $EnvName --logging Info
     if ($LastExitCode -ne 0) {
         throw "Error with resource $ResourceId lookup."
     }
@@ -40,7 +40,7 @@ function GetResourceAndSetInOutput {
 }
 
 $solutionId = "keyvault-viewer"
-$json = asm lookup --type group --asm-sol $solutionId --asm-env $BUILD_ENV 
+$json = asm lookup --type group --asm-sol $solutionId --asm-env $BUILD_ENV --logging Info
 if ($LastExitCode -ne 0) {
     throw "Error with group lookup."
 }
