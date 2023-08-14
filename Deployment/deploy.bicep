@@ -1,23 +1,20 @@
 param prefix string
-param stackEnvironment string
-param branch string
-param location string = 'centralus'
-param version string
+param kvName string = ''
+param location string = resourceGroup().location
+param appInsightsName string = ''
+param appPlanName string = ''
+param appName string = ''
 param sharedKeyVault string
 param keyVaultRefUserId string
 
-var stackName = '${prefix}${stackEnvironment}'
-var tags = {
-  'stack-name': 'keyvault-viewer'
-  'stack-environment': stackEnvironment
-  'stack-version': version
-  'stack-branch': branch
-}
+var kvNameStr = empty(kvName) ? '${prefix}${uniqueString(resourceGroup().name)}' : kvName
+var appInsightsNameStr = empty(appInsightsName) ? '${prefix}${uniqueString(resourceGroup().name)}' : appInsightsName
+var appPlanNameStr = empty(appPlanName) ? '${prefix}${uniqueString(resourceGroup().name)}' : appPlanName
+var appNameStr = empty(appName) ? '${prefix}${uniqueString(resourceGroup().name)}' : appName
 
-resource akv 'Microsoft.KeyVault/vaults@2021-11-01-preview' = {
-  name: stackName
+resource akv 'Microsoft.KeyVault/vaults@2023-02-01' = {
+  name: kvNameStr
   location: location
-  tags: tags
   properties: {
     sku: {
       name: 'standard'
@@ -32,9 +29,8 @@ resource akv 'Microsoft.KeyVault/vaults@2021-11-01-preview' = {
 }
 
 resource appinsights 'Microsoft.Insights/components@2020-02-02' = {
-  name: stackName
+  name: appInsightsNameStr
   location: location
-  tags: tags
   kind: 'web'
   properties: {
     Application_Type: 'web'
@@ -43,21 +39,17 @@ resource appinsights 'Microsoft.Insights/components@2020-02-02' = {
   }
 }
 
-var appPlanName = 'F1'
-
-resource appplan 'Microsoft.Web/serverfarms@2021-01-15' = {
-  name: stackName
+resource appplan 'Microsoft.Web/serverfarms@2022-09-01' = {
+  name: appPlanNameStr
   location: location
-  tags: tags
   sku: {
-    name: appPlanName
+    name: 'F1'
   }
 }
 
-resource appsite 'Microsoft.Web/sites@2021-01-15' = {
-  name: stackName
+resource appsite 'Microsoft.Web/sites@2022-09-01' = {
+  name: appNameStr
   location: location
-  tags: tags
   identity: {
     type: 'UserAssigned'
     userAssignedIdentities: {

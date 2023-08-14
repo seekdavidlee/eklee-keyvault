@@ -3,22 +3,56 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-$groupName = (az group list --tag stack-name=keyvault-viewer | ConvertFrom-Json).name
-Write-Host "::set-output name=resourceGroupName::$groupName"
+dotnet tool install --global azsolutionmanager --version 0.1.0-beta
 
-$platformRes = (az resource list --tag stack-name=platform | ConvertFrom-Json)
-if (!$platformRes) {
-    throw "Unable to find eligible platform resource!"
+function GetResourceAndSetInOutput {
+    param ($SolutionId, $ResourceId, $EnvName, $OutputKey, [switch]$UseId, [switch]$ThrowIfMissing)
+
+    $json = asm lookup --type resource --asm-rid $ResourceId --asm-sol $SolutionId --asm-env $EnvName 
+    if ($LastExitCode -ne 0) {
+        throw "Error with resource $ResourceId lookup."
+    }
+
+    if (!$json) {
+
+        if ($ThrowIfMissing) {
+            throw "Value for $OutputKey is missing!"
+        }
+        return
+    }
+
+    $obj = $json | ConvertFrom-Json
+
+    if ($UseId) {
+        $objValue = $obj.ResourceId
+    }
+    else {
+        $objValue = $obj.Name
+    }
+
+    if ($ThrowIfMissing -and !$objValue) {
+        throw "Value for $OutputKey is missing!"
+    }
+
+    "$OutputKey=$objValue" >> $env:GITHUB_OUTPUT
+
+    return
 }
 
-if ($platformRes.Length -eq 0) {
-    throw "Unable to find 'ANY' eligible platform resource!"
+$solutionId = "keyvault-viewer"
+$json = asm lookup --type group --asm-sol $solutionId --asm-env $BUILD_ENV 
+if ($LastExitCode -ne 0) {
+    throw "Error with group lookup."
 }
+$obj = $json | ConvertFrom-Json
+$groupName = $obj.Name
+"resourceGroupName=$groupName" >> $env:GITHUB_OUTPUT
+"prefix=vs" >> $env:GITHUB_OUTPUT
 
-# Platform specific Azure Key Vault as a Shared resource
-$akvName = ($platformRes | Where-Object { $_.type -eq 'Microsoft.KeyVault/vaults' -and $_.tags.'stack-environment' -eq $BUILD_ENV }).name
+GetResourceAndSetInOutput -SolutionId "shared-services" -EnvName "prod" -ResourceId 'shared-key-vault' -OutputKey "sharedkeyVaultName" -ThrowIfMissing
+GetResourceAndSetInOutput -SolutionId "shared-services" -EnvName "prod" -ResourceId 'shared-managed-identity' -OutputKey "keyVaultRefUserId" -UseId -ThrowIfMissing
 
-Write-Host "::set-output name=keyVaultName::$akvName"
-
-$keyVaultRefUserId = (az identity list -g $groupName | ConvertFrom-Json).id
-Write-Host "::set-output name=keyVaultRefUserId::$keyVaultRefUserId"
+GetResourceAndSetInOutput -SolutionId $solutionId -EnvName $BUILD_ENV -ResourceId 'app-keyvault' -OutputKey "keyVaultName"
+GetResourceAndSetInOutput -SolutionId $solutionId -EnvName $BUILD_ENV -ResourceId 'app-apm' -OutputKey "appInsightsName"
+GetResourceAndSetInOutput -SolutionId $solutionId -EnvName $BUILD_ENV -ResourceId 'app-svcplan' -OutputKey "appPlanName"
+GetResourceAndSetInOutput -SolutionId $solutionId -EnvName $BUILD_ENV -ResourceId 'app-svc' -OutputKey "appName"

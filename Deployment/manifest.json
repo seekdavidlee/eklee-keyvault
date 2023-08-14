@@ -1,0 +1,31 @@
+{
+    "version": "0.1.0",
+    "unique-resource-variables": {
+        "resources1": [
+            {
+                "asm-resource-id": "app-keyvault",
+                "resource-type": "Microsoft.KeyVault/vaults"
+            },
+            {
+                "asm-resource-id": "app-apm",
+                "resource-type": "Microsoft.Insights/components"
+            },
+            {
+                "asm-resource-id": "app-svcplan",
+                "resource-type": "Microsoft.Web/serverfarms"
+            },
+            {
+                "asm-resource-id": "app-svc",
+                "resource-type": "Microsoft.Web/sites"
+            }
+        ]
+    },
+    "groups": [
+        {
+            "resource-group-name": "keyvault-viewer-@(asm.Environment)",
+            "unique-resources-variable-key": "resources1",
+            "asm-solution-id": "keyvault-viewer",
+            "asm-environment": "@(asm.Environment)"
+        }
+    ]
+}
