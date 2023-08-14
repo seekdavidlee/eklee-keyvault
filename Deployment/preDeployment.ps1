@@ -1,6 +1,7 @@
 param([string]$EnvironmentName)
 
-asm apply -f .\manifest.json --asm-env $EnvironmentName --logging Info
+$acc = az account show | ConvertFrom-Json
+asm apply -f .\manifest.json --asm-env $EnvironmentName -s $acc.id -t $acc.homeTenantId --logging Info
 
 $groupName = "GitHub Deployment"
 $groups = az ad group list --display-name $groupName | ConvertFrom-Json
@@ -10,7 +11,7 @@ if ($groups.Length -eq 0) {
 }
 
 $solutionId = "keyvault-viewer"
-$obj = asm lookup --type group --asm-sol $solutionId --asm-env $EnvironmentName  | ConvertFrom-Json
+$obj = asm lookup --type group --asm-sol $solutionId --asm-env $EnvironmentName -s $acc.id -t $acc.homeTenantId --logging Info | ConvertFrom-Json
 if ($LastExitCode -ne 0) {
     throw "Error with group lookup."
 }
