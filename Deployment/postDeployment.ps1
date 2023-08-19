@@ -1,4 +1,8 @@
-param([string]$EnvironmentName)
+param(
+    [Parameter(Mandatory = $true)][string]$SUBSCRIPTION,
+    [Parameter(Mandatory = $true)][string]$TENANT,
+    [Parameter(Mandatory = $true)][string]$ENVIRONMENT,
+    [Parameter(Mandatory = $false)][string]$REGION)
 
 $ErrorActionPreference = "Stop"
 
@@ -44,13 +48,13 @@ $appId = az keyvault secret show --name "keyvault-viewer-client-id" --vault-name
 
 $solutionId = "keyvault-viewer"
 
-$svc = GetResource -solutionId $solutionId -environmentName $EnvironmentName -resourceId "app-svc"
+$svc = GetResource -solutionId $solutionId -environmentName $ENVIRONMENT -resourceId "app-svc"
 $svcName = $svc.Name
 az ad app update --id $appId --web-redirect-uris "https://$svcName.azurewebsites.net/signin-oidc"
 
 Write-Host "Url: https://$svcName.azurewebsites.net"
 
-$kv = GetResource -solutionId $solutionId -environmentName $EnvironmentName -resourceId "app-keyvault"
+$kv = GetResource -solutionId $solutionId -environmentName $ENVIRONMENT -resourceId "app-keyvault"
 
 $groupId = CreateAdGroupIfNotExist -GroupName "app-keyvault Secrets Admins" -NickName "app-keyvault-secrets-admin"
 az role assignment create --assignee $groupId --role "Key Vault Secrets Officer" --scope $kv.ResourceId
