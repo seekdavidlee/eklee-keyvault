@@ -3,7 +3,7 @@ param(
 
 $ErrorActionPreference = "Stop"
 
-dotnet tool install --global azsolutionmanager --version 0.1.3-beta
+dotnet tool install --global azsolutionmanager --version 0.1.6-beta
 
 function GetResourceAndSetInOutput {
     param ($SolutionId, $ResourceId, $EnvName, $OutputKey, [switch]$UseId, [switch]$ThrowIfMissing)
