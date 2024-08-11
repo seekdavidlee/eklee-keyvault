@@ -61,7 +61,7 @@ resource appsite 'Microsoft.Web/sites@2022-09-01' = {
     serverFarmId: appplan.id
     httpsOnly: true
     siteConfig: {
-      netFrameworkVersion: 'v6.0'
+      netFrameworkVersion: 'v8.0'
       #disable-next-line BCP037
       metadata: [
         {
