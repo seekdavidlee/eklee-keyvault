@@ -1,0 +1,24 @@
+﻿@page "/"
+
+<PageTitle>Dashboard</PageTitle>
+<RadzenText TextStyle="TextStyle.H3">Dashboard</RadzenText>
+<RadzenText TextStyle="TextStyle.Body1">
+    <strong>Welcome!</strong> View dashboard!
+</RadzenText>
+<div>@SomeText</div>
+<RadzenRow class="rz-text-align-center rz-border-info-light" Gap="1rem">
+    <RadzenColumn class="rz-background-color-info-lighter rz-color-on-info-lighter rz-p-5">
+        <RadzenChart>
+            <RadzenPieSeries Data="@Items" Title="Revenue" CategoryProperty="Display" ValueProperty="Value">
+                <RadzenSeriesDataLabels Visible="false" />
+            </RadzenPieSeries>
+        </RadzenChart>
+    </RadzenColumn>
+    <RadzenColumn class="rz-background-color-info-lighter rz-color-on-info-lighter rz-p-5">
+        <RadzenChart>
+            <RadzenPieSeries Data="@Items" Title="Revenue" CategoryProperty="Display" ValueProperty="Value">
+                <RadzenSeriesDataLabels Visible="false" />
+            </RadzenPieSeries>
+        </RadzenChart>
+    </RadzenColumn>
+</RadzenRow>

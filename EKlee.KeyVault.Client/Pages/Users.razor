@@ -1,0 +1,10 @@
+﻿@page "/users"
+
+<PageTitle>All Users</PageTitle>
+<RadzenText TextStyle="TextStyle.H3">Users</RadzenText>
+<RadzenDataGrid style="height: 335px" @ref="Grid" IsLoading="false" Count="@ItemCount" Data="@UserItems" LoadData="@LoadData" AllowSorting="true" AllowFiltering="true" AllowPaging="true" PageSize="4" PagerHorizontalAlign="HorizontalAlign.Center" TItem="UserItem" ColumnWidth="200px">
+    <Columns>
+        <RadzenDataGridColumn TItem="UserItem" Property="Name" Title="Name" Width="120px" />
+        <RadzenDataGridColumn TItem="UserItem" Property="Created" Title="Created" FormatString="{0:d}" Width="160px" />
+    </Columns>
+</RadzenDataGrid>
