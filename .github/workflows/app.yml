@@ -34,7 +34,7 @@ jobs:
             8.0.x
 
       - name: Azure CLI Login
-        uses: azure/login@v1
+        uses: azure/login@v2
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
           enable-AzPSSession: true
@@ -45,7 +45,7 @@ jobs:
 
       - name: Build azure environment
         id: deploy
-        uses: azure/arm-deploy@v1
+        uses: azure/arm-deploy@v2
         with:
           deploymentName: '${{ needs.setup.outputs.build_env }}-${{ github.run_number }}'
           resourceGroupName: ${{ steps.resolve-vars.outputs.resourceGroupName }}

@@ -17,20 +17,11 @@ public class Config
 
         StorageUri = new Uri(configuration[nameof(StorageUri)]!);
         StorageContainerName = configuration[nameof(StorageContainerName)]!;
-        APIMSubscriptionKey = configuration[nameof(APIMSubscriptionKey)]!;
-        GetSecretsUrl = configuration[nameof(GetSecretsUrl)]!;
-        KeyVaultScopes = configuration.GetSection(nameof(KeyVaultScopes))!.Get<string[]>()!;
     }
 
     public Uri StorageUri { get; }
 
-    public string[] KeyVaultScopes { get; }
-
     public string StorageContainerName { get; }
-
-    public string APIMSubscriptionKey { get; }
-
-    public string GetSecretsUrl { get; }
 
     public string Header
     {
