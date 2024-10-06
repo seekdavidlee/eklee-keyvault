@@ -18,7 +18,7 @@ public partial class Index : ComponentBase
     {
         var s = await KeyVaultService.GetSecrets(AccessTokenProvider);
 
-        SomeText = s.Any() ? s.First() : "none";
+        SomeText = s.Any() ? string.Join(',', s.Select(x => x.Name).ToArray()) : "none";
 
         Items =
         [

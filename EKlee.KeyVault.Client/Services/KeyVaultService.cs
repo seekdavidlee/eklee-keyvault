@@ -1,6 +1,8 @@
 ﻿using EKlee.KeyVault.Client.Models;
 using Microsoft.AspNetCore.Components.WebAssembly.Authentication;
+using System.Collections.Generic;
 using System.Net.Http.Headers;
+using System.Net.Http.Json;
 
 namespace EKlee.KeyVault.Client.Services;
 
@@ -20,11 +22,11 @@ public class KeyVaultService
         this.logger = logger;
     }
 
-    public async Task<IEnumerable<string>> GetSecrets(IAccessTokenProvider accessTokenProvider)
+    public async Task<IEnumerable<SecretItem>> GetSecrets(IAccessTokenProvider accessTokenProvider)
     {
         apimConfigRoot ??= await blobService.DownloadAsync(accessTokenProvider);
 
-        List<string> items = [];
+        List<SecretItem> items = [];
 
         // get with headers
         var a = await accessTokenProvider.RequestAccessToken(new AccessTokenRequestOptions { Scopes = apimConfigRoot.APIM!.TokenScopes });
@@ -32,12 +34,11 @@ public class KeyVaultService
         {
             httpClient.DefaultRequestHeaders.Authorization = new AuthenticationHeaderValue("Bearer", accessToken.Value);
             httpClient.DefaultRequestHeaders.Add("Ocp-Apim-Subscription-Key", apimConfigRoot.APIM!.SubscriptionKey);
-            var res = await httpClient.GetStringAsync(new Uri(new Uri(apimConfigRoot.APIM!.BaseUrl!), apimConfigRoot.APIM!.SecretsActions!.List));
-            items.Add(res);
-        }
-        else
-        {
-            items.Add("Failed to obtain access token");
+            var res = await httpClient.GetFromJsonAsync<SecretItemList>(new Uri(new Uri(apimConfigRoot.APIM!.BaseUrl!), apimConfigRoot.APIM!.SecretsActions!.List));
+            if (res!.Value!.Count > 0)
+            {
+                items.AddRange(res!.Value!);
+            }
         }
 
         return items;
