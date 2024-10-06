@@ -54,7 +54,7 @@ jobs:
             prefix=${{ steps.resolve-vars.outputs.prefix }}
             managedUserId=${{ steps.resolve-vars.outputs.managedUserId }}
             publisherEmail=${{ vars.APIM_PUBLISHER_EMAIL }}
-            publisherName='${{ vars.APIM_PUBLISHER_NAME }}'
+            publisherName="${{ vars.APIM_PUBLISHER_NAME }}"
 
       - uses: kheiakiyama/install-azcopy-action@v1
         with:
