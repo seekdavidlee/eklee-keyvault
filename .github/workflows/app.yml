@@ -56,7 +56,7 @@ jobs:
             publisherEmail=${{ vars.APIM_PUBLISHER_EMAIL }}
             publisherName='${{ vars.APIM_PUBLISHER_NAME }}'
 
-      - uses: kheiakiyama/install-azcopy-action@v2
+      - uses: kheiakiyama/install-azcopy-action@v1
         with:
           version: 'v10'
 
