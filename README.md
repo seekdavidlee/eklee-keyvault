@@ -63,5 +63,5 @@ git clone https://github.com/seekdavidlee/az-solution-manager-utils.git
 az login --tenant <TENANT ID>
 Push-Location ..\az-solution-manager-utils\; .\LoadASMToSession.ps1; Pop-Location
 $a = az account show | ConvertFrom-Json; Invoke-ASMSetup -DIRECTORY Deployment -TENANT $a.tenantId -SUBSCRIPTION $a.Id -ENVIRONMENT $environmentName
-Set-ASMGitHubDeploymentToResourceGroup -SOLUTIONID "keyvault-viewer" -ENVIRONMENT $environmentName -TENANT $a.tenantId -SUBSCRIPTION $a.Id
+Set-ASMGitHubDeploymentToResourceGroup -SOLUTIONID "keyvault-viewer-v2" -ENVIRONMENT $environmentName -TENANT $a.tenantId -SUBSCRIPTION $a.Id
 ```

@@ -1,24 +1,21 @@
 ﻿@page "/"
+@using EKlee.KeyVault.Client.Models
 
 <PageTitle>Dashboard</PageTitle>
-<RadzenText TextStyle="TextStyle.H3">Dashboard</RadzenText>
-<RadzenText TextStyle="TextStyle.Body1">
-    <strong>Welcome!</strong> View dashboard!
-</RadzenText>
-<div>@SomeText</div>
-<RadzenRow class="rz-text-align-center rz-border-info-light" Gap="1rem">
-    <RadzenColumn class="rz-background-color-info-lighter rz-color-on-info-lighter rz-p-5">
-        <RadzenChart>
-            <RadzenPieSeries Data="@Items" Title="Revenue" CategoryProperty="Display" ValueProperty="Value">
-                <RadzenSeriesDataLabels Visible="false" />
-            </RadzenPieSeries>
-        </RadzenChart>
-    </RadzenColumn>
-    <RadzenColumn class="rz-background-color-info-lighter rz-color-on-info-lighter rz-p-5">
-        <RadzenChart>
-            <RadzenPieSeries Data="@Items" Title="Revenue" CategoryProperty="Display" ValueProperty="Value">
-                <RadzenSeriesDataLabels Visible="false" />
-            </RadzenPieSeries>
-        </RadzenChart>
-    </RadzenColumn>
-</RadzenRow>
+@if (errorMessage is not null)
+{
+    <RadzenAlert AlertStyle="AlertStyle.Danger" Variant="Variant.Flat" Shade="Shade.Lighter">
+        @errorMessage
+    </RadzenAlert>
+}
+<RadzenDataGrid force-grid-header-width="true" @ref="@dataGridRef" ColumnWidth="200px" AllowFiltering="true" AllowPaging="true" AllowSorting="true" Data="@secretItems" TItem="SecretItem">
+    <Columns>
+        <RadzenDataGridColumn TItem="SecretItem" Title="Name" Width="50px" Property="Name" />
+        <RadzenDataGridColumn TItem="SecretItem" Context="record" Width="60px" Filterable="false" Sortable="false" TextAlign="TextAlign.Right" Frozen="true" FrozenPosition="FrozenColumnPosition.Right">
+            <Template Context="record">
+                <RadzenButton Icon="edit" ButtonStyle="ButtonStyle.Light" Variant="Variant.Flat" Size="ButtonSize.Medium" @onclick:stopPropagation="true" />
+            </Template>
+        </RadzenDataGridColumn>
+    </Columns>
+</RadzenDataGrid>
+

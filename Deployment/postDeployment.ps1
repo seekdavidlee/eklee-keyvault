@@ -42,22 +42,35 @@ function CreateAdGroupIfNotExist {
     return $groupId
 }
 
-$sharedKv = GetResource -solutionId "shared-services" -environmentName "prod" -resourceId "shared-key-vault"
-$sharedKvName = $sharedKv.Name
-$appId = az keyvault secret show --name "keyvault-viewer-client-id" --vault-name $sharedKvName --query "value" | ConvertFrom-Json
+$solutionId = "keyvault-viewer-v2"
 
-$solutionId = "keyvault-viewer"
-
-$svc = GetResource -solutionId $solutionId -environmentName $ENVIRONMENT -resourceId "app-svc"
-$svcName = $svc.Name
-az ad app update --id $appId --web-redirect-uris "https://$svcName.azurewebsites.net/signin-oidc"
-
-Write-Host "Url: https://$svcName.azurewebsites.net"
-
-$kv = GetResource -solutionId $solutionId -environmentName $ENVIRONMENT -resourceId "app-keyvault"
+$groups = asm lookup group --asm-sol $solutionId --asm-env $ENVIRONMENT | ConvertFrom-Json
+$groupName = $groups[0].Name
+$rgId = $groups[0].GroupId
 
 $groupId = CreateAdGroupIfNotExist -GroupName "app-keyvault Secrets Admins" -NickName "app-keyvault-secrets-admin"
-az role assignment create --assignee $groupId --role "Key Vault Secrets Officer" --scope $kv.ResourceId
-
+az role assignment create --assignee $groupId --role "Key Vault Secrets Officer" --scope $rgId
+if ($LastExitCode -ne 0) {        
+    throw "Unable to assign role 'Key Vault Secrets Officer' to '$groupId'."
+}
 $groupId = CreateAdGroupIfNotExist -GroupName "app-keyvault Secrets User" -NickName "app-keyvault-secrets-user"
-az role assignment create --assignee $groupId --role "Key Vault Secrets User" --scope $kv.ResourceId
+az role assignment create --assignee $groupId --role "Key Vault Secrets User" --scope $rgId
+if ($LastExitCode -ne 0) {        
+    throw "Unable to assign role 'Key Vault Secrets User' to '$groupId'."
+}
+if (!$o) {
+    Write-Host "Creating managed identity"
+    $o = az identity create --name $solutionId --resource-group $groupName | ConvertFrom-Json
+    $clientId = $o.clientId
+}
+else {
+    $clientId = (az resource show --ids $o.ResourceId --query "properties" | ConvertFrom-Json).principalId
+}
+
+$customRoleName = "deployment-script-minimum-privilege-for-deployment-principal"
+
+# See: https://learn.microsoft.com/en-us/azure/azure-resource-manager/templates/deployment-script-template#configure-the-minimum-permissions
+az role assignment create --assignee $clientId --role $customRoleName --scope $rgId
+if ($LastExitCode -ne 0) {        
+    throw "Unable to assign '$customRoleName' to '$groupId'."
+}

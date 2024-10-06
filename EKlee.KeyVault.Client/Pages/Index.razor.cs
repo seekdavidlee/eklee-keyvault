@@ -1,53 +1,33 @@
-﻿using EKlee.KeyVault.Client.Services;
+﻿using EKlee.KeyVault.Client.Models;
+using EKlee.KeyVault.Client.Services;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.WebAssembly.Authentication;
+using Radzen.Blazor;
 
 namespace EKlee.KeyVault.Client.Pages;
 
 public partial class Index : ComponentBase
 {
-    protected DataItem[]? Items { get; private set; }
-
-    public string? SomeText { get; set; }
-
     [Inject] private IAccessTokenProvider AccessTokenProvider { get; set; } = default!;
 
     [Inject] private KeyVaultService KeyVaultService { get; set; } = default!;
 
+    private RadzenDataGrid<SecretItem>? dataGridRef;
+    private List<SecretItem>? secretItems;
+    private string? errorMessage;
+
     protected override async Task OnInitializedAsync()
     {
-        var s = await KeyVaultService.GetSecrets(AccessTokenProvider);
-
-        SomeText = s.Any() ? string.Join(',', s.Select(x => x.Name).ToArray()) : "none";
-
-        Items =
-        [
-            new DataItem
-            {
-                Display = "Q1",
-                Value = 100
-            },
-            new DataItem
-            {
-                Display = "Q2",
-                Value = 110
-            },
-            new DataItem
-            {
-                Display = "Q3",
-                Value = 200
-            },
-            new DataItem
-            {
-                Display = "Q4",
-                Value = 80
-            },
-        ];
+        errorMessage = null;
+        try
+        {
+            secretItems = (await KeyVaultService.GetSecrets(AccessTokenProvider)).ToList();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
     }
 }
 
-public class DataItem
-{
-    public string? Display { get; set; }
-    public double Value { get; set; }
-}
+

@@ -1,6 +1,5 @@
 ﻿using EKlee.KeyVault.Client.Models;
 using Microsoft.AspNetCore.Components.WebAssembly.Authentication;
-using System.Collections.Generic;
 using System.Net.Http.Headers;
 using System.Net.Http.Json;
 
@@ -28,7 +27,6 @@ public class KeyVaultService
 
         List<SecretItem> items = [];
 
-        // get with headers
         var a = await accessTokenProvider.RequestAccessToken(new AccessTokenRequestOptions { Scopes = apimConfigRoot.APIM!.TokenScopes });
         if (a.TryGetToken(out var accessToken))
         {
@@ -42,5 +40,10 @@ public class KeyVaultService
         }
 
         return items;
+    }
+
+    public Task<string> GetSecret(string url)
+    {
+        throw new NotImplementedException();
     }
 }

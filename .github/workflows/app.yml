@@ -50,8 +50,18 @@ jobs:
           deploymentName: '${{ needs.setup.outputs.build_env }}-${{ github.run_number }}'
           resourceGroupName: ${{ steps.resolve-vars.outputs.resourceGroupName }}
           template: ./deployment/deploy.bicep
-          parameters: prefix="${{ steps.resolve-vars.outputs.prefix }}" sharedKeyVault="${{ steps.resolve-vars.outputs.sharedkeyVaultName }}" keyVaultRefUserId="${{ steps.resolve-vars.outputs.keyVaultRefUserId }}" kvName="${{ steps.resolve-vars.outputs.keyVaultName }}" appInsightsName="${{ steps.resolve-vars.outputs.appInsightsName }}" appPlanName="${{ steps.resolve-vars.outputs.appPlanName }}" appName="${{ steps.resolve-vars.outputs.appName }}"
+          parameters: >
+            prefix=${{ steps.resolve-vars.outputs.prefix }}
+            managedUserId=${{ steps.resolve-vars.outputs.managedUserId }}
+            publisherEmail=${{ vars.APIM_PUBLISHER_EMAIL }}
+            publisherName='${{ vars.APIM_PUBLISHER_NAME }}'
 
-      - id: buid-and-deploy
-        name: Build and deploy
-        run: .\Deployment\Build.ps1 -ResourceGroup ${{ steps.resolve-vars.outputs.resourceGroupName }} -ServiceName ${{ steps.deploy.outputs.appName }}
+      - uses: kheiakiyama/install-azcopy-action@v2
+        with:
+          version: 'v10'
+
+      - name: Publish Blazor client code to Storage
+        run: |
+          .\client\PublishServices.ps1 `
+            -rgName ${{ steps.resolve-vars.outputs.resourceGroupName }} `            
+            -appVersion ${{ github.sha }}

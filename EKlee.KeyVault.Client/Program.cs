@@ -4,6 +4,7 @@ using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using EKlee.KeyVault.Client;
 using EKlee.KeyVault.Client.Services;
 using EKlee.KeyVault.Client.Modules;
+using static System.Formats.Asn1.AsnWriter;
 
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
 builder.RootComponents.Add<App>("#app");
