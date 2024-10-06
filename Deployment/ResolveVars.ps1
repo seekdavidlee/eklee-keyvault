@@ -46,6 +46,10 @@ if ($LastExitCode -ne 0) {
 }
 $obj = $json | ConvertFrom-Json
 $groupName = $obj.Name
+if (!$groupName) {
+    throw "Unable to locate group, json $json"
+}
+
 "resourceGroupName=$groupName" >> $env:GITHUB_OUTPUT
 "prefix=vs00" >> $env:GITHUB_OUTPUT
 
