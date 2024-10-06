@@ -51,7 +51,7 @@ resource storageContainer 'Microsoft.Storage/storageAccounts/blobServices/contai
   }
 }
 
-resource staticWebsiteSetup 'Microsoft.Resources/deploymentScripts@2020-10-01' = {
+resource staticWebsiteSetup 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
   name: appNameStr
   kind: 'AzurePowerShell'
   location: location
@@ -251,7 +251,7 @@ resource dnsEndpoint 'Microsoft.Cdn/profiles/endpoints@2024-06-01-preview' = {
   }
 }
 
-resource apim 'Microsoft.ApiManagement/service@2024-05-01' = {
+resource apim 'Microsoft.ApiManagement/service@2023-09-01-preview' = {
   name: apimNameStr
   location: location
   sku: {
@@ -264,7 +264,7 @@ resource apim 'Microsoft.ApiManagement/service@2024-05-01' = {
   }
 }
 
-resource apimpolicy 'Microsoft.ApiManagement/service/policies@2024-05-01' = {
+resource apimpolicy 'Microsoft.ApiManagement/service/policies@2023-09-01-preview' = {
   parent: apim
   name: 'policy'
   properties: {
@@ -273,7 +273,7 @@ resource apimpolicy 'Microsoft.ApiManagement/service/policies@2024-05-01' = {
   }
 }
 
-resource apis 'Microsoft.ApiManagement/service/apis@2024-05-01' = {
+resource apis 'Microsoft.ApiManagement/service/apis@2023-09-01-preview' = {
   parent: apim
   name: 'keyvault-api'
   properties: {
@@ -285,7 +285,7 @@ resource apis 'Microsoft.ApiManagement/service/apis@2024-05-01' = {
   }
 }
 
-resource apispolicy 'Microsoft.ApiManagement/service/apis/policies@2024-05-01' = {
+resource apispolicy 'Microsoft.ApiManagement/service/apis/policies@2023-09-01-preview' = {
   parent: apis
   name: 'policy'
   properties: {
@@ -294,7 +294,7 @@ resource apispolicy 'Microsoft.ApiManagement/service/apis/policies@2024-05-01' =
   }
 }
 
-resource apigetallsecrets 'Microsoft.ApiManagement/service/apis/operations@2024-05-01' = {
+resource apigetallsecrets 'Microsoft.ApiManagement/service/apis/operations@2023-09-01-preview' = {
   parent: apis
   name: 'all'
   properties: {

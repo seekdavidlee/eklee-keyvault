@@ -53,4 +53,4 @@ if (!$groupName) {
 "resourceGroupName=$groupName" >> $env:GITHUB_OUTPUT
 "prefix=vs00" >> $env:GITHUB_OUTPUT
 
-GetResourceAndSetInOutput -SolutionId $solutionId -EnvName $BUILD_ENV -ResourceId 'app-id' -OutputKey "managedUserId"
+GetResourceAndSetInOutput -SolutionId $solutionId -EnvName $BUILD_ENV -ResourceId 'app-id' -OutputKey "managedUserId" -UseId
