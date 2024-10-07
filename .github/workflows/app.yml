@@ -68,3 +68,5 @@ jobs:
             -environmentName ${{ needs.setup.outputs.build_env }} `
             -rgName ${{ steps.resolve-vars.outputs.resourceGroupName }} `            
             -appVersion ${{ github.sha }}
+        env:
+          APPSETTINGS: ${{ vars.APPSETTINGS }}            
