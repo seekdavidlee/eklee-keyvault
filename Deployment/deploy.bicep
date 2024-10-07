@@ -270,6 +270,9 @@ resource apim 'Microsoft.ApiManagement/service@2023-09-01-preview' = {
     name: 'Consumption'
     capacity: 0
   }
+  tags: {
+    update_time: scriptVersion
+  }
   properties: {
     publisherEmail: publisherEmail
     publisherName: publisherName
