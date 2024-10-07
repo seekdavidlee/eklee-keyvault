@@ -273,7 +273,7 @@ resource apimpolicy 'Microsoft.ApiManagement/service/policies@2023-09-01-preview
   }
 }
 
-var serviceUrl = 'https://${kvNameStr}.${environment().suffixes.keyvaultDns}/'
+var serviceUrl = 'https://${kvNameStr}${environment().suffixes.keyvaultDns}/'
 
 resource apis 'Microsoft.ApiManagement/service/apis@2023-09-01-preview' = {
   parent: apim
