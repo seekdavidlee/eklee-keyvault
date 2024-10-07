@@ -64,6 +64,6 @@ jobs:
 
       - name: Publish Blazor client code to Storage
         run: |
-          .\client\PublishServices.ps1 `
+          .\Deployment\PublishServices.ps1 `
             -rgName ${{ steps.resolve-vars.outputs.resourceGroupName }} `            
             -appVersion ${{ github.sha }}
