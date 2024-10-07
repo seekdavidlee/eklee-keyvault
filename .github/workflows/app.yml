@@ -55,7 +55,8 @@ jobs:
             managedUserId=${{ steps.resolve-vars.outputs.managedUserId }}
             publisherEmail=${{ vars.APIM_PUBLISHER_EMAIL }}
             publisherName="${{ vars.APIM_PUBLISHER_NAME }}"
-            disableStaticWebsiteSetup=${{ steps.resolve-vars.outputs.disableStaticWebsiteSetup }} 
+            disableStaticWebsiteSetup=${{ steps.resolve-vars.outputs.disableStaticWebsiteSetup }}
+            staticWebPrimaryEndpoint=${{ steps.resolve-vars.outputs.staticWebPrimaryEndpoint }}
 
       - uses: kheiakiyama/install-azcopy-action@v1
         with:

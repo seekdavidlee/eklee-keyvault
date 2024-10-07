@@ -9,6 +9,7 @@ param scriptVersion string = utcNow()
 param publisherEmail string
 param publisherName string
 param disableStaticWebsiteSetup string
+param staticWebPrimaryEndpoint string
 
 var kvNameStr = empty(kvName) ? '${prefix}${uniqueString(resourceGroup().name)}' : kvName
 var strNameStr = empty(strName) ? '${prefix}${uniqueString(resourceGroup().name)}' : strName
@@ -83,7 +84,9 @@ resource storageAccountBlobServices 'Microsoft.Storage/storageAccounts/blobServi
       corsRules: [
         {
           allowedOrigins: [
-            staticWebsiteSetup.properties.outputs.endpoint
+            disableStaticWebsiteSetup == 'false'
+              ? staticWebsiteSetup.properties.outputs.endpoint
+              : staticWebPrimaryEndpoint
           ]
           allowedMethods: [
             'POST'
@@ -138,7 +141,15 @@ resource dns 'Microsoft.Cdn/profiles@2024-06-01-preview' = {
 
 var edgeUrl = 'https://${appNameStr}.azureedge.net'
 
-var websiteUrl = replace(replace(staticWebsiteSetup.properties.outputs.endpoint, 'https://', ''), '/', '')
+var websiteUrl = replace(
+  replace(
+    disableStaticWebsiteSetup == 'false' ? staticWebsiteSetup.properties.outputs.endpoint : staticWebPrimaryEndpoint,
+    'https://',
+    ''
+  ),
+  '/',
+  ''
+)
 resource dnsEndpoint 'Microsoft.Cdn/profiles/endpoints@2024-06-01-preview' = {
   name: appNameStr
   parent: dns
