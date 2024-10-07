@@ -16,6 +16,9 @@
                 <method>GET</method>
                 <method>POST</method>
             </allowed-methods>
+            <allowed-headers>
+                <header>*</header>
+            </allowed-headers>            
         </cors>
         <set-backend-service base-url="https://@KEYVAULTNAME@.vault.azure.net" />
         <rewrite-uri template="/secrets?maxresults=25&amp;api-version=7.5" />

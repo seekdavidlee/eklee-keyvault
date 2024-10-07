@@ -67,4 +67,20 @@ Set-ASMGitHubDeploymentToResourceGroup -SOLUTIONID "keyvault-viewer-v2" -ENVIRON
 Set-ASMGitHubDeploymentToResourceGroup -SOLUTIONID "keyvault-viewer-v2" -ENVIRONMENT $environmentName -TENANT $a.tenantId -SUBSCRIPTION $a.Id -ROLENAME "Storage Blob Data Owner"
 ```
 
-The role `Storage Blob Data Owner` is assigned because we need to use azcopy to sync changes to the Storage account using a shared-access-token (sas) key. This gives the service principal permission to generate the appropriate sas key.
+The role `Storage Blob Data Owner` is assigned to `GitHub Deployment` service principal because we need to use azcopy to sync changes to the Storage account using a shared-access-token (sas) key. This gives the service principal permission to generate the appropriate sas key.
+
+## Post Deployment RBAC
+
+There are 2 groups created. `app-keyvault Secrets Admins` and `app-keyvault Secrets User`. The following script will assign RBAC to the 2 groups.
+
+```powershell
+.\ApplyAssignments.ps1
+```
+
+You can now assign users to the right group for access.
+
+## Set secret
+
+```powershell
+.\SetScret.ps1 -name <name> -value <value> -environmentName <dev or prod>
+```
