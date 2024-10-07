@@ -38,14 +38,15 @@ $indexHtml = Get-Content outcli\wwwroot\index.html
 $indexHtml = $indexHtml.Replace("css/app.css?version=0", "css/app.css?version=$appVersion")
 Set-Content outcli\wwwroot\index.html -Value $indexHtml -Force
 
-$end = (Get-Date).AddDays(1).ToString("yyyy-MM-dd")
-$start = (Get-Date).ToString("yyyy-MM-dd")
-$sas = (az storage container generate-sas --auth-mode login --as-user -n `$web --account-name $accountName --permissions racwld --expiry $end --start $start --https-only | ConvertFrom-Json)
-if (!$sas) {
-    throw "Unable to get a sas key!"
-}
+# $end = (Get-Date).AddDays(1).ToString("yyyy-MM-dd")
+# $start = (Get-Date).ToString("yyyy-MM-dd")
+# $sas = (az storage container generate-sas --auth-mode login --as-user -n `$web --account-name $accountName --permissions racwld --expiry $end --start $start --https-only | ConvertFrom-Json)
+# if (!$sas) {
+#     throw "Unable to get a sas key!"
+# }
+$Env:AZCOPY_AUTO_LOGIN_TYPE="AZCLI"
 
-azcopy_v10 sync outcli\wwwroot "https://$accountName.blob.core.windows.net/`$web?$sas" --recursive=true --delete-destination=true --compare-hash=MD5
+azcopy_v10 sync outcli\wwwroot "https://$accountName.blob.core.windows.net/`$web" --recursive=true --delete-destination=true --compare-hash=MD5
 if ($LastExitCode -ne 0) {
     throw "Unable to do az sync."
 }
