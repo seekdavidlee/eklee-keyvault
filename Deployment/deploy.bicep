@@ -282,6 +282,9 @@ resource apis 'Microsoft.ApiManagement/service/apis@2023-09-01-preview' = {
     subscriptionRequired: true
     serviceUrl: 'https://${kvNameStr}.${environment().suffixes.keyvaultDns}/'
     path: 'keyvault'
+    protocols: [
+      'https'
+    ]
   }
 }
 
