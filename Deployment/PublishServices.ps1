@@ -54,12 +54,14 @@ $groups = asm lookup group --asm-sol $solutionId --asm-env $environmentName | Co
 $rgId = $groups[0].GroupId
 
 $url = "https://management.azure.com/$rgId/providers/Microsoft.ApiManagement/service/$apimName/subscriptions/master/listSecrets?api-version=2021-04-01-preview"
+# Azure CLI does not support getting subscription key directly, so we must use REST
 $apimKeys = az rest --method post --url $url | ConvertFrom-Json
 
 $configContent = Get-Content .\Deployment\config.json
 $configContent = $configContent.Replace("%SUBSCRIPTIONKEY%", $apimKeys.primaryKey)
 $configContent = $configContent.Replace("%APIM%", $apimName)
 
+New-Item -Path .\ -Name "outconfigs" -ItemType Directory
 Set-Content .\outconfigs\config.json -Value $configContent 
 
 $containerName = "configs"
