@@ -12,7 +12,7 @@ function GetResource {
         [string]$resourceId
     )
         
-    $obj = asm lookup resource --asm-rid $resourceId --asm-sol $solutionId --asm-env $environmentName --asm-com "client" | ConvertFrom-Json
+    $obj = asm lookup resource --asm-rid $resourceId --asm-sol $solutionId --asm-env $environmentName | ConvertFrom-Json
     if ($LastExitCode -ne 0) {        
         throw "Unable to lookup resource."
     }
