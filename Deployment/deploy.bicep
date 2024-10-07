@@ -8,6 +8,7 @@ param managedUserId string
 param scriptVersion string = utcNow()
 param publisherEmail string
 param publisherName string
+param disableStaticWebsiteSetup string
 
 var kvNameStr = empty(kvName) ? '${prefix}${uniqueString(resourceGroup().name)}' : kvName
 var strNameStr = empty(strName) ? '${prefix}${uniqueString(resourceGroup().name)}' : strName
@@ -51,7 +52,7 @@ resource storageContainer 'Microsoft.Storage/storageAccounts/blobServices/contai
   }
 }
 
-resource staticWebsiteSetup 'Microsoft.Resources/deploymentScripts@2023-08-01' = {
+resource staticWebsiteSetup 'Microsoft.Resources/deploymentScripts@2023-08-01' = if (disableStaticWebsiteSetup == 'false') {
   name: appNameStr
   kind: 'AzurePowerShell'
   location: location
