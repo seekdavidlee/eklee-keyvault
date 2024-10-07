@@ -1,0 +1,13 @@
+{
+	"APIM": {
+		"SubscriptionKey": "%SUBSCRIPTIONKEY%",
+		"BaseUrl": "https://%APIM%.azure-api.net/",
+		"TokenScopes": [
+			"https://vault.azure.net/user_impersonation"
+		],
+		"SecretsActions": {
+			"List": "keyvault/all-secrets",
+			"Get": "GetSecret"
+		}
+	}
+}

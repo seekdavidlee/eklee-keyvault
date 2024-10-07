@@ -1,5 +1,4 @@
 param(
-    [string]$rgName,
     [string]$environmentName,    
     [string]$appVersion)
 
@@ -49,3 +48,26 @@ azcopy_v10 sync outcli\wwwroot "https://$accountName.blob.core.windows.net/`$web
 if ($LastExitCode -ne 0) {
     throw "Unable to do az sync."
 }
+
+$apimName = (GetResource -solutionId $solutionId -environmentName $environmentName -resourceId "app-apis").Name
+$groups = asm lookup group --asm-sol $solutionId --asm-env $environmentName | ConvertFrom-Json
+$rgId = $groups[0].GroupId
+
+$url = "https://management.azure.com/$rgId/providers/Microsoft.ApiManagement/service/$apimName/subscriptions/master/listSecrets?api-version=2021-04-01-preview"
+$apimKeys = az rest --method post --url $url | ConvertFrom-Json
+
+$configContent = Get-Content .\Deployment\config.json
+$configContent = $configContent.Replace("%SUBSCRIPTIONKEY%", $apimKeys.primaryKey)
+$configContent = $configContent.Replace("%APIM%", $apimName)
+
+Set-Content .\outconfigs\config.json -Value $configContent 
+
+$containerName = "configs"
+$end = (Get-Date).AddMinutes(15).ToString("yyyy-MM-ddTHH:mm:ssZ")
+$start = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ssZ")
+$sas = (az storage container generate-sas --auth-mode login --as-user -n $containerName --account-name $accountName --permissions w --expiry $end --start $start --https-only | ConvertFrom-Json)
+if (!$sas) {
+    throw "Unable to get a sas key!"
+}
+
+azcopy copy .\outconfigs\config.json "https://$accountName.blob.core.windows.net/$containerName/"
