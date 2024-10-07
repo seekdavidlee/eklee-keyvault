@@ -72,4 +72,4 @@ if (!$sas) {
     throw "Unable to get a sas key!"
 }
 
-azcopy copy .\outconfigs\config.json "https://$accountName.blob.core.windows.net/$containerName/"
+azcopy copy .\outconfigs\config.json "https://$accountName.blob.core.windows.net/$containerName/config.json?$sas"
