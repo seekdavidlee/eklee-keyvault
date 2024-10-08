@@ -309,7 +309,7 @@ resource apispolicy 'Microsoft.ApiManagement/service/apis/policies@2023-09-01-pr
   parent: apis
   name: 'policy'
   properties: {
-    value: replace(loadTextContent('apim-apis-policy.xml'), '%EDGEURL%', '${appNameStr}.azureedge.net')
+    value: replace(loadTextContent('apim-apis-policy.xml'), '%EDGEURL%', edgeUrl)
     format: 'xml'
   }
 }
