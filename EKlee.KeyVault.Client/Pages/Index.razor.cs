@@ -12,8 +12,8 @@ public partial class Index : ComponentBase
 
     [Inject] private KeyVaultService KeyVaultService { get; set; } = default!;
 
-    private RadzenDataGrid<SecretItem>? dataGridRef;
-    private List<SecretItem>? secretItems;
+    private RadzenDataGrid<SecretItemView>? dataGridRef;
+    private List<SecretItemView>? secretItems;
     private string? errorMessage;
 
     protected override async Task OnInitializedAsync()
@@ -21,7 +21,29 @@ public partial class Index : ComponentBase
         errorMessage = null;
         try
         {
-            secretItems = (await KeyVaultService.GetSecrets(AccessTokenProvider)).ToList();
+            secretItems = (await KeyVaultService.GetSecretsAsync(AccessTokenProvider)).Select(x => new SecretItemView(x)).ToList();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    private async void ShowSecret(SecretItemView secretItemView)
+    {
+        errorMessage = null;
+        try
+        {
+            string? value = await KeyVaultService.GetSecretAsync(AccessTokenProvider, secretItemView.Id!);
+            if (value is null)
+            {
+                errorMessage = "Unable to get secret!";
+            }
+            else
+            {
+                secretItemView.Value = value;
+            }
+            StateHasChanged();
         }
         catch (Exception ex)
         {

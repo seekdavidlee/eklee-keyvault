@@ -10,7 +10,7 @@
         <base />
         <cors allow-credentials="false">
             <allowed-origins>
-                <origin>*</origin>
+                <origin>%EDGEURL%</origin>
             </allowed-origins>
             <allowed-methods>
                 <method>GET</method>
@@ -20,8 +20,6 @@
                 <header>*</header>
             </allowed-headers>            
         </cors>
-        <set-backend-service base-url="https://@KEYVAULTNAME@.vault.azure.net" />
-        <rewrite-uri template="/secrets?maxresults=25&amp;api-version=7.5" />
     </inbound>
     <!-- Control if and how the requests are forwarded to services  -->
     <backend>

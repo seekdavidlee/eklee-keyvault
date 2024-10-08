@@ -309,7 +309,7 @@ resource apispolicy 'Microsoft.ApiManagement/service/apis/policies@2023-09-01-pr
   parent: apis
   name: 'policy'
   properties: {
-    value: replace(loadTextContent('apim-apis-policy.xml'), '@KEYVAULTNAME@', kvNameStr)
+    value: replace(loadTextContent('apim-apis-policy.xml'), '%EDGEURL%', '${appNameStr}.azureedge.net')
     format: 'xml'
   }
 }
@@ -320,6 +320,18 @@ resource apigetallsecrets 'Microsoft.ApiManagement/service/apis/operations@2023-
   properties: {
     displayName: 'all-secrets'
     method: 'GET'
-    urlTemplate: '/all-secrets'
+    urlTemplate: '/secrets'
+    policies: replace(loadTextContent('all-secrets-policy.xml'), '%KEYVAULTNAME$', kvNameStr)    
+  }
+}
+
+resource apigetsecret 'Microsoft.ApiManagement/service/apis/operations@2023-09-01-preview' = {
+  parent: apis
+  name: 'get-secret'
+  properties: {
+    displayName: 'get-secret'
+    method: 'GET'
+    urlTemplate: '/secret'
+    policies: replace(loadTextContent('get-secret-policy.xml'), '%KEYVAULTNAME$', kvNameStr)    
   }
 }

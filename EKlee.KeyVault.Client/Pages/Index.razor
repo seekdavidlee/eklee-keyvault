@@ -8,14 +8,18 @@
         @errorMessage
     </RadzenAlert>
 }
-<RadzenDataGrid force-grid-header-width="true" @ref="@dataGridRef" ColumnWidth="200px" AllowFiltering="true" AllowPaging="true" AllowSorting="true" Data="@secretItems" TItem="SecretItem">
+<RadzenDataGrid @ref="@dataGridRef" ColumnWidth="100%" AllowFiltering="true" AllowPaging="true" AllowSorting="true" Data="@secretItems" TItem="SecretItemView">
     <Columns>
-        <RadzenDataGridColumn TItem="SecretItem" Title="Name" Width="50px" Property="Name" />
-        <RadzenDataGridColumn TItem="SecretItem" Context="record" Width="60px" Filterable="false" Sortable="false" TextAlign="TextAlign.Right" Frozen="true" FrozenPosition="FrozenColumnPosition.Right">
+        <RadzenDataGridColumn TItem="SecretItemView" Title="Name" Width="50px" Property="Name" />
+        <RadzenDataGridColumn TItem="SecretItemView" Title="Value" Width="50px" Property="Value" />
+        <RadzenDataGridColumn TItem="SecretItemView" Context="record" Width="60px" Filterable="false" Sortable="false" TextAlign="TextAlign.Right" Frozen="true" FrozenPosition="FrozenColumnPosition.Right">
             <Template Context="record">
-                <RadzenButton Icon="edit" ButtonStyle="ButtonStyle.Light" Variant="Variant.Flat" Size="ButtonSize.Medium" @onclick:stopPropagation="true" />
+                @if (record.Value == "***")
+                {
+                    <RadzenButton Click="()=>ShowSecret(record)" title="show secret" Icon="visibility" ButtonStyle="ButtonStyle.Light" Variant="Variant.Flat" Size="ButtonSize.Medium" @onclick:stopPropagation="true" />
+                }
+                <RadzenButton Click="()=>ShowSecret(record)" title="copy secret to clipboard" Icon="content_copy" ButtonStyle="ButtonStyle.Light" Variant="Variant.Flat" Size="ButtonSize.Medium" @onclick:stopPropagation="true" />
             </Template>
         </RadzenDataGridColumn>
     </Columns>
 </RadzenDataGrid>
-

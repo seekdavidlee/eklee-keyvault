@@ -1,4 +1,6 @@
-﻿namespace EKlee.KeyVault.Client.Models;
+﻿using System.Text.Json.Serialization;
+
+namespace EKlee.KeyVault.Client.Models;
 
 public class SecretItemList
 {
@@ -9,6 +11,7 @@ public class SecretItemList
 
 public class SecretValue
 {
+    [JsonPropertyName("value")]
     public string? Value { get; set; }
 }
 
