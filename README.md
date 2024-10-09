@@ -1,55 +1,52 @@
 # Introduction
-This project demostrates how we leverage Azure RBAC (Role Based Access Control) to secure access to an Azure Key Vault instance. Specifically, we are interested to use this project to understand how a user can access secrets.
 
-## Build Status
+This project demostrates how we leverage Azure RBAC (Role Based Access Control) to secure access to an Azure Key Vault instance. Specifically, we are interested to use this project to understand how a user can access secrets. Another goal is to leverage Blazor WASM as a client to do access Key Vault secrets without having any custom backend service we need to write and host.
+
+The solution makes use of Azure API Management (APIM) to proxy calls to Azure Key Vault REST API given Azure Key Vault does not have CORS support. APIM itself is secured by a subscription key. Azure Storage is used to host the Blazor WASM client as a static website. Azure Frontdoor is used to front the Blazor WASM client for CDN purposes. Azure Storage is also used to host a runtime config that is downloaded to the Blazor WASM client. The Blazor WASM client will download the config file directly from Azure storage using the user role. 
+
+The bicep will ensure when creating Azure Key Vault, we are using Azure role-based access control for the permission control.
+
+Note that this solution is NOT production ready as there are still several security changes required.
+
+### Build Status
 ![Build status](https://github.com/seekdavidlee/Eklee-KeyVault/actions/workflows/app.yml/badge.svg)
 
-# Setup
-The following identity settings need to be configured before the project can be successfully executed. For more info see https://aka.ms/dotnet-template-ms-identity-platform. 
+## Automated setup
 
-The Domain name would be your Azure Active Directory, usually in the form of [tenant name].onmicrosoft.com. The Tenant Id would also be found in your Azure Active Directory, in the form of a GUID. 
+1. Fork this repo
+1. Follow the steps listed under [AzSolutionManager (ASM)](#azsolutionmanager-asm).
+1. The app need to be configured. Create an single-tenant app registeration with any name. One suggestion is to use `Eklee.KeyVaultv2`.
+1. Under GitHub repo settings, create a new environment named `prod`. Create a config for `APPSETTINGS` with the value listed below. Be sure to update the `<Tenant Id>` and `<Client Id>`. The `%STORAGENAME%` will be replaced with the correct value at deployment time.
+1. Create 2 more configs `APIM_PUBLISHER_EMAIL` and `APIM_PUBLISHER_NAME` with the appropriate values. This is not really used but required for APIM deployment.
+1. Start a Github deployment. Once deployment is completed, locate the app registration in Entra and add `Single-page application`. Look for the Frontdoor URL as the URL to add like so `https://<Frontdoor name>.azureedge.net/authentication/login-callback`.
+1. Perform appropriate role assignments by following the steps in [Post Deployment RBAC](#post-deployment-rbac).
+1. Navigate to `https://<Frontdoor name>.azureedge.net` with the appropriate user who is assigned the the group.
 
-The Client Id and Client Secret would be part of your App Registration process. You can follow the process here to create your App Registration: https://docs.microsoft.com/en-us/azure/active-directory/develop/quickstart-register-app. As a further note when you create your App Registration, your Redirect Url would initially be http://localhost:port_number. 
-
-The Azure Key Vault name would be the name of your Azure Key Vault. For more information, pay attention to the Azure Key Vault Setup section below.
-
-```
+```json
 {
+	"System": {
+		"Header": "KeyVault Client",
+		"Footer": "KeyVault Client 2024"
+	},	
+	"AdditionalScopes": [
+		"https://storage.azure.com/Microsoft.Storage/storageAccounts/blobServices/containers/blobs/read",
+		"https://storage.azure.com/Microsoft.Storage/storageAccounts/blobServices/containers/blobs/write",
+		"https://vault.azure.net/Microsoft.KeyVault/vaults/secrets/readMetadata/action",
+		"https://vault.azure.net/Microsoft.KeyVault/vaults/secrets/getSecret/action"
+	],
+	"StorageUri": "https://%STORAGENAME%.blob.core.windows.net/",
+	"StorageContainerName": "configs",
 	"AzureAd": {
-		"Instance": "https://login.microsoftonline.com/",
-		"Domain": "",
-		"TenantId": "",
-		"ClientId": "",
-		"ClientSecret": "",
-		"CallbackPath": "/signin-oidc"
-	},
-	"KeyVaultName": "",
-	"Logging": {
-		"LogLevel": {
-			"Default": "Information",
-			"Microsoft": "Warning",
-			"Microsoft.Hosting.Lifetime": "Information"
-		}
-	},
-	"AllowedHosts": "*"
+		"Authority": "https://login.microsoftonline.com/<Tenant Id>",
+		"ClientId": "<Client Id>",
+		"ValidateAuthority": false,
+		"LoginMode": "Redirect"
+	}
 }
 ```
+## AzSolutionManager (ASM)
 
-## Azure Key Vault Setup
-As you are creating your Azure Key Vault, be sure to choose Azure role-based access control for the permission control.
-
-# Azure Key Vault Roles and Usage
-There will be a few important roles to take note. The first would be Azure Key Vault Reader and the second would be Azure Key Vault Secrets User.
-
-Per documentation, the **Azure Key Vault Reader** role has the ability to "Read metadata of key vaults and its certificates, keys, and secrets" and the **Azure Key Vault Secrets User** role has the ability to "Read secret contents". 
-
-We can start by assigning all users who has access to Secrets with the **Azure Key Vault Reader** role. As a best practice, we can create a Group in AAD and assign this role to the users for this Azure Key Vault.
-
-Next, if we intend for all users to have access to secrets, we can assign the **Azure Key Vault Secrets User** role to the same Group. Otherwise, we can selectively choose specific secrets and assign the role to authorized users. That said, the [best practice](https://docs.microsoft.com/en-us/azure/active-directory/roles/best-practices#6-use-groups-for-azure-ad-role-assignments-and-delegate-the-role-assignment) is to assign specific secrets to groups with the appropriate role. This way, we can delegate the assignment to one or more owners without having to invole Azure Administrators.
-
-# AzSolutionManager (ASM)
-
-This project uses AzSolutionManager (ASM) for deployment to Azure Subscription. To use ASM, please follow the steps
+This project uses AzSolutionManager (ASM) for deployment to Azure Subscription. To use ASM, please follow the steps.
 
 1. Clone Utility and follow the steps in the README to setup ASM.
 
@@ -63,5 +60,34 @@ git clone https://github.com/seekdavidlee/az-solution-manager-utils.git
 az login --tenant <TENANT ID>
 Push-Location ..\az-solution-manager-utils\; .\LoadASMToSession.ps1; Pop-Location
 $a = az account show | ConvertFrom-Json; Invoke-ASMSetup -DIRECTORY Deployment -TENANT $a.tenantId -SUBSCRIPTION $a.Id -ENVIRONMENT $environmentName
-Set-ASMGitHubDeploymentToResourceGroup -SOLUTIONID "keyvault-viewer" -ENVIRONMENT $environmentName -TENANT $a.tenantId -SUBSCRIPTION $a.Id
+Set-ASMGitHubDeploymentToResourceGroup -SOLUTIONID "keyvault-viewer-v2" -ENVIRONMENT $environmentName -TENANT $a.tenantId -SUBSCRIPTION $a.Id
+Set-ASMGitHubDeploymentToResourceGroup -SOLUTIONID "keyvault-viewer-v2" -ENVIRONMENT $environmentName -TENANT $a.tenantId -SUBSCRIPTION $a.Id -ROLENAME "Storage Blob Data Owner"
 ```
+
+The role `Storage Blob Data Owner` is assigned to `GitHub Deployment` service principal because we need to use azcopy to sync changes to the Storage account using a shared-access-token (sas) key. This gives the service principal permission to generate the appropriate sas key.
+
+## Post Deployment RBAC
+
+There will be a few important roles to take note. The first would be `Azure Key Vault Reader` and the second would be `Azure Key Vault Secrets User`. Per documentation, the **Azure Key Vault Reader** role has the ability to "Read metadata of key vaults and its certificates, keys, and secrets" and the `Azure Key Vault Secrets User` role has the ability to **Read secret contents**. 
+
+We can start by assigning all users who has access to Secrets with the **Azure Key Vault Reader** role. As a best practice, we create Group in Entra and assign this role to the users who need acccess to Azure Key Vault.
+
+There are 2 groups created. `app-keyvault Secrets Admins` and `app-keyvault Secrets User`. The following script will assign RBAC to the 2 groups.
+
+```powershell
+.\ApplyAssignments.ps1
+```
+
+You can now assign users to the right group for access.
+
+### Set secret
+
+This is a utility script to set secret.
+
+```powershell
+.\SetScret.ps1 -name <name> -value <value> -environmentName <dev or prod>
+```
+
+### Out-of-scope
+
+If we intend for all users to have access to secrets, we can assign the **Azure Key Vault Secrets User** role to the same Group. Otherwise, we can selectively choose specific secrets and assign the role to authorized users. The [best practice](https://docs.microsoft.com/en-us/azure/active-directory/roles/best-practices#6-use-groups-for-azure-ad-role-assignments-and-delegate-the-role-assignment) is to assign specific secrets to groups with the appropriate role. This way, we can delegate the assignment to one or more owners without having to invole Azure Administrators.

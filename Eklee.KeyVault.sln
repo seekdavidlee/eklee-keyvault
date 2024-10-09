@@ -1,15 +1,15 @@
 ﻿
 Microsoft Visual Studio Solution File, Format Version 12.00
-# Visual Studio Version 16
-VisualStudioVersion = 16.0.31205.134
+# Visual Studio Version 17
+VisualStudioVersion = 17.11.35312.102
 MinimumVisualStudioVersion = 10.0.40219.1
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "Eklee.KeyVault.Viewer", "Eklee.KeyVault.Viewer\Eklee.KeyVault.Viewer.csproj", "{A2C27330-B828-4322-A624-A9FDEBDA2CF5}"
-EndProject
 Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution Items", "{C4E9467C-7882-4EE7-9E6F-97114AC003F1}"
 	ProjectSection(SolutionItems) = preProject
 		.gitignore = .gitignore
 		README.md = README.md
 	EndProjectSection
+EndProject
+Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EKlee.KeyVault.Client", "EKlee.KeyVault.Client\EKlee.KeyVault.Client.csproj", "{3E57C303-890E-46C2-B95A-FD6CBDDC9B2C}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
@@ -17,10 +17,10 @@ Global
 		Release|Any CPU = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{A2C27330-B828-4322-A624-A9FDEBDA2CF5}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{A2C27330-B828-4322-A624-A9FDEBDA2CF5}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{A2C27330-B828-4322-A624-A9FDEBDA2CF5}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{A2C27330-B828-4322-A624-A9FDEBDA2CF5}.Release|Any CPU.Build.0 = Release|Any CPU
+		{3E57C303-890E-46C2-B95A-FD6CBDDC9B2C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{3E57C303-890E-46C2-B95A-FD6CBDDC9B2C}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{3E57C303-890E-46C2-B95A-FD6CBDDC9B2C}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{3E57C303-890E-46C2-B95A-FD6CBDDC9B2C}.Release|Any CPU.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

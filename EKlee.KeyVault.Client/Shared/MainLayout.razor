@@ -1,0 +1,94 @@
+﻿@using EKlee.KeyVault.Client.Services
+@using EKlee.KeyVault.Client.Modules;
+@using Microsoft.AspNetCore.Components.Authorization
+@using Microsoft.AspNetCore.Components.WebAssembly.Authentication
+
+@inherits LayoutComponentBase
+@inject IEnumerable<IAppModule> AppModules
+@inject Config SystemConfig
+@inject AuthenticationStateProvider AuthenticationStateProvider
+
+<RadzenLayout style="height: 100%">
+    <RadzenHeader>
+        <RadzenStack Orientation="Orientation.Horizontal" AlignItems="AlignItems.Center" Gap="0">
+            <RadzenSidebarToggle Click="@(() => sidebarIsExpanded = !sidebarIsExpanded)" />
+            <RadzenLabel Text="@SystemConfig.Header" />
+        </RadzenStack>
+    </RadzenHeader>
+    <RadzenSidebar @bind-Expanded="@sidebarIsExpanded">
+        <RadzenPanelMenu>
+            @{
+                foreach (var appModule in AppModules)
+
+                {
+                    <RadzenPanelMenuItem Text="@appModule.DisplayName" Icon="@appModule.Icon" Path="@appModule.Path" />
+                }
+            }
+        </RadzenPanelMenu>
+    </RadzenSidebar>
+    <RadzenBody>
+        @Body
+    </RadzenBody>
+    <RadzenFooter>
+        <div style="text-align: center;">
+            @SystemConfig.Footer
+        </div>
+    </RadzenFooter>
+</RadzenLayout>
+
+@code {
+    bool sidebarIsExpanded = true;
+
+
+
+    protected override async Task OnInitializedAsync()
+
+    {
+
+        var state = await this.AuthenticationStateProvider.GetAuthenticationStateAsync();
+
+        if (state is not null &&
+
+            state.User is not null &&
+
+            state.User.Identity is not null &&
+
+            state.User.Identity.IsAuthenticated)
+
+        {
+
+            SystemConfig.Update(state.User);
+
+        }
+
+        else
+
+        {
+
+            this.AuthenticationStateProvider.AuthenticationStateChanged += async (authState) =>
+
+            {
+
+                var result = await authState;
+
+                if (result is not null &&
+
+                    result.User is not null &&
+
+                    result.User.Identity is not null &&
+
+                    result.User.Identity.IsAuthenticated)
+
+                {
+
+                    SystemConfig.Update(result.User);
+
+                }
+
+            };
+
+        }
+
+    }
+}
+

@@ -7,24 +7,32 @@
                 "resource-type": "Microsoft.KeyVault/vaults"
             },
             {
-                "asm-resource-id": "app-apm",
-                "resource-type": "Microsoft.Insights/components"
+                "asm-resource-id": "app-apis",
+                "resource-type": "Microsoft.ApiManagement/service"
+            },            
+            {
+                "asm-resource-id": "app-id",
+                "resource-type": "Microsoft.ManagedIdentity/userAssignedIdentities"
             },
             {
-                "asm-resource-id": "app-svcplan",
-                "resource-type": "Microsoft.Web/serverfarms"
+                "asm-resource-id": "app-ui",
+                "resource-type": "Microsoft.Storage/storageAccounts"
             },
             {
-                "asm-resource-id": "app-svc",
-                "resource-type": "Microsoft.Web/sites"
+                "asm-resource-id": "app-cdn",
+                "resource-type": "Microsoft.Cdn/profiles"
+            },
+            {
+                "asm-resource-id": "app-cdnprofile",
+                "resource-type": "Microsoft.Cdn/profiles/endpoints"
             }
         ]
     },
     "groups": [
         {
-            "resource-group-name": "keyvault-viewer-@(asm.Environment)",
+            "resource-group-name": "keyvault-viewer-@(asm.Environment)-v2",
             "unique-resources-variable-key": "resources1",
-            "asm-solution-id": "keyvault-viewer",
+            "asm-solution-id": "keyvault-viewer-v2",
             "asm-environment": "@(asm.Environment)"
         }
     ]
