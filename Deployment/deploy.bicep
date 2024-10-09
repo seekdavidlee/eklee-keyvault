@@ -321,7 +321,15 @@ resource apigetallsecrets 'Microsoft.ApiManagement/service/apis/operations@2023-
     displayName: 'all-secrets'
     method: 'GET'
     urlTemplate: '/secrets'
-    policies: replace(loadTextContent('all-secrets-policy.xml'), '%KEYVAULTNAME$', kvNameStr)    
+  }
+}
+
+resource apigetallsecretspolicy 'Microsoft.ApiManagement/service/apis/operations/policies@2023-09-01-preview' = {
+  parent: apigetallsecrets
+  name: 'policy'
+  properties: {
+    value: replace(loadTextContent('all-secrets-policy.xml'), '%KEYVAULTNAME$', kvNameStr)
+    format: 'xml'
   }
 }
 
@@ -332,6 +340,14 @@ resource apigetsecret 'Microsoft.ApiManagement/service/apis/operations@2023-09-0
     displayName: 'get-secret'
     method: 'GET'
     urlTemplate: '/secret'
-    policies: replace(loadTextContent('get-secret-policy.xml'), '%KEYVAULTNAME$', kvNameStr)    
+  }
+}
+
+resource apigetsecretpolicy 'Microsoft.ApiManagement/service/apis/operations/policies@2023-09-01-preview' = {
+  parent: apigetsecret
+  name: 'policy'
+  properties: {
+    value: replace(loadTextContent('get-secret-policy.xml'), '%KEYVAULTNAME$', kvNameStr)
+    format: 'xml'
   }
 }

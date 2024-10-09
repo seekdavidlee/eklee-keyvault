@@ -6,8 +6,8 @@
 			"https://vault.azure.net/user_impersonation"
 		],
 		"SecretsActions": {
-			"List": "keyvault/all-secrets",
-			"Get": "GetSecret"
+			"List": "keyvault/secrets",
+			"Get": "keyvault/secret"
 		}
 	}
 }
