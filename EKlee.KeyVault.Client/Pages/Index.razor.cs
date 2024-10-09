@@ -112,6 +112,15 @@ public partial class Index : ComponentBase
             dataGridSecretItems.AddRange(cachedSecretItems!.Where(x => x.Name!.Contains(searchText)));
             await dataGridRef!.Reload();
         }
+        else
+        {
+            if (dataGridSecretItems.Count != cachedSecretItems!.Count)
+            {
+                dataGridSecretItems.Clear();
+                dataGridSecretItems.AddRange(cachedSecretItems!.Where(x => x.Name!.Contains(searchText)));
+                await dataGridRef!.Reload();
+            }
+        }
     }
 }
 

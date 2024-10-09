@@ -41,23 +41,16 @@ public class Config
     {
         if (Displayname == Constants.Unknown)
         {
-            var claimName = user.FindFirst(x => x.Type == "name");
-            if (claimName is not null)
-            {
-                Displayname = claimName.Value;
-            }
+            Displayname = user.Identity!.Name!;
         }
 
         if (Username == Constants.Unknown)
         {
-            var claimEmail = user.FindFirst(x => x.Type == "emails");
+            var lis = user.Claims.ToList();
+            var claimEmail = user.FindFirst(x => x.Type == "preferred_username");
             if (claimEmail is not null)
             {
-                var values = JsonSerializer.Deserialize<string[]>(claimEmail.Value);
-                if (values is not null)
-                {
-                    Username = values.First();
-                }
+                Username = claimEmail.Value;
             }
         }
     }

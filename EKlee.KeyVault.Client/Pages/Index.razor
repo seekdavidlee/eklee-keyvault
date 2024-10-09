@@ -15,17 +15,18 @@
     </RadzenAlert>
 }
 
-<RadzenRow>
-    <RadzenColumn Size="12" SizeMD="1">
-        <RadzenLabel Text="Search" />
+<RadzenRow class="rz-mb-4" AlignItems="AlignItems.Center">
+    <RadzenColumn Size="12" SizeMD="4">
+
+        <div class="d-flex align-items-center">
+            <RadzenLabel Text="Search" class="me-2" />
+            <RadzenTextBox Style="width:70%;" Value="@searchText" @oninput="HandleOnInput" />
+        </div>
     </RadzenColumn>
-    <RadzenColumn Size="12" SizeMD="1">
-        <RadzenTextBox Value="@searchText" @oninput="HandleOnInput" />
-    </RadzenColumn>
-    <RadzenColumn Size="12" SizeMD="10">
+    <RadzenColumn Size="12" SizeMD="8">
     </RadzenColumn>
 </RadzenRow>
-<RadzenRow>
+<RadzenRow class="rz-mb-1">
     <RadzenColumn Size="12" SizeMD="12">
         @if (loadingData)
         {
