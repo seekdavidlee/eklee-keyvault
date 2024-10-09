@@ -328,7 +328,7 @@ resource apigetallsecretspolicy 'Microsoft.ApiManagement/service/apis/operations
   parent: apigetallsecrets
   name: 'policy'
   properties: {
-    value: replace(loadTextContent('all-secrets-policy.xml'), '%KEYVAULTNAME$', kvNameStr)
+    value: replace(loadTextContent('all-secrets-policy.xml'), '%KEYVAULTNAME%', kvNameStr)
     format: 'xml'
   }
 }
@@ -347,7 +347,7 @@ resource apigetsecretpolicy 'Microsoft.ApiManagement/service/apis/operations/pol
   parent: apigetsecret
   name: 'policy'
   properties: {
-    value: replace(loadTextContent('get-secret-policy.xml'), '%KEYVAULTNAME$', kvNameStr)
+    value: replace(loadTextContent('get-secret-policy.xml'), '%KEYVAULTNAME%', kvNameStr)
     format: 'xml'
   }
 }
