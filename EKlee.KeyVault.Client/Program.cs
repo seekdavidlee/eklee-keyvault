@@ -1,17 +1,15 @@
-using KeyVaultClient.Modules;
 using Microsoft.AspNetCore.Components.Web;
 using Microsoft.AspNetCore.Components.WebAssembly.Hosting;
 using EKlee.KeyVault.Client;
 using EKlee.KeyVault.Client.Services;
 using EKlee.KeyVault.Client.Modules;
-using static System.Formats.Asn1.AsnWriter;
 
 var builder = WebAssemblyHostBuilder.CreateDefault(args);
 builder.RootComponents.Add<App>("#app");
 builder.RootComponents.Add<HeadOutlet>("head::after");
 
 builder.Services.AddSingleton<IAppModule, Dashboard>();
-builder.Services.AddSingleton<IAppModule, Users>();
+
 builder.Services.AddSingleton<Config>();
 
 // Create a httpClient that will be used to access the KeyVault

@@ -18,22 +18,29 @@ public partial class Index : ComponentBase
     [Inject] private ILogger<Index> Logger { get; set; } = default!;
 
     private RadzenDataGrid<SecretItemView>? dataGridRef;
-    private List<SecretItemView>? secretItems;
+    private List<SecretItemView>? cachedSecretItems;
+    private readonly List<SecretItemView> dataGridSecretItems = [];
     private string? errorMessage;
     private string? successMessage;
+    private string? searchText;
+    private bool loadingData;
 
     protected override async Task OnInitializedAsync()
     {
+        loadingData = true;
         successMessage = null;
         errorMessage = null;
         try
         {
-            secretItems = (await KeyVaultService.GetSecretsAsync(AccessTokenProvider)).Select(x => new SecretItemView(x)).ToList();
+            cachedSecretItems = (await KeyVaultService.GetSecretsAsync(AccessTokenProvider)).Select(x => new SecretItemView(x)).ToList();
+            dataGridSecretItems.AddRange(cachedSecretItems);
+            await dataGridRef!.Reload();
         }
         catch (Exception ex)
         {
             errorMessage = ex.Message;
         }
+        loadingData = false;
     }
 
     private async void CopyToClipboard(SecretItemView secretItemView)
@@ -52,7 +59,7 @@ public partial class Index : ComponentBase
             await JS.InvokeVoidAsync("clipboardCopy.copyText", secretItemView.Value);
 
             Logger.LogInformation("clipboardCopy.copyText invoked");
-            successMessage = "Copied to clipboard";
+            successMessage = $"Copied secret for {secretItemView.Name} to clipboard";
             StateHasChanged();
         }
         catch (Exception ex)
@@ -86,6 +93,24 @@ public partial class Index : ComponentBase
         catch (Exception ex)
         {
             errorMessage = ex.Message;
+        }
+    }
+
+    private async Task HandleOnInput(ChangeEventArgs args)
+    {
+        if (args.Value is null)
+        {
+            return;
+        }
+
+        searchText = args.Value.ToString();
+        Logger.LogInformation("searchtext: {searchText}", searchText);
+
+        if (searchText is not null && searchText.Length > 2)
+        {
+            dataGridSecretItems.Clear();
+            dataGridSecretItems.AddRange(cachedSecretItems!.Where(x => x.Name!.Contains(searchText)));
+            await dataGridRef!.Reload();
         }
     }
 }
