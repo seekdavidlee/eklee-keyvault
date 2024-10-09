@@ -2,6 +2,7 @@
 using EKlee.KeyVault.Client.Services;
 using Microsoft.AspNetCore.Components;
 using Microsoft.AspNetCore.Components.WebAssembly.Authentication;
+using Microsoft.JSInterop;
 using Radzen.Blazor;
 
 namespace EKlee.KeyVault.Client.Pages;
@@ -12,12 +13,18 @@ public partial class Index : ComponentBase
 
     [Inject] private KeyVaultService KeyVaultService { get; set; } = default!;
 
+    [Inject] private IJSRuntime JS { get; set; } = default!;
+
+    [Inject] private ILogger<Index> Logger { get; set; } = default!;
+
     private RadzenDataGrid<SecretItemView>? dataGridRef;
     private List<SecretItemView>? secretItems;
     private string? errorMessage;
+    private string? successMessage;
 
     protected override async Task OnInitializedAsync()
     {
+        successMessage = null;
         errorMessage = null;
         try
         {
@@ -29,20 +36,51 @@ public partial class Index : ComponentBase
         }
     }
 
+    private async void CopyToClipboard(SecretItemView secretItemView)
+    {
+        successMessage = null;
+        errorMessage = null;
+
+        try
+        {
+            if (secretItemView.Value == SecretItemView.PlaceHolderValue)
+            {
+                await UpdateSecretValueAsync(secretItemView);
+            }
+
+            Logger.LogInformation("invoking clipboardCopy.copyText");
+            await JS.InvokeVoidAsync("clipboardCopy.copyText", secretItemView.Value);
+
+            Logger.LogInformation("clipboardCopy.copyText invoked");
+            successMessage = "Copied to clipboard";
+            StateHasChanged();
+        }
+        catch (Exception ex)
+        {
+            errorMessage = ex.Message;
+        }
+    }
+
+    private async Task UpdateSecretValueAsync(SecretItemView secretItemView)
+    {
+        string? value = await KeyVaultService.GetSecretAsync(AccessTokenProvider, secretItemView.Id!);
+        if (value is null)
+        {
+            errorMessage = "Unable to get secret!";
+        }
+        else
+        {
+            secretItemView.Value = value;
+        }
+    }
+
     private async void ShowSecret(SecretItemView secretItemView)
     {
+        successMessage = null;
         errorMessage = null;
         try
         {
-            string? value = await KeyVaultService.GetSecretAsync(AccessTokenProvider, secretItemView.Id!);
-            if (value is null)
-            {
-                errorMessage = "Unable to get secret!";
-            }
-            else
-            {
-                secretItemView.Value = value;
-            }
+            await UpdateSecretValueAsync(secretItemView);
             StateHasChanged();
         }
         catch (Exception ex)

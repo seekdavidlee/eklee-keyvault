@@ -8,6 +8,12 @@
         @errorMessage
     </RadzenAlert>
 }
+@if (successMessage is not null)
+{
+    <RadzenAlert AlertStyle="AlertStyle.Success" Variant="Variant.Flat" Shade="Shade.Lighter">
+        @successMessage
+    </RadzenAlert>
+}
 <RadzenDataGrid @ref="@dataGridRef" ColumnWidth="100%" AllowFiltering="true" AllowPaging="true" AllowSorting="true" Data="@secretItems" TItem="SecretItemView">
     <Columns>
         <RadzenDataGridColumn TItem="SecretItemView" Title="Name" Width="50px" Property="Name" />
@@ -17,8 +23,9 @@
                 @if (record.Value == "***")
                 {
                     <RadzenButton Click="()=>ShowSecret(record)" title="show secret" Icon="visibility" ButtonStyle="ButtonStyle.Light" Variant="Variant.Flat" Size="ButtonSize.Medium" @onclick:stopPropagation="true" />
+                    <span>&nbsp;&nbsp;</span>
                 }
-                <RadzenButton Click="()=>ShowSecret(record)" title="copy secret to clipboard" Icon="content_copy" ButtonStyle="ButtonStyle.Light" Variant="Variant.Flat" Size="ButtonSize.Medium" @onclick:stopPropagation="true" />
+                <RadzenButton Click="()=>CopyToClipboard(record)" title="copy secret to clipboard" Icon="content_copy" ButtonStyle="ButtonStyle.Light" Variant="Variant.Flat" Size="ButtonSize.Medium" @onclick:stopPropagation="true" />
             </Template>
         </RadzenDataGridColumn>
     </Columns>
