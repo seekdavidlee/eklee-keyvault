@@ -16,6 +16,9 @@ Note that this solution is NOT production ready as there are still several secur
 1. Fork this repo
 1. Follow the steps listed under [AzSolutionManager (ASM)](#azsolutionmanager-asm).
 1. The app need to be configured. Create an single-tenant app registeration with any name. One suggestion is to use `Eklee.KeyVaultv2`.
+1. In API permissions, add `Azure Key Vault` as an API. Select `user_impersonation` and note the default as `Delegated permissions`.
+1. In API permissions, add `` as an API. Select `user_impersonation` and note the default as `Delegated permissions`.
+1. Select `Grant admin consent for <Tenant>` to grant admin consent.
 1. Under GitHub repo settings, create a new environment named `prod`. Create a config for `APPSETTINGS` with the value listed below. Be sure to update the `<Tenant Id>` and `<Client Id>`. The `%STORAGENAME%` will be replaced with the correct value at deployment time.
 1. Create 2 more configs `APIM_PUBLISHER_EMAIL` and `APIM_PUBLISHER_NAME` with the appropriate values. This is not really used but required for APIM deployment.
 1. Start a Github deployment. Once deployment is completed, locate the app registration in Entra and add `Single-page application`. Look for the Frontdoor URL as the URL to add like so `https://<Frontdoor name>.azureedge.net/authentication/login-callback`.
@@ -75,7 +78,7 @@ We can start by assigning all users who has access to Secrets with the **Azure K
 There are 2 groups created. `app-keyvault Secrets Admins` and `app-keyvault Secrets User`. The following script will assign RBAC to the 2 groups.
 
 ```powershell
-.\ApplyAssignments.ps1
+.\ApplyAssignments.ps1 -EnvironmentName <dev or prod>
 ```
 
 You can now assign users to the right group for access.
