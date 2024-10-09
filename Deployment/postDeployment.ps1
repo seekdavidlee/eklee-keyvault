@@ -35,6 +35,7 @@ function CreateAdGroupIfNotExist {
             throw "Unable to create group $groupName."
         }
         $groupId = $result.id
+        Start-Sleep -Seconds 15
     }
     else {
         $groupId = $groups.id
@@ -58,10 +59,13 @@ az role assignment create --assignee $groupId --role "Key Vault Secrets User" --
 if ($LastExitCode -ne 0) {        
     throw "Unable to assign role 'Key Vault Secrets User' to '$groupId'."
 }
+
+$o = GetResource -solutionId $solutionId -environmentName $ENVIRONMENT -resourceId "app-id"
 if (!$o) {
     Write-Host "Creating managed identity"
     $o = az identity create --name $solutionId --resource-group $groupName | ConvertFrom-Json
     $clientId = $o.clientId
+    Start-Sleep -Seconds 15
 }
 else {
     $clientId = (az resource show --ids $o.ResourceId --query "properties" | ConvertFrom-Json).principalId
