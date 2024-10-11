@@ -109,8 +109,18 @@ public partial class Index : ComponentBase
 
     private async Task SaveDisplayName(SecretItemView secretItemView)
     {
-        await BlobService.UpdateMetaAsync(AccessTokenProvider, metaList!);
-        secretItemView.IsEditDisplayName = false;
+        successMessage = null;
+        errorMessage = null;
+        try
+        {
+            await BlobService.UpdateMetaAsync(AccessTokenProvider, metaList!);
+            secretItemView.IsEditDisplayName = false;
+        }
+        catch(Exception ex)
+        {
+            errorMessage = ex.Message;
+            CancelSaveDisplayName(secretItemView);
+        }
     }
 
     private void CancelSaveDisplayName(SecretItemView secretItemView)
