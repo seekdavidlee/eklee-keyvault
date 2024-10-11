@@ -1,4 +1,5 @@
 ﻿using Azure.Storage.Blobs;
+using Azure.Storage.Blobs.Models;
 using EKlee.KeyVault.Client.Models;
 using Microsoft.AspNetCore.Components.WebAssembly.Authentication;
 
@@ -6,12 +7,32 @@ namespace EKlee.KeyVault.Client.Services;
 
 public class BlobService(Config config)
 {
+    private const string SECRETS_META_FILE_NAME = "secrets-meta.json";
     public async Task<ApimConfigRoot> DownloadAsync(IAccessTokenProvider accessTokenProvider)
     {
         var credential = new AccessTokenProviderTokenCredential(accessTokenProvider);
         BlobClient blobContainerClient = new(new Uri(config.StorageUri, $"{config.StorageContainerName}/config.json"), credential);
         var content = await blobContainerClient.DownloadContentAsync();
         return content.Value.Content.ToObjectFromJson<ApimConfigRoot>();
+    }
+
+    public async Task<SecretItemMetaList> GetMetaAsync(IAccessTokenProvider accessTokenProvider)
+    {
+        var credential = new AccessTokenProviderTokenCredential(accessTokenProvider);
+        BlobClient blobContainerClient = new(new Uri(config.StorageUri, $"{config.StorageContainerName}/{SECRETS_META_FILE_NAME}"), credential);
+        if (!await blobContainerClient.ExistsAsync())
+        {
+            return new SecretItemMetaList();
+        }
+        var content = await blobContainerClient.DownloadContentAsync();
+        return content.Value.Content.ToObjectFromJson<SecretItemMetaList>();
+    }
+
+    public async Task UpdateMetaAsync(IAccessTokenProvider accessTokenProvider, SecretItemMetaList secretItemMetaList)
+    {
+        var credential = new AccessTokenProviderTokenCredential(accessTokenProvider);
+        BlobClient blobContainerClient = new(new Uri(config.StorageUri, $"{config.StorageContainerName}/{SECRETS_META_FILE_NAME}"), credential);
+        await blobContainerClient.UploadAsync(BinaryData.FromObjectAsJson(secretItemMetaList), overwrite: true);
     }
 
     public async Task<IEnumerable<string>> ListAsync(IAccessTokenProvider accessTokenProvider)

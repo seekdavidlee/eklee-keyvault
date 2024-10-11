@@ -25,5 +25,7 @@ if (!$strId) {
     throw "unable to get storage id $strId"
 }
 $userGroupId = az ad group show -g "app-keyvault Secrets User" --query "id" | ConvertFrom-Json
-$userGroupId
 az role assignment create --assignee $userGroupId --role "Storage Blob Data Reader" --scope "$strId/blobServices/default/containers/configs"
+
+$userGroupId = az ad group show -g "app-keyvault Secrets Admins" --query "id" | ConvertFrom-Json
+az role assignment create --assignee $userGroupId --role "Storage Blob Data Contributor" --scope "$strId/blobServices/default/containers/configs"
