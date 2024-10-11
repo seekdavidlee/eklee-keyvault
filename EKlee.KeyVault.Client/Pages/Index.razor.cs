@@ -13,6 +13,8 @@ public partial class Index : ComponentBase
 
     [Inject] private KeyVaultService KeyVaultService { get; set; } = default!;
 
+    [Inject] private BlobService BlobService { get; set; } = default!;
+
     [Inject] private IJSRuntime JS { get; set; } = default!;
 
     [Inject] private ILogger<Index> Logger { get; set; } = default!;
@@ -20,6 +22,7 @@ public partial class Index : ComponentBase
     private RadzenDataGrid<SecretItemView>? dataGridRef;
     private List<SecretItemView>? cachedSecretItems;
     private readonly List<SecretItemView> dataGridSecretItems = [];
+    private SecretItemMetaList? metaList;
     private string? errorMessage;
     private string? successMessage;
     private string? searchText;
@@ -32,7 +35,8 @@ public partial class Index : ComponentBase
         errorMessage = null;
         try
         {
-            cachedSecretItems = (await KeyVaultService.GetSecretsAsync(AccessTokenProvider)).Select(x => new SecretItemView(x)).ToList();
+            metaList = await BlobService.GetMetaAsync(AccessTokenProvider);
+            cachedSecretItems = (await KeyVaultService.GetSecretsAsync(AccessTokenProvider)).Select(x => new SecretItemView(x, metaList)).ToList();
             dataGridSecretItems.AddRange(cachedSecretItems);
             await dataGridRef!.Reload();
         }
@@ -96,6 +100,25 @@ public partial class Index : ComponentBase
         }
     }
 
+    private string? previousDisplayName;
+    private void ShowEditDisplayName(SecretItemView secretItemView)
+    {
+        previousDisplayName = secretItemView.Meta.DisplayName;
+        secretItemView.IsEditDisplayName = true;
+    }
+
+    private async Task SaveDisplayName(SecretItemView secretItemView)
+    {
+        await BlobService.UpdateMetaAsync(AccessTokenProvider, metaList!);
+        secretItemView.IsEditDisplayName = false;
+    }
+
+    private void CancelSaveDisplayName(SecretItemView secretItemView)
+    {
+        secretItemView.Meta.DisplayName = previousDisplayName;
+        secretItemView.IsEditDisplayName = false;
+    }
+
     private async Task HandleOnInput(ChangeEventArgs args)
     {
         if (args.Value is null)
@@ -109,7 +132,7 @@ public partial class Index : ComponentBase
         if (searchText is not null && searchText.Length > 2)
         {
             dataGridSecretItems.Clear();
-            dataGridSecretItems.AddRange(cachedSecretItems!.Where(x => x.Name!.Contains(searchText)));
+            dataGridSecretItems.AddRange(cachedSecretItems!.Where(x => x.Meta.DisplayName!.Contains(searchText)));
             await dataGridRef!.Reload();
         }
         else
@@ -117,7 +140,7 @@ public partial class Index : ComponentBase
             if (dataGridSecretItems.Count != cachedSecretItems!.Count)
             {
                 dataGridSecretItems.Clear();
-                dataGridSecretItems.AddRange(cachedSecretItems!.Where(x => x.Name!.Contains(searchText)));
+                dataGridSecretItems.AddRange(cachedSecretItems!);
                 await dataGridRef!.Reload();
             }
         }
