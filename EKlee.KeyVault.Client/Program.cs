@@ -25,8 +25,8 @@ using var response = await http.GetAsync("appsettings.json");
 using var stream = await response.Content.ReadAsStreamAsync();
 
 builder.Configuration.AddJsonStream(stream);
-builder.Services.AddSingleton<BlobService>();
-builder.Services.AddSingleton<KeyVaultService>();
+builder.Services.AddScoped<BlobService>();
+builder.Services.AddScoped<KeyVaultService>();
 builder.Services.AddMsalAuthentication(options =>
 {
     builder.Configuration.Bind("AzureAd", options.ProviderOptions.Authentication);

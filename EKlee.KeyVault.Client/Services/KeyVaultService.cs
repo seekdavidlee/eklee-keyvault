@@ -8,23 +8,25 @@ namespace EKlee.KeyVault.Client.Services;
 public class KeyVaultService
 {
     private readonly IHttpClientFactory httpClientFactory;
+    private readonly IAccessTokenProvider accessTokenProvider;
     private readonly Config config;
     private readonly BlobService blobService;
     private readonly ILogger<KeyVaultService> logger;
     private ApimConfigRoot? apimConfigRoot;
 
-    public KeyVaultService(IHttpClientFactory httpClientFactory, Config config, BlobService blobService, ILogger<KeyVaultService> logger)
+    public KeyVaultService(IHttpClientFactory httpClientFactory, IAccessTokenProvider accessTokenProvider, Config config, BlobService blobService, ILogger<KeyVaultService> logger)
     {
 
         this.httpClientFactory = httpClientFactory;
+        this.accessTokenProvider = accessTokenProvider;
         this.config = config;
         this.blobService = blobService;
         this.logger = logger;
     }
 
-    private async Task<HttpClient?> TryGetHttpClientAsync(IAccessTokenProvider accessTokenProvider)
+    private async Task<HttpClient?> TryGetHttpClientAsync()
     {
-        apimConfigRoot ??= await blobService.DownloadAsync(accessTokenProvider);
+        apimConfigRoot ??= await blobService.DownloadAsync();
         var tokenResult = await accessTokenProvider.RequestAccessToken(new AccessTokenRequestOptions { Scopes = apimConfigRoot.APIM!.TokenScopes });
         if (tokenResult.TryGetToken(out var accessToken))
         {
@@ -38,11 +40,11 @@ public class KeyVaultService
         return default;
     }
 
-    public async Task<IEnumerable<SecretItem>> GetSecretsAsync(IAccessTokenProvider accessTokenProvider)
+    public async Task<IEnumerable<SecretItem>> GetSecretsAsync()
     {
         List<SecretItem> items = [];
 
-        var httpClient = await TryGetHttpClientAsync(accessTokenProvider);
+        var httpClient = await TryGetHttpClientAsync();
         if (httpClient is not null && apimConfigRoot is not null)
         {
             string? skiptoken = "";
@@ -74,9 +76,9 @@ public class KeyVaultService
         return items;
     }
 
-    public async Task<string?> GetSecretAsync(IAccessTokenProvider accessTokenProvider, string url)
+    public async Task<string?> GetSecretAsync(string url)
     {
-        var httpClient = await TryGetHttpClientAsync(accessTokenProvider);
+        var httpClient = await TryGetHttpClientAsync();
         if (httpClient is not null && apimConfigRoot is not null)
         {
             string getUrl = $"{apimConfigRoot.APIM!.SecretsActions!.Get}?id={url}";

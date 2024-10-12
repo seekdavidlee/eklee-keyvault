@@ -1,7 +1,6 @@
 ﻿using EKlee.KeyVault.Client.Models;
 using EKlee.KeyVault.Client.Services;
 using Microsoft.AspNetCore.Components;
-using Microsoft.AspNetCore.Components.WebAssembly.Authentication;
 using Microsoft.JSInterop;
 using Radzen.Blazor;
 
@@ -9,8 +8,6 @@ namespace EKlee.KeyVault.Client.Pages;
 
 public partial class Index : ComponentBase
 {
-    [Inject] private IAccessTokenProvider AccessTokenProvider { get; set; } = default!;
-
     [Inject] private KeyVaultService KeyVaultService { get; set; } = default!;
 
     [Inject] private BlobService BlobService { get; set; } = default!;
@@ -35,8 +32,8 @@ public partial class Index : ComponentBase
         errorMessage = null;
         try
         {
-            metaList = await BlobService.GetMetaAsync(AccessTokenProvider);
-            cachedSecretItems = (await KeyVaultService.GetSecretsAsync(AccessTokenProvider)).Select(x => new SecretItemView(x, metaList)).ToList();
+            metaList = await BlobService.GetMetaAsync();
+            cachedSecretItems = (await KeyVaultService.GetSecretsAsync()).Select(x => new SecretItemView(x, metaList)).ToList();
             dataGridSecretItems.AddRange(cachedSecretItems);
             await dataGridRef!.Reload();
         }
@@ -74,7 +71,7 @@ public partial class Index : ComponentBase
 
     private async Task UpdateSecretValueAsync(SecretItemView secretItemView)
     {
-        string? value = await KeyVaultService.GetSecretAsync(AccessTokenProvider, secretItemView.Id!);
+        string? value = await KeyVaultService.GetSecretAsync(secretItemView.Id!);
         if (value is null)
         {
             errorMessage = "Unable to get secret!";
@@ -113,10 +110,10 @@ public partial class Index : ComponentBase
         errorMessage = null;
         try
         {
-            await BlobService.UpdateMetaAsync(AccessTokenProvider, metaList!);
+            await BlobService.UpdateMetaAsync(metaList!);
             secretItemView.IsEditDisplayName = false;
         }
-        catch(Exception ex)
+        catch (Exception ex)
         {
             errorMessage = ex.Message;
             CancelSaveDisplayName(secretItemView);
