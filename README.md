@@ -28,20 +28,14 @@ By default, we are using the Free tier of static web app (for your personal priv
 1. Start a Github deployment. Once deployment is completed, locate the app registration in Entra and add `Single-page application`. Look for the Azure static web app URL as the URL to add like so `https://<Static web app>/authentication/login-callback`.
 1. Perform appropriate role assignments by following the steps in [Post Deployment RBAC](#post-deployment-rbac).
 1. Navigate to `https://<Static web app>` with the appropriate user who is assigned the the group.
-1. Optionally, if you own a domain name, you can have a sub domain name configured as a variable using the key `CUSTOM_DOMAIN_NAME`. Follow the steps [here](https://learn.microsoft.com/en-us/azure/static-web-apps/custom-domain).
+1. Optionally, if you own a domain name, you can have a sub domain name configured as a variable using the key `CUSTOM_DOMAIN_NAME`. Follow the steps [here](https://learn.microsoft.com/en-us/azure/static-web-apps/custom-domain). The SSL cert is taken care of for you by Azure. This may take several minutes to complete.
 
 ```json
 {
 	"System": {
 		"Header": "KeyVault Client",
 		"Footer": "KeyVault Client 2024"
-	},	
-	"AdditionalScopes": [
-		"https://storage.azure.com/Microsoft.Storage/storageAccounts/blobServices/containers/blobs/read",
-		"https://storage.azure.com/Microsoft.Storage/storageAccounts/blobServices/containers/blobs/write",
-		"https://vault.azure.net/Microsoft.KeyVault/vaults/secrets/readMetadata/action",
-		"https://vault.azure.net/Microsoft.KeyVault/vaults/secrets/getSecret/action"
-	],
+	},
 	"StorageUri": "https://%STORAGENAME%.blob.core.windows.net/",
 	"StorageContainerName": "configs",
 	"AzureAd": {
