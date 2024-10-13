@@ -1,6 +1,5 @@
 param(
-    [string]$environmentName,    
-    [string]$appVersion)
+    [string]$BUILD_ENV)
 
 $ErrorActionPreference = "Stop"
 
@@ -19,41 +18,32 @@ function GetResource {
     return $obj
 }
 
+dotnet tool install --global AzSolutionManager --version 0.3.0-beta
+
 $solutionId = "keyvault-viewer-v2"
-$accountName = (GetResource -solutionId $solutionId -environmentName $environmentName -resourceId "app-ui").Name
+
+$json = asm lookup resource --asm-rid "app-staticweb" --asm-sol $solutionId --asm-env $BUILD_ENV --logging Info
+if ($LastExitCode -ne 0) {
+    throw "Error with app-staticweb lookup."
+}
+$obj = $json | ConvertFrom-Json
+$apiKey = az staticwebapp secrets list --name $obj.Name --query "properties.apiKey" | ConvertFrom-Json
+"apiKey=$apiKey" >> $env:GITHUB_OUTPUT
+
+$accountName = (GetResource -solutionId $solutionId -environmentName $BUILD_ENV -resourceId "app-ui").Name
 if (!$accountName) {
     throw "Unable to find app-ui resource"
 }
 
-#Set-Content .\EKlee.KeyVault.Client\version.txt -Value $appVersion -Force
-
-#dotnet publish EKlee.KeyVault.Client\EKlee.KeyVault.Client.csproj -c Release -o outcli
-
 $appSettingsContent = [System.Environment]::GetEnvironmentVariable('APPSETTINGS')
 $appSettingsContent = $appSettingsContent.Replace("%STORAGENAME%", $accountName)
-$appSettingsContent | Out-File -FilePath outcli\wwwroot\appsettings.json -Force
+$appSettingsContent | Out-File -FilePath .\EKlee.KeyVault.Client\wwwroot\appsettings.json -Force
 
-# $indexHtml = Get-Content outcli\wwwroot\index.html
-# $indexHtml = $indexHtml.Replace("css/app.css?version=0", "css/app.css?version=$appVersion")
-# Set-Content outcli\wwwroot\index.html -Value $indexHtml -Force
-
-# $end = (Get-Date).AddMinutes(15).ToString("yyyy-MM-ddTHH:mm:ssZ")
-# $start = (Get-Date).ToString("yyyy-MM-ddTHH:mm:ssZ")
-# $sas = (az storage container generate-sas --auth-mode login --as-user -n `$web --account-name $accountName --permissions racwld --expiry $end --start $start --https-only | ConvertFrom-Json)
-# if (!$sas) {
-#     throw "Unable to get a sas key!"
-# }
-
-# azcopy_v10 sync outcli\wwwroot "https://$accountName.blob.core.windows.net/`$web?$sas" --recursive=true --delete-destination=true --compare-hash=MD5
-# if ($LastExitCode -ne 0) {
-#     throw "Unable to do az sync."
-# }
-
-$apimName = (GetResource -solutionId $solutionId -environmentName $environmentName -resourceId "app-apis").Name
+$apimName = (GetResource -solutionId $solutionId -environmentName $BUILD_ENV -resourceId "app-apis").Name
 if (!$apimName) {
     throw "Unable to get apim name."
 }
-$groups = asm lookup group --asm-sol $solutionId --asm-env $environmentName | ConvertFrom-Json
+$groups = asm lookup group --asm-sol $solutionId --asm-env $BUILD_ENV | ConvertFrom-Json
 $rgId = $groups[0].GroupId
 
 $url = "https://management.azure.com/$rgId/providers/Microsoft.ApiManagement/service/$apimName/subscriptions/master/listSecrets?api-version=2021-04-01-preview"

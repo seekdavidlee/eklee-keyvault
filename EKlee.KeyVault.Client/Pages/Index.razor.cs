@@ -1,16 +1,15 @@
-﻿using EKlee.KeyVault.Client.Models;
+﻿using Azure;
+using EKlee.KeyVault.Client.Models;
 using EKlee.KeyVault.Client.Services;
 using Microsoft.AspNetCore.Components;
-using Microsoft.AspNetCore.Components.WebAssembly.Authentication;
 using Microsoft.JSInterop;
 using Radzen.Blazor;
+using System.Net;
 
 namespace EKlee.KeyVault.Client.Pages;
 
 public partial class Index : ComponentBase
 {
-    [Inject] private IAccessTokenProvider AccessTokenProvider { get; set; } = default!;
-
     [Inject] private KeyVaultService KeyVaultService { get; set; } = default!;
 
     [Inject] private BlobService BlobService { get; set; } = default!;
@@ -27,6 +26,7 @@ public partial class Index : ComponentBase
     private string? successMessage;
     private string? searchText;
     private bool loadingData;
+    private bool hasAccess = false;
 
     protected override async Task OnInitializedAsync()
     {
@@ -35,10 +35,23 @@ public partial class Index : ComponentBase
         errorMessage = null;
         try
         {
-            metaList = await BlobService.GetMetaAsync(AccessTokenProvider);
-            cachedSecretItems = (await KeyVaultService.GetSecretsAsync(AccessTokenProvider)).Select(x => new SecretItemView(x, metaList)).ToList();
+            metaList = await BlobService.GetMetaAsync();
+            hasAccess = true;
+            cachedSecretItems = (await KeyVaultService.GetSecretsAsync()).Select(x => new SecretItemView(x, metaList)).ToList();
             dataGridSecretItems.AddRange(cachedSecretItems);
             await dataGridRef!.Reload();
+        }
+        catch (RequestFailedException reqEx)
+        {
+            if (reqEx.Status == (int)HttpStatusCode.Forbidden)
+            {
+                errorMessage = "You do not have access. Please contact your administrator.";
+                hasAccess = false;
+            }
+            else
+            {
+                errorMessage = reqEx.Message;
+            }
         }
         catch (Exception ex)
         {
@@ -74,7 +87,7 @@ public partial class Index : ComponentBase
 
     private async Task UpdateSecretValueAsync(SecretItemView secretItemView)
     {
-        string? value = await KeyVaultService.GetSecretAsync(AccessTokenProvider, secretItemView.Id!);
+        string? value = await KeyVaultService.GetSecretAsync(secretItemView.Id!);
         if (value is null)
         {
             errorMessage = "Unable to get secret!";
@@ -113,10 +126,10 @@ public partial class Index : ComponentBase
         errorMessage = null;
         try
         {
-            await BlobService.UpdateMetaAsync(AccessTokenProvider, metaList!);
+            await BlobService.UpdateMetaAsync(metaList!);
             secretItemView.IsEditDisplayName = false;
         }
-        catch(Exception ex)
+        catch (Exception ex)
         {
             errorMessage = ex.Message;
             CancelSaveDisplayName(secretItemView);

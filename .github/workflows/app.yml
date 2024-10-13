@@ -6,22 +6,22 @@ on:
 jobs:
   setup:
     name: Choose Secrets Environment Job
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     steps:
       - id: setup
         name: Setup Environment Setp
         run: |
-            if ('${{ github.ref }}' -eq 'refs/heads/main') { 
-              "build_env=prod" >> $env:GITHUB_OUTPUT
-            } else {
-              "build_env=dev" >> $env:GITHUB_OUTPUT
-            }
+          if [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
+            echo "build_env=prod" >> $GITHUB_OUTPUT
+          else
+            echo "build_env=dev" >> $GITHUB_OUTPUT
+          fi
     outputs:
       build_env: ${{ steps.setup.outputs.build_env }}
 
   build_project:
     name: Build Project
-    runs-on: windows-latest
+    runs-on: ubuntu-latest
     needs: setup
     environment: ${{ needs.setup.outputs.build_env }}
     steps:
@@ -41,7 +41,7 @@ jobs:
 
       - id: resolve-vars
         name: Resolve variables
-        run: .\Deployment\ResolveVars.ps1 -BUILD_ENV ${{ needs.setup.outputs.build_env }}
+        run: pwsh ./Deployment/ResolveVars.ps1 -BUILD_ENV ${{ needs.setup.outputs.build_env }}
 
       - name: Build azure environment
         id: deploy
@@ -49,23 +49,28 @@ jobs:
         with:
           deploymentName: '${{ needs.setup.outputs.build_env }}-${{ github.run_number }}'
           resourceGroupName: ${{ steps.resolve-vars.outputs.resourceGroupName }}
-          template: ./deployment/deploy.bicep
+          template: ./Deployment/deploy.bicep
           parameters: >
             prefix=${{ steps.resolve-vars.outputs.prefix }}
-            managedUserId=${{ steps.resolve-vars.outputs.managedUserId }}
             publisherEmail=${{ vars.APIM_PUBLISHER_EMAIL }}
             publisherName="${{ vars.APIM_PUBLISHER_NAME }}"
-            disableStaticWebsiteSetup=${{ steps.resolve-vars.outputs.disableStaticWebsiteSetup }}
-            staticWebPrimaryEndpoint=${{ steps.resolve-vars.outputs.staticWebPrimaryEndpoint }}
+            customDomainName="${{ vars.CUSTOM_DOMAIN_NAME }}"
 
       - uses: kheiakiyama/install-azcopy-action@v1
         with:
           version: 'v10'
 
-      - name: Publish Blazor client code to Storage
-        run: |
-          .\Deployment\PublishServices.ps1 `
-            -environmentName ${{ needs.setup.outputs.build_env }} `
-            -appVersion ${{ github.sha }}
+      - id: init-static-web
+        name: Init variables for static webapp
+        run: pwsh ./Deployment/InitStaticWeb.ps1 -BUILD_ENV ${{ needs.setup.outputs.build_env }}
         env:
-          APPSETTINGS: ${{ vars.APPSETTINGS }}      
+          APPSETTINGS: ${{ vars.APPSETTINGS }}
+
+      - name: Build and deploy Blazor WASM app
+        uses: Azure/static-web-apps-deploy@v1
+        with:
+          azure_static_web_apps_api_token: ${{ steps.init-static-web.outputs.apiKey }}
+          repo_token: ${{ secrets.GITHUB_TOKEN }}
+          action: "upload"
+          app_location: 'EKlee.KeyVault.Client/'
+          output_location: '/wwwroot'  

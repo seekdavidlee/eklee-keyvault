@@ -32,7 +32,8 @@ public class AccessTokenProviderTokenCredential(IAccessTokenProvider accessToken
         var accessTokenResult = await AccessTokenProvider.RequestAccessToken(new AccessTokenRequestOptions
         {
             Scopes = requestContext.Scopes
-        }).ConfigureAwait(false);
+        });
+
         if (accessTokenResult.TryGetToken(out var accessToken))
         {
             var result = new Azure.Core.AccessToken(accessToken.Value, accessToken.Expires);

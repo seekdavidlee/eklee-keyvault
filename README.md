@@ -2,11 +2,15 @@
 
 This project demostrates how we leverage Azure RBAC (Role Based Access Control) to secure access to an Azure Key Vault instance. Specifically, we are interested to use this project to understand how a user can access secrets. Another goal is to leverage Blazor WASM as a client to access Key Vault secrets without having any custom developed backend service.
 
-The solution makes use of Azure API Management (APIM) to proxy calls to Azure Key Vault REST API given Azure Key Vault does not have CORS support. APIM itself is secured by a subscription key. Azure Storage is used to host the Blazor WASM client as a static website. Azure Frontdoor is used to front the Blazor WASM client for CDN purposes. Azure Storage is also used to host a runtime config that is downloaded to the Blazor WASM client. The Blazor WASM client will download the config file directly from Azure storage using the user role. 
+The solution makes use of Azure API Management (APIM) to proxy calls to Azure Key Vault REST API given Azure Key Vault does not have CORS support. APIM itself is secured by a subscription key. Azure Storage is used to host the Blazor WASM client as a Azure static webapp. Azure Storage is also used to host a runtime config that is downloaded to the Blazor WASM client. The Blazor WASM client will download the config file directly from Azure storage using the user role. 
 
 The bicep will ensure when creating Azure Key Vault, we are using Azure role-based access control for the permission control.
 
 Note that this solution is NOT production ready as there are still several security changes required.
+
+### Cost
+
+By default, we are using the Free tier of static web app (for your personal private use) but we are still paying for usage on Azure Storage, Azure API Management and Azure Key Vault. The cost should be minimal if you have usage with less than a few lookup of secrets daily.
 
 ### Build Status
 ![Build status](https://github.com/seekdavidlee/Eklee-KeyVault/actions/workflows/app.yml/badge.svg)
@@ -21,22 +25,17 @@ Note that this solution is NOT production ready as there are still several secur
 1. Select `Grant admin consent for <Tenant>` to grant admin consent.
 1. Under GitHub repo settings, create a new environment named `prod`. Create a config for `APPSETTINGS` with the value listed below. Be sure to update the `<Tenant Id>` and `<Client Id>`. The `%STORAGENAME%` will be replaced with the correct value at deployment time.
 1. Create 2 more configs `APIM_PUBLISHER_EMAIL` and `APIM_PUBLISHER_NAME` with the appropriate values. This is not really used but required for APIM deployment.
-1. Start a Github deployment. Once deployment is completed, locate the app registration in Entra and add `Single-page application`. Look for the Frontdoor URL as the URL to add like so `https://<Frontdoor name>.azureedge.net/authentication/login-callback`.
+1. Start a Github deployment. Once deployment is completed, locate the app registration in Entra and add `Single-page application`. Look for the Azure static web app URL as the URL to add like so `https://<Static web app>/authentication/login-callback`.
 1. Perform appropriate role assignments by following the steps in [Post Deployment RBAC](#post-deployment-rbac).
-1. Navigate to `https://<Frontdoor name>.azureedge.net` with the appropriate user who is assigned the the group.
+1. Navigate to `https://<Static web app>` with the appropriate user who is assigned the the group.
+1. Optionally, if you own a domain name, you can have a sub domain name configured as a variable using the key `CUSTOM_DOMAIN_NAME`. Be sure to do this after the first deployment as you will need to static web app default hostname. Follow the steps [here](https://learn.microsoft.com/en-us/azure/static-web-apps/custom-domain). The SSL cert is taken care of for you by Azure. This may take several minutes to complete.
 
 ```json
 {
 	"System": {
 		"Header": "KeyVault Client",
 		"Footer": "KeyVault Client 2024"
-	},	
-	"AdditionalScopes": [
-		"https://storage.azure.com/Microsoft.Storage/storageAccounts/blobServices/containers/blobs/read",
-		"https://storage.azure.com/Microsoft.Storage/storageAccounts/blobServices/containers/blobs/write",
-		"https://vault.azure.net/Microsoft.KeyVault/vaults/secrets/readMetadata/action",
-		"https://vault.azure.net/Microsoft.KeyVault/vaults/secrets/getSecret/action"
-	],
+	},
 	"StorageUri": "https://%STORAGENAME%.blob.core.windows.net/",
 	"StorageContainerName": "configs",
 	"AzureAd": {

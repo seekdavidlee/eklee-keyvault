@@ -9,22 +9,14 @@
             {
                 "asm-resource-id": "app-apis",
                 "resource-type": "Microsoft.ApiManagement/service"
-            },            
-            {
-                "asm-resource-id": "app-id",
-                "resource-type": "Microsoft.ManagedIdentity/userAssignedIdentities"
             },
             {
                 "asm-resource-id": "app-ui",
                 "resource-type": "Microsoft.Storage/storageAccounts"
             },
             {
-                "asm-resource-id": "app-cdn",
-                "resource-type": "Microsoft.Cdn/profiles"
-            },
-            {
-                "asm-resource-id": "app-cdnprofile",
-                "resource-type": "Microsoft.Cdn/profiles/endpoints"
+                "asm-resource-id": "app-staticweb",
+                "resource-type": "Microsoft.Web/staticSites"
             }
         ]
     },

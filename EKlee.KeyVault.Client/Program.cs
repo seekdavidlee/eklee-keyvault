@@ -25,16 +25,8 @@ using var response = await http.GetAsync("appsettings.json");
 using var stream = await response.Content.ReadAsStreamAsync();
 
 builder.Configuration.AddJsonStream(stream);
-builder.Services.AddSingleton<BlobService>();
-builder.Services.AddSingleton<KeyVaultService>();
-builder.Services.AddMsalAuthentication(options =>
-{
-    builder.Configuration.Bind("AzureAd", options.ProviderOptions.Authentication);
-    var additionalScopes = (builder.Configuration.GetSection("AdditionalScopes") ?? throw new Exception("AdditionalScopes is not configured.")).Get<string[]>()!;
-    foreach (var scope in additionalScopes)
-    {
-        options.ProviderOptions.AdditionalScopesToConsent.Add(scope);
-    }
-});
+builder.Services.AddScoped<BlobService>();
+builder.Services.AddScoped<KeyVaultService>();
+builder.Services.AddMsalAuthentication(options => builder.Configuration.Bind("AzureAd", options.ProviderOptions.Authentication));
 
 await builder.Build().RunAsync();
