@@ -41,7 +41,7 @@ jobs:
 
       - id: resolve-vars
         name: Resolve variables
-        run: pwsh .\Deployment\ResolveVars.ps1 -BUILD_ENV ${{ needs.setup.outputs.build_env }}
+        run: pwsh ./Deployment/ResolveVars.ps1 -BUILD_ENV ${{ needs.setup.outputs.build_env }}
 
       - name: Build azure environment
         id: deploy
@@ -60,7 +60,7 @@ jobs:
 
       - id: init-vars-for-static-web
         name: Init variables for static web
-        run: pwsh .\Deployment\InitVarsForStaticWeb.ps1 -BUILD_ENV ${{ needs.setup.outputs.build_env }}
+        run: pwsh ./Deployment/InitVarsForStaticWeb.ps1 -BUILD_ENV ${{ needs.setup.outputs.build_env }}
 
       - name: Build And Deploy
         uses: Azure/static-web-apps-deploy@v1
