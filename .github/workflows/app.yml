@@ -54,6 +54,7 @@ jobs:
             prefix=${{ steps.resolve-vars.outputs.prefix }}
             publisherEmail=${{ vars.APIM_PUBLISHER_EMAIL }}
             publisherName="${{ vars.APIM_PUBLISHER_NAME }}"
+            customDomainName="${{ vars.CUSTOM_DOMAIN_NAME }}"
 
       - uses: kheiakiyama/install-azcopy-action@v1
         with:

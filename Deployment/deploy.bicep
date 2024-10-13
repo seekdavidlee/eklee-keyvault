@@ -7,6 +7,7 @@ param location string = resourceGroup().location
 param scriptVersion string = utcNow()
 param publisherEmail string
 param publisherName string
+param customDomainName string = ''
 
 var kvNameStr = empty(kvName) ? '${prefix}${uniqueString(resourceGroup().name)}' : kvName
 var strNameStr = empty(strName) ? '${prefix}${uniqueString(resourceGroup().name)}' : strName
@@ -49,7 +50,10 @@ resource storageContainer 'Microsoft.Storage/storageAccounts/blobServices/contai
     publicAccess: 'None'
   }
 }
-var defaultHostname = 'https://${staticwebapp.properties.defaultHostname}'
+var defaultHostname = empty(customDomainName)
+  ? 'https://${staticwebapp.properties.defaultHostname}'
+  : 'https://${customDomainName}'
+
 resource storageAccountBlobServices 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = {
   parent: storageAccount
   name: 'default'
@@ -175,6 +179,9 @@ resource staticwebapp 'Microsoft.Web/staticSites@2022-09-01' = {
   sku: {
     tier: 'Free'
     name: 'Free'
+  }
+  resource customDomain 'customDomains' = if (!empty(customDomainName)) {
+    name: customDomainName
   }
   properties: {}
 }
