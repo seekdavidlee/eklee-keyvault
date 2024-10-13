@@ -352,7 +352,7 @@ resource apigetsecretpolicy 'Microsoft.ApiManagement/service/apis/operations/pol
   }
 }
 
-resource staticwebapp 'Microsoft.Web/staticSites@2023-12-01' = {
+resource staticwebapp 'Microsoft.Web/staticSites@2022-09-01' = {
   name: appNameStr
   location: location
   sku: {
