@@ -3,6 +3,21 @@ param(
 
 $ErrorActionPreference = "Stop"
 
+function GetResource {
+    param (
+        [string]$solutionId,
+        [string]$environmentName,
+        [string]$resourceId
+    )
+        
+    $obj = asm lookup resource --asm-rid $resourceId --asm-sol $solutionId --asm-env $environmentName | ConvertFrom-Json
+    if ($LastExitCode -ne 0) {        
+        throw "Unable to lookup resource."
+    }
+        
+    return $obj
+}
+
 dotnet tool install --global AzSolutionManager --version 0.3.0-beta
 
 $solutionId = "keyvault-viewer-v2"
