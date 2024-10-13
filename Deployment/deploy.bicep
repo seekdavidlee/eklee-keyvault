@@ -359,4 +359,5 @@ resource staticwebapp 'Microsoft.Web/staticSites@2022-09-01' = {
     tier: 'Free'
     name: 'Free'
   }
+  properties: {}
 }
