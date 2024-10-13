@@ -58,27 +58,19 @@ jobs:
             disableStaticWebsiteSetup=${{ steps.resolve-vars.outputs.disableStaticWebsiteSetup }}
             staticWebPrimaryEndpoint=${{ steps.resolve-vars.outputs.staticWebPrimaryEndpoint }}
 
-      - id: init-vars-for-static-web
+      - uses: kheiakiyama/install-azcopy-action@v1
+        with:
+          version: 'v10'
+
+      - id: init-static-web
         name: Init variables for static web
-        run: pwsh ./Deployment/InitVarsForStaticWeb.ps1 -BUILD_ENV ${{ needs.setup.outputs.build_env }}
+        run: pwsh ./Deployment/InitStaticWeb.ps1 -BUILD_ENV ${{ needs.setup.outputs.build_env }}
 
       - name: Build And Deploy
         uses: Azure/static-web-apps-deploy@v1
         with:
-          azure_static_web_apps_api_token: ${{ steps.init-vars-for-static-web.outputs.apiKey }}
+          azure_static_web_apps_api_token: ${{ steps.init-static-web.outputs.apiKey }}
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           action: "upload"
           app_location: 'EKlee.KeyVault.Client/'
-          output_location: '/wwwroot'
-
-      # - uses: kheiakiyama/install-azcopy-action@v1
-      #   with:
-      #     version: 'v10'
-
-      # - name: Publish Blazor client code to Storage
-      #   run: |
-      #     .\Deployment\PublishServices.ps1 `
-      #       -environmentName ${{ needs.setup.outputs.build_env }} `
-      #       -appVersion ${{ github.sha }}
-      #   env:
-      #     APPSETTINGS: ${{ vars.APPSETTINGS }}      
+          output_location: '/wwwroot'  
