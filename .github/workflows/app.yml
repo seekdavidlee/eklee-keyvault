@@ -11,11 +11,11 @@ jobs:
       - id: setup
         name: Setup Environment Setp
         run: |
-            if ('${{ github.ref }}' -eq 'refs/heads/main') { 
-              "build_env=prod" >> $env:GITHUB_OUTPUT
-            } else {
-              "build_env=dev" >> $env:GITHUB_OUTPUT
-            }
+          if [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
+            echo "build_env=prod" >> $GITHUB_OUTPUT
+          else
+            echo "build_env=dev" >> $GITHUB_OUTPUT
+          fi
     outputs:
       build_env: ${{ steps.setup.outputs.build_env }}
 
@@ -41,7 +41,7 @@ jobs:
 
       - id: resolve-vars
         name: Resolve variables
-        run: .\Deployment\ResolveVars.ps1 -BUILD_ENV ${{ needs.setup.outputs.build_env }}
+        run: pwsh .\Deployment\ResolveVars.ps1 -BUILD_ENV ${{ needs.setup.outputs.build_env }}
 
       - name: Build azure environment
         id: deploy
@@ -60,7 +60,7 @@ jobs:
 
       - id: init-vars-for-static-web
         name: Init variables for static web
-        run: .\Deployment\InitVarsForStaticWeb.ps1 -BUILD_ENV ${{ needs.setup.outputs.build_env }}
+        run: pwsh .\Deployment\InitVarsForStaticWeb.ps1 -BUILD_ENV ${{ needs.setup.outputs.build_env }}
 
       - name: Build And Deploy
         uses: Azure/static-web-apps-deploy@v1
