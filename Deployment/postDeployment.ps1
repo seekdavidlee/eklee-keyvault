@@ -59,22 +59,3 @@ az role assignment create --assignee $groupId --role "Key Vault Secrets User" --
 if ($LastExitCode -ne 0) {        
     throw "Unable to assign role 'Key Vault Secrets User' to '$groupId'."
 }
-
-$o = GetResource -solutionId $solutionId -environmentName $ENVIRONMENT -resourceId "app-id"
-if (!$o) {
-    Write-Host "Creating managed identity"
-    $o = az identity create --name $solutionId --resource-group $groupName | ConvertFrom-Json
-    $clientId = $o.clientId
-    Start-Sleep -Seconds 15
-}
-else {
-    $clientId = (az resource show --ids $o.ResourceId --query "properties" | ConvertFrom-Json).principalId
-}
-
-$customRoleName = "deployment-script-minimum-privilege-for-deployment-principal"
-
-# See: https://learn.microsoft.com/en-us/azure/azure-resource-manager/templates/deployment-script-template#configure-the-minimum-permissions
-az role assignment create --assignee $clientId --role $customRoleName --scope $rgId
-if ($LastExitCode -ne 0) {        
-    throw "Unable to assign '$customRoleName' to '$groupId'."
-}
