@@ -65,6 +65,8 @@ jobs:
       - id: init-static-web
         name: Init variables for static web
         run: pwsh ./Deployment/InitStaticWeb.ps1 -BUILD_ENV ${{ needs.setup.outputs.build_env }}
+        env:
+          APPSETTINGS: ${{ vars.APPSETTINGS }}
 
       - name: Build And Deploy
         uses: Azure/static-web-apps-deploy@v1
