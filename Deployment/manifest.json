@@ -25,6 +25,10 @@
             {
                 "asm-resource-id": "app-cdnprofile",
                 "resource-type": "Microsoft.Cdn/profiles/endpoints"
+            },
+            {
+                "asm-resource-id": "app-staticweb",
+                "resource-type": "Microsoft.Web/staticSites"
             }
         ]
     },
