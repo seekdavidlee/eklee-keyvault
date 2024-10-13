@@ -2,7 +2,7 @@
 
 This project demostrates how we leverage Azure RBAC (Role Based Access Control) to secure access to an Azure Key Vault instance. Specifically, we are interested to use this project to understand how a user can access secrets. Another goal is to leverage Blazor WASM as a client to access Key Vault secrets without having any custom developed backend service.
 
-The solution makes use of Azure API Management (APIM) to proxy calls to Azure Key Vault REST API given Azure Key Vault does not have CORS support. APIM itself is secured by a subscription key. Azure Storage is used to host the Blazor WASM client as a static website. Azure Frontdoor is used to front the Blazor WASM client for CDN purposes. Azure Storage is also used to host a runtime config that is downloaded to the Blazor WASM client. The Blazor WASM client will download the config file directly from Azure storage using the user role. 
+The solution makes use of Azure API Management (APIM) to proxy calls to Azure Key Vault REST API given Azure Key Vault does not have CORS support. APIM itself is secured by a subscription key. Azure Storage is used to host the Blazor WASM client as a Azure static webapp. Azure Storage is also used to host a runtime config that is downloaded to the Blazor WASM client. The Blazor WASM client will download the config file directly from Azure storage using the user role. 
 
 The bicep will ensure when creating Azure Key Vault, we are using Azure role-based access control for the permission control.
 

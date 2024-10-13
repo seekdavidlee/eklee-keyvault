@@ -60,12 +60,12 @@ jobs:
           version: 'v10'
 
       - id: init-static-web
-        name: Init variables for static web
+        name: Init variables for static webapp
         run: pwsh ./Deployment/InitStaticWeb.ps1 -BUILD_ENV ${{ needs.setup.outputs.build_env }}
         env:
           APPSETTINGS: ${{ vars.APPSETTINGS }}
 
-      - name: Build And Deploy
+      - name: Build and deploy Blazor WASM app
         uses: Azure/static-web-apps-deploy@v1
         with:
           azure_static_web_apps_api_token: ${{ steps.init-static-web.outputs.apiKey }}

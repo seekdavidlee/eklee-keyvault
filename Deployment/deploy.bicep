@@ -49,7 +49,7 @@ resource storageContainer 'Microsoft.Storage/storageAccounts/blobServices/contai
     publicAccess: 'None'
   }
 }
-
+var defaultHostname = 'https://${staticwebapp.properties.defaultHostname}'
 resource storageAccountBlobServices 'Microsoft.Storage/storageAccounts/blobServices@2023-05-01' = {
   parent: storageAccount
   name: 'default'
@@ -57,7 +57,7 @@ resource storageAccountBlobServices 'Microsoft.Storage/storageAccounts/blobServi
     cors: {
       corsRules: [
         {
-          allowedOrigins: [staticwebapp.properties.defaultHostname]
+          allowedOrigins: [defaultHostname]
           allowedMethods: [
             'POST'
             'GET'
@@ -126,7 +126,7 @@ resource apispolicy 'Microsoft.ApiManagement/service/apis/policies@2023-09-01-pr
   parent: apis
   name: 'policy'
   properties: {
-    value: replace(loadTextContent('apim-apis-policy.xml'), '%EDGEURL%', staticwebapp.properties.defaultHostname)
+    value: replace(loadTextContent('apim-apis-policy.xml'), '%EDGEURL%', defaultHostname)
     format: 'xml'
   }
 }
