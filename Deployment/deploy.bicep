@@ -351,3 +351,12 @@ resource apigetsecretpolicy 'Microsoft.ApiManagement/service/apis/operations/pol
     format: 'xml'
   }
 }
+
+resource staticwebapp 'Microsoft.Web/staticSites@2023-12-01' = {
+  name: appNameStr
+  location: location
+  sku: {
+    tier: 'Free'
+    name: 'Free'
+  }
+}
