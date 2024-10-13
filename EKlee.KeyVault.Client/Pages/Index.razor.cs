@@ -1,8 +1,10 @@
-﻿using EKlee.KeyVault.Client.Models;
+﻿using Azure;
+using EKlee.KeyVault.Client.Models;
 using EKlee.KeyVault.Client.Services;
 using Microsoft.AspNetCore.Components;
 using Microsoft.JSInterop;
 using Radzen.Blazor;
+using System.Net;
 
 namespace EKlee.KeyVault.Client.Pages;
 
@@ -24,6 +26,7 @@ public partial class Index : ComponentBase
     private string? successMessage;
     private string? searchText;
     private bool loadingData;
+    private bool hasAccess = false;
 
     protected override async Task OnInitializedAsync()
     {
@@ -33,9 +36,22 @@ public partial class Index : ComponentBase
         try
         {
             metaList = await BlobService.GetMetaAsync();
+            hasAccess = true;
             cachedSecretItems = (await KeyVaultService.GetSecretsAsync()).Select(x => new SecretItemView(x, metaList)).ToList();
             dataGridSecretItems.AddRange(cachedSecretItems);
             await dataGridRef!.Reload();
+        }
+        catch (RequestFailedException reqEx)
+        {
+            if (reqEx.Status == (int)HttpStatusCode.Forbidden)
+            {
+                errorMessage = "You do not have access. Please contact your administrator.";
+                hasAccess = false;
+            }
+            else
+            {
+                errorMessage = reqEx.Message;
+            }
         }
         catch (Exception ex)
         {

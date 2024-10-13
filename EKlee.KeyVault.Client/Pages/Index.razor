@@ -20,7 +20,7 @@
 
         <div class="d-flex align-items-center">
             <RadzenLabel Text="Search" class="me-2" />
-            <RadzenTextBox Style="width:70%;" Value="@searchText" @oninput="HandleOnInput" />
+            <RadzenTextBox Style="width:70%;" Value="@searchText" @oninput="HandleOnInput" Disabled="!hasAccess" />
         </div>
     </RadzenColumn>
     <RadzenColumn Size="12" SizeMD="8">
