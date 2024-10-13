@@ -49,7 +49,7 @@ jobs:
         with:
           deploymentName: '${{ needs.setup.outputs.build_env }}-${{ github.run_number }}'
           resourceGroupName: ${{ steps.resolve-vars.outputs.resourceGroupName }}
-          template: ./deployment/deploy.bicep
+          template: ./Deployment/deploy.bicep
           parameters: >
             prefix=${{ steps.resolve-vars.outputs.prefix }}
             managedUserId=${{ steps.resolve-vars.outputs.managedUserId }}
