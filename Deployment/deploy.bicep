@@ -180,8 +180,10 @@ resource staticwebapp 'Microsoft.Web/staticSites@2022-09-01' = {
     tier: 'Free'
     name: 'Free'
   }
-  resource customDomain 'customDomains' = if (!empty(customDomainName)) {
-    name: customDomainName
-  }
   properties: {}
+}
+
+resource customDomain 'Microsoft.Web/staticSites/customDomains@2022-09-01' = if (!empty(customDomainName)) {
+  name: customDomainName
+  parent: staticwebapp
 }
