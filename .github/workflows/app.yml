@@ -69,6 +69,7 @@ jobs:
           repo_token: ${{ secrets.GITHUB_TOKEN }}
           action: "upload"
           app_location: 'EKlee.KeyVault.Client/'
+          output_location: '/'
 
       # - uses: kheiakiyama/install-azcopy-action@v1
       #   with:
