@@ -57,7 +57,7 @@ resource storageAccountBlobServices 'Microsoft.Storage/storageAccounts/blobServi
     cors: {
       corsRules: [
         {
-          allowedOrigins: staticwebapp.properties.customDomains
+          allowedOrigins: [staticwebapp.properties.defaultHostname]
           allowedMethods: [
             'POST'
             'GET'
@@ -126,7 +126,7 @@ resource apispolicy 'Microsoft.ApiManagement/service/apis/policies@2023-09-01-pr
   parent: apis
   name: 'policy'
   properties: {
-    value: replace(loadTextContent('apim-apis-policy.xml'), '%EDGEURL%', staticwebapp.properties.customDomains[0])
+    value: replace(loadTextContent('apim-apis-policy.xml'), '%EDGEURL%', staticwebapp.properties.defaultHostname)
     format: 'xml'
   }
 }

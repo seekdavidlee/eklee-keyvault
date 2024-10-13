@@ -52,30 +52,3 @@ if (!$groupName) {
 
 "resourceGroupName=$groupName" >> $env:GITHUB_OUTPUT
 "prefix=vs00" >> $env:GITHUB_OUTPUT
-
-GetResourceAndSetInOutput -SolutionId $solutionId -EnvName $BUILD_ENV -ResourceId 'app-id' -OutputKey "managedUserId" -UseId
-
-$json = asm lookup resource --asm-rid "app-ui" --asm-sol $solutionId --asm-env $BUILD_ENV --logging Info
-if ($LastExitCode -ne 0) {
-    throw "Error with group lookup."
-}
-if (!$json){
-        $disableStaticWebsiteSetup = "false"
-        $staticWebPrimaryEndpoint = "none"
-} else {
-    $obj = $json | ConvertFrom-Json
-
-    $res = az storage blob service-properties show --auth-mode login --account-name $obj.Name | ConvertFrom-Json
-    if (!$res.staticWebsite -or !$res.staticWebsite.enabled -or $res.staticWebsite.enabled -eq $false) {
-        $disableStaticWebsiteSetup = "false"
-        $staticWebPrimaryEndpoint = "none"
-    }
-    else {
-        $disableStaticWebsiteSetup = "true"
-        $str = az storage account show --name $obj.Name -g $groupName | ConvertFrom-Json
-        $staticWebPrimaryEndpoint = $str.primaryEndpoints.web
-    }
-}
-
-"disableStaticWebsiteSetup=$disableStaticWebsiteSetup" >> $env:GITHUB_OUTPUT
-"staticWebPrimaryEndpoint=$staticWebPrimaryEndpoint" >> $env:GITHUB_OUTPUT
