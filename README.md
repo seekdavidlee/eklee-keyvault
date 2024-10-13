@@ -28,7 +28,12 @@ By default, we are using the Free tier of static web app (for your personal priv
 1. Start a Github deployment. Once deployment is completed, locate the app registration in Entra and add `Single-page application`. Look for the Azure static web app URL as the URL to add like so `https://<Static web app>/authentication/login-callback`.
 1. Perform appropriate role assignments by following the steps in [Post Deployment RBAC](#post-deployment-rbac).
 1. Navigate to `https://<Static web app>` with the appropriate user who is assigned the the group.
-1. Optionally, if you own a domain name, you can have a sub domain name configured as a variable using the key `CUSTOM_DOMAIN_NAME`. Be sure to do this after the first deployment as you will need to static web app default hostname. Follow the steps [here](https://learn.microsoft.com/en-us/azure/static-web-apps/custom-domain). The SSL cert is taken care of for you by Azure. This may take several minutes to complete.
+
+### Custom domain
+
+Optionally, if you own a domain name, you can have a sub domain name configured as a variable using the key `CUSTOM_DOMAIN_NAME`. Be sure to do this after the first deployment as you will need to use the dynamic static web app default hostname. 
+
+Once the first deployment completes, follow the steps [here](https://learn.microsoft.com/en-us/azure/static-web-apps/custom-domain) to point your sub domain (CNAME) to the static web app default hostname. You will also need to update the Authentication Url for your app registration in Entra like so `https://<Your Sub Domain>/authentication/login-callback`. The SSL cert will be taken care for you by Azure. We shoulld note the second deployment may take several minutes to complete. If it does not complete in 15 mins, there could be related to an issue with the error `Microsoft.Web/staticSites/customDomains Forbidden`. You will still notice in static web app that it is now using your sub domain. If this is the only error, you can cancel this deployment and safely try to access your app.
 
 ```json
 {
