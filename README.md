@@ -2,11 +2,11 @@
 
 This project demostrates how we leverage Azure RBAC (Role Based Access Control) to secure access to an Azure Key Vault instance. Specifically, we are interested to use this project to understand how a user can access secrets. Another goal is to leverage Blazor WASM as a client to access Key Vault secrets without having any custom developed backend service.
 
-The solution makes use of Azure API Management (APIM) to proxy calls to Azure Key Vault REST API given Azure Key Vault does not have CORS support. APIM itself is secured by a subscription key. Azure Storage is used to host the Blazor WASM client as a Azure static webapp. Azure Storage is also used to host a runtime config that is downloaded to the Blazor WASM client. The Blazor WASM client will download the config file directly from Azure storage using the user role. 
+The [solution](./Docs/ARCH.md) makes use of Azure API Management (APIM) to proxy calls to Azure Key Vault REST API given Azure Key Vault does not have CORS support. APIM itself is secured by a subscription key. Azure Storage is used to host the Blazor WASM client as a Azure static webapp. Azure Storage is also used to host a runtime config that is downloaded to the Blazor WASM client. The Blazor WASM client will download the config file directly from Azure storage using the user role.
 
 The bicep will ensure when creating Azure Key Vault, we are using Azure role-based access control for the permission control.
 
-Note that this solution is NOT production ready as there are still several security changes required.
+Note that this [solution](./Docs/ARCH.md) is NOT production ready as there are still several security changes required.
 
 ### Cost
 
@@ -33,7 +33,7 @@ By default, we are using the Free tier of static web app (for your personal priv
 
 Optionally, if you own a domain name, you can have a sub domain name configured as a variable using the key `CUSTOM_DOMAIN_NAME`. Be sure to do this after the first deployment as you will need to use the dynamic static web app default hostname. 
 
-Once the first deployment completes, follow the steps [here](https://learn.microsoft.com/en-us/azure/static-web-apps/custom-domain) to point your sub domain (CNAME) to the static web app default hostname. You will also need to update the Authentication Url for your app registration in Entra like so `https://<Your Sub Domain>/authentication/login-callback`. The SSL cert will be taken care for you by Azure. We shoulld note the second deployment may take several minutes to complete. If it does not complete in 15 mins, there could be related to an issue with the error `Microsoft.Web/staticSites/customDomains Forbidden`. You will still notice in static web app that it is now using your sub domain. If this is the only error, you can cancel this deployment and safely try to access your app.
+Once the first deployment completes, follow the steps [here](https://learn.microsoft.com/en-us/azure/static-web-apps/custom-domain) to point your sub domain (CNAME) to the static web app default hostname. You will also need to update the Authentication Url for your app registration in Entra like so `https://<Your Sub Domain>/authentication/login-callback`. The SSL cert will be taken care for you by Azure. We should note the second deployment may take several minutes to complete. If it does not complete in 15 mins, there could be related to an issue with the error `Microsoft.Web/staticSites/customDomains Forbidden`. You will still notice in static web app that it is now using your sub domain. If this is the only error, you can cancel this deployment and safely try to access your app.
 
 ```json
 {
