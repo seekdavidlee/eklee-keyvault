@@ -99,6 +99,35 @@ else {
         Remove-Item $tempFile -ErrorAction SilentlyContinue
     }
     Write-Host "Exposed API scope 'access_as_user'" -ForegroundColor Green
+
+    # Pre-authorize the Azure CLI so 'az account get-access-token' works against this API
+    $azureCliAppId = "04b07795-8ddb-461a-bbee-02f9e1bf7b46"
+    Write-Host "Pre-authorizing Azure CLI ($azureCliAppId) for scope 'access_as_user'..." -ForegroundColor Cyan
+
+    $preAuthBody = @{
+        api = @{
+            preAuthorizedApplications = @(
+                @{
+                    appId                = $azureCliAppId
+                    delegatedPermissionIds = @($scopeId)
+                }
+            )
+        }
+    } | ConvertTo-Json -Depth 5
+
+    $tempFile2 = Join-Path $env:TEMP "app-preauth-$([guid]::NewGuid()).json"
+    try {
+        $preAuthBody | Out-File -FilePath $tempFile2 -Encoding utf8
+        az rest --method PATCH `
+            --url "https://graph.microsoft.com/v1.0/applications/$objectId" `
+            --body "@$tempFile2" `
+            --headers "Content-Type=application/json" `
+            --output none
+    }
+    finally {
+        Remove-Item $tempFile2 -ErrorAction SilentlyContinue
+    }
+    Write-Host "Azure CLI pre-authorized successfully." -ForegroundColor Green
 }
 
 # --- Determine the audience ---
