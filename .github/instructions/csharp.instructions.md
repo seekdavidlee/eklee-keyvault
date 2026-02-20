@@ -6,7 +6,7 @@ applyTo: '**/*.cs'
 # C# Development
 
 ## C# Instructions
-- Always use the latest version C#, currently C# 13 features.
+- Always use the latest version C#, currently C# 14 features.
 - Write clear and concise comments for each function.
 
 ## General Instructions
@@ -19,7 +19,6 @@ applyTo: '**/*.cs'
 
 - Follow PascalCase for component names, method names, and public members.
 - Use camelCase for private fields and local variables.
-- Do not use underscores in variable names (e.g., `configuration` instead of `_configuration` for private fields).
 - Prefix interface names with "I" (e.g., IUserService).
 
 ## Formatting
@@ -38,7 +37,7 @@ applyTo: '**/*.cs'
 - Explain the purpose of each generated file and folder to build understanding of the project structure.
 - Demonstrate how to organize code using feature folders or domain-driven design principles.
 - Show proper separation of concerns with models, services, and data access layers.
-- Explain the Program.cs and configuration system in ASP.NET Core 9 including environment-specific settings.
+- Explain the Program.cs and configuration system in ASP.NET Core 10 including environment-specific settings.
 
 ## Nullable Reference Types
 
@@ -68,7 +67,7 @@ applyTo: '**/*.cs'
 - Explain the validation pipeline and how to customize validation responses.
 - Demonstrate a global exception handling strategy using middleware.
 - Show how to create consistent error responses across the API.
-- Explain problem details (RFC 7807) implementation for standardized error responses.
+- Explain problem details (RFC 9457) implementation for standardized error responses.
 
 ## API Versioning and Documentation
 
