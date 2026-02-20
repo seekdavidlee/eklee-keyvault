@@ -1,4 +1,4 @@
-using Azure.Identity;
+using Azure.Core;
 using Azure.Storage.Blobs;
 using Eklee.KeyVault.Api.Models;
 
@@ -6,15 +6,17 @@ namespace Eklee.KeyVault.Api.Services;
 
 /// <summary>
 /// Manages secret display-name metadata stored as JSON in Azure Blob Storage.
-/// Uses <see cref="DefaultAzureCredential"/> for authentication (managed identity in production).
+/// Uses a <see cref="TokenCredential"/> resolved from DI based on the configured authentication mode.
 /// </summary>
-public class BlobService(Config config)
+public class BlobService(Config config, TokenCredential credential)
 {
     private const string SecretsMetaFileName = "secrets-meta.json";
 
+    /// <summary>
+    /// Creates a <see cref="BlobClient"/> for the given blob name using the injected credential.
+    /// </summary>
     private BlobClient GetBlobClient(string blobName)
     {
-        var credential = new DefaultAzureCredential();
         return new BlobClient(new Uri(config.StorageUri, $"{config.StorageContainerName}/{blobName}"), credential);
     }
 

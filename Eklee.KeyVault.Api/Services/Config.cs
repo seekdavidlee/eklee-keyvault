@@ -18,6 +18,7 @@ public class Config
         StorageUri = new Uri(configuration[nameof(StorageUri)]!);
         StorageContainerName = configuration[nameof(StorageContainerName)]!;
         KeyVaultUri = new Uri(configuration[nameof(KeyVaultUri)]!);
+        AuthenticationMode = configuration[nameof(AuthenticationMode)] ?? "azcli";
     }
 
     /// <summary>The base URI for the Azure Blob Storage account.</summary>
@@ -28,4 +29,10 @@ public class Config
 
     /// <summary>The URI of the Azure Key Vault instance.</summary>
     public Uri KeyVaultUri { get; }
+
+    /// <summary>
+    /// The authentication mode for Azure services.
+    /// Use "azcli" for Azure CLI credentials (local development) or "mi" for Managed Identity (production).
+    /// </summary>
+    public string AuthenticationMode { get; }
 }

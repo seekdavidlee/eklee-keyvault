@@ -1,4 +1,4 @@
-using Azure.Identity;
+using Azure.Core;
 using Azure.Security.KeyVault.Secrets;
 using Eklee.KeyVault.Api.Models;
 
@@ -6,7 +6,7 @@ namespace Eklee.KeyVault.Api.Services;
 
 /// <summary>
 /// Provides direct access to Azure Key Vault secrets using <see cref="SecretClient"/> with
-/// <see cref="DefaultAzureCredential"/> (managed identity in production, developer credentials locally).
+/// a <see cref="TokenCredential"/> resolved from DI based on the configured authentication mode.
 /// </summary>
 public class KeyVaultService
 {
@@ -17,11 +17,12 @@ public class KeyVaultService
     /// Initializes the Key Vault service with a <see cref="SecretClient"/> targeting the configured vault URI.
     /// </summary>
     /// <param name="config">Application configuration containing the Key Vault URI.</param>
+    /// <param name="credential">The Azure token credential injected from DI.</param>
     /// <param name="logger">Logger for diagnostic output.</param>
-    public KeyVaultService(Config config, ILogger<KeyVaultService> logger)
+    public KeyVaultService(Config config, TokenCredential credential, ILogger<KeyVaultService> logger)
     {
         this.logger = logger;
-        secretClient = new SecretClient(config.KeyVaultUri, new DefaultAzureCredential());
+        secretClient = new SecretClient(config.KeyVaultUri, credential);
     }
 
     /// <summary>

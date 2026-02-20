@@ -1,15 +1,50 @@
+using Azure.Core;
+using Azure.Identity;
 using Eklee.KeyVault.Api.Services;
 using Microsoft.Identity.Web;
 
 var builder = WebApplication.CreateBuilder(args);
 
 // Authentication — JWT Bearer validation via Microsoft Entra ID
-builder.Services.AddMicrosoftIdentityWebApiAuthentication(builder.Configuration, "AzureAd");
+// Accept both "api://<clientId>" and the bare "<clientId>" as valid audiences,
+// because Azure AD may stamp tokens with either form.
+var azureAdSection = builder.Configuration.GetSection("AzureAd");
+var clientId = azureAdSection["ClientId"]!;
+builder.Services.AddMicrosoftIdentityWebApiAuthentication(builder.Configuration, "AzureAd")
+    .EnableTokenAcquisitionToCallDownstreamApi()
+    .AddInMemoryTokenCaches();
+
+builder.Services.Configure<Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerOptions>(
+    Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme,
+    options =>
+    {
+        options.TokenValidationParameters.ValidAudiences = new[]
+        {
+            $"api://{clientId}",
+            clientId
+        };
+    });
 
 builder.Services.AddAuthorization();
 
 // Application services
 builder.Services.AddSingleton<Config>();
+
+// Register a TokenCredential based on the AuthenticationMode setting.
+// "azcli" uses Azure CLI credentials for local development;
+// "mi" uses Managed Identity for production workloads.
+builder.Services.AddSingleton<TokenCredential>(sp =>
+{
+    var config = sp.GetRequiredService<Config>();
+    return config.AuthenticationMode.ToLowerInvariant() switch
+    {
+        "azcli" => new AzureCliCredential(),
+        "mi" => new ManagedIdentityCredential(),
+        _ => throw new InvalidOperationException(
+            $"Unsupported AuthenticationMode '{config.AuthenticationMode}'. Use 'azcli' or 'mi'.")
+    };
+});
+
 builder.Services.AddScoped<BlobService>();
 builder.Services.AddScoped<KeyVaultService>();
 
