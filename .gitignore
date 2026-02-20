@@ -274,3 +274,5 @@ properties/
 package-lock.json
 *appsettings.json
 *appsettings.Development.json
+
+**/.env
