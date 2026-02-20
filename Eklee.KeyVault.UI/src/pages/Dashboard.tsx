@@ -300,10 +300,6 @@ export function Dashboard() {
 
   return (
     <Box>
-      <Typography variant="h5" gutterBottom>
-        Dashboard
-      </Typography>
-
       {error && (
         <Alert severity="error" sx={{ mb: 2 }} onClose={() => setError(null)}>
           {error}
