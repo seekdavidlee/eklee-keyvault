@@ -13,6 +13,68 @@ By default, we are using the Free tier of static web app (for your personal priv
 ### Build Status
 ![Build status](https://github.com/seekdavidlee/Eklee-KeyVault/actions/workflows/app.yml/badge.svg)
 
+## Local Development
+
+### Prerequisites
+
+- [Node.js](https://nodejs.org/) (LTS recommended)
+- [.NET SDK](https://dotnet.microsoft.com/download)
+- [Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli) (logged in with `az login`)
+
+### App Registration Setup
+
+Run the setup script to create (or look up) the Azure AD app registration and update both the API `appsettings.json` and the UI `.env` file automatically:
+
+```powershell
+cd Eklee.KeyVault.Api
+.\setup-app-registration.ps1
+```
+
+### Running the React (Vite) Frontend
+
+1. Navigate to the UI project directory:
+
+```sh
+cd Eklee.KeyVault.UI
+```
+
+2. Create a `.env` file with the required Azure AD configuration (if not already created by the setup script):
+
+```
+VITE_AZURE_AD_CLIENT_ID=<your-client-id>
+VITE_AZURE_AD_AUTHORITY=https://login.microsoftonline.com/<your-tenant-id>
+VITE_AZURE_AD_REDIRECT_URI=http://localhost:5173
+```
+
+3. Install dependencies and start the dev server:
+
+```sh
+npm install
+npm run dev
+```
+
+The Vite dev server starts on **port 5173** and proxies `/api` requests to `http://localhost:5000` (the ASP.NET backend).
+
+#### Available npm Scripts
+
+| Command           | Description                              |
+| ----------------- | ---------------------------------------- |
+| `npm run dev`     | Start dev server with hot reload         |
+| `npm run build`   | TypeScript compile + Vite production build |
+| `npm run preview` | Preview the production build locally     |
+| `npm run lint`    | Run ESLint                               |
+
+### Running the ASP.NET Backend
+
+Start the API so the frontend proxy works:
+
+```sh
+cd Eklee.KeyVault.Api
+dotnet run
+```
+
+The API listens on `http://localhost:5000` by default.
+
 ## Automated setup
 
 1. Fork this repo

@@ -130,6 +130,36 @@ else {
     Write-Host "Azure CLI pre-authorized successfully." -ForegroundColor Green
 }
 
+# --- Ensure SPA redirect URI is configured (needed for the React UI) ---
+$spaRedirectUri = "http://localhost:5173"
+Write-Host "Ensuring SPA redirect URI '$spaRedirectUri' is configured..." -ForegroundColor Cyan
+
+# Get the objectId (needed for Graph API call)
+if (-not $app.id) {
+    $app = az ad app list --display-name $AppName --output json | ConvertFrom-Json | Where-Object { $_.displayName -eq $AppName } | Select-Object -First 1
+}
+$objectId = $app.id
+
+$spaBody = @{
+    spa = @{
+        redirectUris = @($spaRedirectUri)
+    }
+} | ConvertTo-Json -Depth 5
+
+$tempFileSpa = Join-Path $env:TEMP "app-spa-$([guid]::NewGuid()).json"
+try {
+    $spaBody | Out-File -FilePath $tempFileSpa -Encoding utf8
+    az rest --method PATCH `
+        --url "https://graph.microsoft.com/v1.0/applications/$objectId" `
+        --body "@$tempFileSpa" `
+        --headers "Content-Type=application/json" `
+        --output none
+}
+finally {
+    Remove-Item $tempFileSpa -ErrorAction SilentlyContinue
+}
+Write-Host "SPA redirect URI configured." -ForegroundColor Green
+
 # --- Determine the audience ---
 $audience = "api://$clientId"
 
@@ -158,6 +188,20 @@ $appSettings.AzureAd = [PSCustomObject]@{
 $appSettings | ConvertTo-Json -Depth 10 | Set-Content $AppSettingsPath -Encoding UTF8
 Write-Host "appsettings.json updated successfully." -ForegroundColor Green
 
+# --- Update .env for the UI client ---
+$envFilePath = Join-Path (Join-Path (Join-Path $PSScriptRoot "..") "Eklee.KeyVault.UI") ".env"
+if (Test-Path $envFilePath) {
+    Write-Host "Updating '$envFilePath'..." -ForegroundColor Cyan
+    $envContent = Get-Content $envFilePath -Raw
+    $envContent = $envContent -replace '(?m)^VITE_AZURE_AD_CLIENT_ID=.*$', "VITE_AZURE_AD_CLIENT_ID=$clientId"
+    $envContent = $envContent -replace '(?m)^VITE_AZURE_AD_AUTHORITY=.*$', "VITE_AZURE_AD_AUTHORITY=https://login.microsoftonline.com/$tenantId"
+    $envContent | Set-Content $envFilePath -Encoding UTF8 -NoNewline
+    Write-Host ".env updated successfully." -ForegroundColor Green
+}
+else {
+    Write-Warning ".env not found at '$envFilePath'. Skipping UI client update."
+}
+
 # --- Summary ---
 Write-Host ""
 Write-Host "=== Configuration Summary ===" -ForegroundColor Cyan
@@ -166,4 +210,7 @@ Write-Host "  Tenant ID  : $tenantId"
 Write-Host "  Client ID  : $clientId"
 Write-Host "  Audience   : $audience"
 Write-Host "  Updated    : $AppSettingsPath"
+if (Test-Path $envFilePath) {
+    Write-Host "  Updated    : $envFilePath"
+}
 Write-Host ""

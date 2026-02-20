@@ -19,8 +19,9 @@ export const msalConfig: Configuration = {
 
 /**
  * Scopes requested when acquiring tokens for the backend API.
- * Uses the API's Application ID URI for the default scope.
+ * When the SPA shares a client ID with the API (single app registration),
+ * Azure AD requires the GUID-based scope format instead of the api:// URI.
  */
 export const apiScopes: PopupRequest = {
-  scopes: [`api://${import.meta.env.VITE_AZURE_AD_CLIENT_ID}/.default`],
+  scopes: [`${import.meta.env.VITE_AZURE_AD_CLIENT_ID}/access_as_user`],
 };
