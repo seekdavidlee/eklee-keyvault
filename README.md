@@ -75,6 +75,70 @@ dotnet run
 
 The API listens on `http://localhost:5000` by default.
 
+### Running Locally with Docker
+
+The `run-local.ps1` script builds and runs the full application (API + UI) in a single Docker container using your local Azure CLI credentials.
+
+#### Prerequisites
+
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (running)
+- [Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli) (logged in with `az login`)
+- App registration configured (via `setup-app-registration.ps1`)
+
+#### How It Works
+
+1. Reads `ClientId` and `TenantId` from `Eklee.KeyVault.Api/appsettings.json`
+2. Builds the Docker image with `--target local` (frontend + backend, no Azure CLI installed)
+3. Pre-fetches access tokens for Key Vault and Storage from your host Azure CLI session
+4. Mounts the token files read-only into the container
+5. A lightweight `az` wrapper inside the container serves tokens to `AzureCliCredential`
+
+#### Usage
+
+```powershell
+# Build and run (foreground with logs)
+.\run-local.ps1
+
+# Build and run in background
+.\run-local.ps1 -Detached
+
+# Skip rebuild, just refresh tokens and run
+.\run-local.ps1 -NoBuild
+
+# Custom port
+.\run-local.ps1 -Port 9090
+```
+
+The container serves both the API and UI on the same port. After startup:
+
+| Endpoint | URL |
+| --- | --- |
+| Application | `http://localhost:8080` |
+| Swagger UI | `http://localhost:8080/swagger` |
+| Health check | `http://localhost:8080/healthz` |
+
+#### SPA Redirect URI
+
+Ensure `http://localhost:8080` is registered as a SPA redirect URI in your Entra ID app registration. If not, run:
+
+```powershell
+az ad app update --id <your-client-id> --spa-redirect-uris http://localhost:8080 http://localhost:5173
+```
+
+#### Token Expiry
+
+Pre-fetched tokens expire after approximately 1 hour. Re-run `.\run-local.ps1` (with or without `-NoBuild`) to refresh them.
+
+#### Parameters
+
+| Parameter | Default | Description |
+| --- | --- | --- |
+| `-Port` | `8080` | Host port mapped to the container |
+| `-ImageName` | `eklee-keyvault-local` | Docker image name |
+| `-Detached` | `$false` | Run container in background |
+| `-NoBuild` | `$false` | Skip Docker build, use existing image |
+| `-RedirectUri` | `http://localhost:<Port>` | MSAL redirect URI baked into the SPA |
+
 ## Automated setup
 
 1. Fork this repo

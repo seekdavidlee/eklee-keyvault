@@ -38,7 +38,10 @@ builder.Services.AddSingleton<TokenCredential>(sp =>
     var config = sp.GetRequiredService<Config>();
     return config.AuthenticationMode.ToLowerInvariant() switch
     {
-        "azcli" => new AzureCliCredential(),
+        "azcli" => new AzureCliCredential(new AzureCliCredentialOptions
+        {
+            ProcessTimeout = TimeSpan.FromSeconds(30)
+        }),
         "mi" => new ManagedIdentityCredential(),
         _ => throw new InvalidOperationException(
             $"Unsupported AuthenticationMode '{config.AuthenticationMode}'. Use 'azcli' or 'mi'.")
