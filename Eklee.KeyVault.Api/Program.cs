@@ -47,9 +47,16 @@ builder.Services.AddSingleton<TokenCredential>(sp =>
 
 builder.Services.AddScoped<BlobService>();
 builder.Services.AddScoped<KeyVaultService>();
+builder.Services.AddScoped<UserAccessService>();
+builder.Services.AddScoped<Microsoft.AspNetCore.Authentication.IClaimsTransformation, UserAccessClaimsTransformation>();
 
 // Controllers with JSON serialization and Problem Details for error responses
-builder.Services.AddControllers();
+builder.Services.AddControllers()
+    .AddJsonOptions(options =>
+    {
+        options.JsonSerializerOptions.Converters.Add(
+            new System.Text.Json.Serialization.JsonStringEnumConverter());
+    });
 builder.Services.AddProblemDetails();
 
 // OpenAPI / Swagger

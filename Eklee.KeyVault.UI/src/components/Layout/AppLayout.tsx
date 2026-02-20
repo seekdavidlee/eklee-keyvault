@@ -2,22 +2,30 @@ import { type ReactNode } from 'react';
 import {
   AppBar,
   Box,
+  Chip,
+  Drawer,
   Toolbar,
   Typography,
   Button,
 } from '@mui/material';
 import { useMsal } from '@azure/msal-react';
+import { useUser } from '../../auth/UserContext';
+import { Sidebar } from './Sidebar';
+
+/** Width of the sidebar navigation drawer in pixels. */
+const DRAWER_WIDTH = 220;
 
 interface AppLayoutProps {
   children: ReactNode;
 }
 
 /**
- * Main application layout with AppBar, content area, and footer.
- * Header shows app title + user display name + sign out.
+ * Main application layout with AppBar, sidebar drawer, content area, and footer.
+ * Header shows app title + user display name + role badge + sign out.
  */
 export function AppLayout({ children }: AppLayoutProps) {
   const { instance, accounts } = useMsal();
+  const { role, accessDenied } = useUser();
 
   const displayName = accounts[0]?.name ?? 'Unknown';
   const username = accounts[0]?.username ?? 'Unknown';
@@ -28,6 +36,8 @@ export function AppLayout({ children }: AppLayoutProps) {
   const handleSignOut = () => {
     instance.logoutRedirect();
   };
+
+  const showSidebar = !accessDenied && role !== null;
 
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh' }}>
@@ -40,6 +50,14 @@ export function AppLayout({ children }: AppLayoutProps) {
           <Typography variant="h6" noWrap sx={{ flexGrow: 1 }}>
             {header} - {username}
           </Typography>
+          {role && (
+            <Chip
+              label={role}
+              size="small"
+              color={role === 'Admin' ? 'warning' : 'default'}
+              sx={{ mr: 2 }}
+            />
+          )}
           <Typography variant="body2" sx={{ mr: 2 }}>
             {displayName}
           </Typography>
@@ -48,6 +66,24 @@ export function AppLayout({ children }: AppLayoutProps) {
           </Button>
         </Toolbar>
       </AppBar>
+
+      {/* Sidebar drawer — only shown when the user has access */}
+      {showSidebar && (
+        <Drawer
+          variant="permanent"
+          sx={{
+            width: DRAWER_WIDTH,
+            flexShrink: 0,
+            '& .MuiDrawer-paper': {
+              width: DRAWER_WIDTH,
+              boxSizing: 'border-box',
+            },
+          }}
+        >
+          <Toolbar /> {/* Spacer for AppBar height */}
+          <Sidebar />
+        </Drawer>
+      )}
 
       {/* Main content area */}
       <Box

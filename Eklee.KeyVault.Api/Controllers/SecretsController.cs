@@ -11,7 +11,7 @@ namespace Eklee.KeyVault.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
-[Authorize]
+[Authorize(Roles = "Admin,User")]
 public class SecretsController(KeyVaultService keyVaultService, BlobService blobService, ILogger<SecretsController> logger) : ControllerBase
 {
     /// <summary>

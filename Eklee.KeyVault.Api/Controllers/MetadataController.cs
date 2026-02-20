@@ -10,7 +10,7 @@ namespace Eklee.KeyVault.Api.Controllers;
 /// </summary>
 [ApiController]
 [Route("api/[controller]")]
-[Authorize]
+[Authorize(Roles = "Admin")]
 public class MetadataController(BlobService blobService, ILogger<MetadataController> logger) : ControllerBase
 {
     /// <summary>

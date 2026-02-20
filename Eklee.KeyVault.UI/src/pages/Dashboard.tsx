@@ -19,6 +19,7 @@ import {
 import { DataGrid, type GridColDef } from '@mui/x-data-grid';
 import { getSecrets, getSecretValue } from '../services/secretsService';
 import { updateMetadata } from '../services/metadataService';
+import { useUser } from '../auth/UserContext';
 import type { SecretItemView, SecretItemMetaList } from '../types';
 
 /** Placeholder text shown instead of the actual secret value. */
@@ -37,6 +38,7 @@ interface SecretRow extends SecretItemView {
  * and inline editing of display names (persisted to blob storage via the API).
  */
 export function Dashboard() {
+  const { isAdmin } = useUser();
   const [rows, setRows] = useState<SecretRow[]>([]);
   const [filteredRows, setFilteredRows] = useState<SecretRow[]>([]);
   const [searchText, setSearchText] = useState('');
@@ -240,9 +242,11 @@ export function Dashboard() {
             <Typography variant="body2">
               {row.meta.displayName ?? row.name}
             </Typography>
-            <IconButton size="small" onClick={() => handleStartEdit(row)}>
-              <EditIcon fontSize="small" />
-            </IconButton>
+            {isAdmin && (
+              <IconButton size="small" onClick={() => handleStartEdit(row)}>
+                <EditIcon fontSize="small" />
+              </IconButton>
+            )}
           </Box>
         );
       },
