@@ -196,7 +196,7 @@ jobs:
               --registry-identity "$IDENTITY_ID" \
               --cpu 0.5 \
               --memory 1.0Gi \
-              --min-replicas 1 \
+              --min-replicas 0 \
               --max-replicas 1 \
               --env-vars \
                 AZURE_CLIENT_ID="$IDENTITY_CLIENT_ID" \
