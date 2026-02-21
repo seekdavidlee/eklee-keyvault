@@ -18,6 +18,7 @@ The primary costs are Azure Container Apps, Azure Storage, and Azure Key Vault. 
 - [Node.js](https://nodejs.org/) (LTS recommended)
 - [.NET SDK](https://dotnet.microsoft.com/download)
 - [Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli) (logged in with `az login`)
+- [GitHub CLI](https://cli.github.com/) (authenticated with `gh auth login`)
 - [Docker Desktop](https://www.docker.com/products/docker-desktop/) (for local Docker workflow)
 
 ## Local Development
@@ -137,26 +138,32 @@ Pre-fetched tokens expire after approximately 1 hour. Re-run `.\run-local.ps1` (
 ## Automated Deployment
 
 1. Fork this repo.
-1. Create a single-tenant app registration in Entra ID (e.g. `Eklee.KeyVaultv2`). Run `setup-app-registration.ps1` or configure manually.
-1. In API permissions, add `Azure Key Vault` > `user_impersonation` (Delegated) and grant admin consent.
-1. Under GitHub repo settings, create environments `dev` and/or `prod` with the following variables:
+1. Run `Deployment/setup-gh-deploy.ps1` to create the deployment service principal, resource groups, RBAC assignments, and set the deployment-related GitHub environment variables (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `ACR_NAME`, `RESOURCE_GROUP`, `ACR_RESOURCE_GROUP`).
+1. Run `Eklee.KeyVault.Api/setup-app-registration.ps1` with the `-GitHubOrganization`, `-GitHubRepoName`, and `-AzureAdRedirectUriDev` (and optionally `-AzureAdRedirectUriProd`) parameters to create the app registration and set the SPA-related GitHub environment variables (`VITE_AZURE_AD_CLIENT_ID`, `VITE_AZURE_AD_AUTHORITY`, `VITE_AZURE_AD_REDIRECT_URI`).
+1. Deploy infrastructure by running the **Deploy Infrastructure** workflow (`deploy-infra.yml`):
 
-| Variable | Description |
-| --- | --- |
-| `AZURE_CLIENT_ID` | Service principal client ID for OIDC login |
-| `AZURE_TENANT_ID` | Azure AD tenant ID |
-| `AZURE_SUBSCRIPTION_ID` | Target subscription ID |
-| `ACR_NAME` | Azure Container Registry name (without `.azurecr.io`) |
-| `RESOURCE_GROUP` | Resource group for Container Apps deployment |
-| `VITE_AZURE_AD_CLIENT_ID` | App registration client ID |
-| `VITE_AZURE_AD_AUTHORITY` | `https://login.microsoftonline.com/<tenant-id>` |
-| `VITE_AZURE_AD_REDIRECT_URI` | Redirect URI for the deployed app |
+   ```sh
+   gh workflow run deploy-infra.yml -f branch=main -f environment=dev
+   ```
 
-1. Deploy infrastructure by running the **Deploy Infrastructure** workflow (`deploy-infra.yml`).
 1. Run `Deployment/assign-mi-rbac.ps1` to assign RBAC roles to the managed identity.
 1. Push to any branch to trigger the **CI/CD** workflow (`cicd.yml`), which builds and deploys the container.
 1. Register the Container App URL as a SPA redirect URI in the Entra ID app registration.
 1. Perform user role assignments per [Post Deployment RBAC](#post-deployment-rbac).
+
+The two setup scripts configure the following GitHub environment variables (per `dev`/`prod`):
+
+| Variable | Set by |
+| --- | --- |
+| `AZURE_CLIENT_ID` | `setup-gh-deploy.ps1` |
+| `AZURE_TENANT_ID` | `setup-gh-deploy.ps1` |
+| `AZURE_SUBSCRIPTION_ID` | `setup-gh-deploy.ps1` |
+| `ACR_NAME` | `setup-gh-deploy.ps1` |
+| `ACR_RESOURCE_GROUP` | `setup-gh-deploy.ps1` |
+| `RESOURCE_GROUP` | `setup-gh-deploy.ps1` |
+| `VITE_AZURE_AD_CLIENT_ID` | `setup-app-registration.ps1` |
+| `VITE_AZURE_AD_AUTHORITY` | `setup-app-registration.ps1` |
+| `VITE_AZURE_AD_REDIRECT_URI` | `setup-app-registration.ps1` |
 
 ## Custom Domain
 
@@ -169,15 +176,6 @@ There are a few important roles to note:
 - **Key Vault Secrets User** — "Read secret contents." Assigned to the managed identity by `assign-mi-rbac.ps1`.
 - **Storage Blob Data Contributor** — Allows the managed identity to read/write user-access config in blob storage.
 - **AcrPull** — Allows the managed identity to pull container images from Azure Container Registry.
-
-For end-user access, assign users or Entra ID groups the appropriate roles on the Key Vault:
-
-| Role | Purpose |
-| --- | --- |
-| **Key Vault Reader** | Read metadata of key vaults, certificates, keys, and secrets |
-| **Key Vault Secrets User** | Read secret contents |
-
-As a best practice, create Entra ID groups (e.g. `app-keyvault Secrets Admins` and `app-keyvault Secrets Users`) and assign the roles to those groups. Then add users to the appropriate group for access.
 
 The managed identity RBAC is handled by the script in the Deployment folder:
 
