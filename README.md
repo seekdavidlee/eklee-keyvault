@@ -11,7 +11,8 @@ The bicep will ensure when creating Azure Key Vault, we are using Azure role-bas
 By default, we are using the Free tier of static web app (for your personal private use) but we are still paying for usage on Azure Storage, Azure API Management and Azure Key Vault. The cost should be minimal if you have usage with less than a few lookup of secrets daily.
 
 ### Build Status
-![Build status](https://github.com/seekdavidlee/Eklee-KeyVault/actions/workflows/app.yml/badge.svg)
+![Build status](https://github.com/seekdavidlee/Eklee-KeyVault/actions/workflows/cicd.yml/badge.svg)
+![Infra](https://github.com/seekdavidlee/Eklee-KeyVault/actions/workflows/deploy-infra.yml/badge.svg)
 
 ## Local Development
 
