@@ -1,42 +1,35 @@
 name: Deploy Infrastructure
 
 on:
-  push:
-    branches:
-      - '**'
-    paths:
-      - 'Deployment/**'
+  workflow_dispatch:
+    inputs:
+      branch:
+        description: 'Branch name to deploy from'
+        required: true
+        type: string
+      environment:
+        description: 'Target environment'
+        required: true
+        type: choice
+        options:
+          - dev
+          - prod
 
 permissions:
   id-token: write
   contents: read
 
 jobs:
-  setup:
-    name: Choose Secrets Environment Job
-    runs-on: ubuntu-latest
-    steps:
-      - id: setup
-        name: Setup Environment Step
-        # main branch deploys to prod; all other branches deploy to dev
-        run: |
-          if [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
-            echo "build_env=prod" >> $GITHUB_OUTPUT
-          else
-            echo "build_env=dev" >> $GITHUB_OUTPUT
-          fi
-    outputs:
-      build_env: ${{ steps.setup.outputs.build_env }}
-
   deploy-infra:
     name: Deploy Bicep Infrastructure
-    needs: setup
     runs-on: ubuntu-latest
-    environment: ${{ needs.setup.outputs.build_env }}
+    environment: ${{ inputs.environment }}
 
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          ref: ${{ inputs.branch }}
 
       - name: Login to Azure with OIDC federated credentials
         uses: azure/login@v2
@@ -48,9 +41,8 @@ jobs:
       - name: Set deployment variables
         id: vars
         run: |
-          ENVIRONMENT="${{ needs.setup.outputs.build_env }}"
           DEPLOYMENT_NAME="eklee-keyvault-$(date +%Y%m%d-%H%M%S)"
-          echo "environment=$ENVIRONMENT" >> "$GITHUB_OUTPUT"
+          echo "environment=${{ inputs.environment }}" >> "$GITHUB_OUTPUT"
           echo "deploymentName=$DEPLOYMENT_NAME" >> "$GITHUB_OUTPUT"
 
       - name: Deploy Bicep template

@@ -221,6 +221,40 @@ foreach ($env in $environments) {
 }
 
 # ============================================================================
+# Assign AcrPush Role to App Registration on Container Registry
+# ============================================================================
+
+$acrScope = "/subscriptions/$subscriptionId/resourceGroups/$ContainerRegistryResourceGroup/providers/Microsoft.ContainerRegistry/registries/$ContainerRegistryName"
+
+Write-Step "Checking existing AcrPush role assignment on container registry '$ContainerRegistryName'..."
+$existingAcrAssignment = az role assignment list `
+    --assignee $spObjectId `
+    --role "AcrPush" `
+    --scope $acrScope `
+    --output json | ConvertFrom-Json
+
+if ($existingAcrAssignment -and $existingAcrAssignment.Count -gt 0) {
+    Write-Success "AcrPush role already assigned to service principal on '$ContainerRegistryName'"
+}
+else {
+    Write-Step "Assigning AcrPush role to service principal on container registry '$ContainerRegistryName'..."
+    az role assignment create `
+        --assignee-object-id $spObjectId `
+        --assignee-principal-type ServicePrincipal `
+        --role "AcrPush" `
+        --scope $acrScope `
+        --output none
+
+    if ($LASTEXITCODE -eq 0) {
+        Write-Success "AcrPush role assigned to service principal on '$ContainerRegistryName'"
+    }
+    else {
+        Write-Error "Failed to assign AcrPush role on container registry '$ContainerRegistryName'"
+        exit 1
+    }
+}
+
+# ============================================================================
 # Configure Federated Credentials (branch + environments)
 # ============================================================================
 
