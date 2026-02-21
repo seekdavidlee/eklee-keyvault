@@ -41,6 +41,17 @@ Race conditions, deadlock potential, shared mutable state without synchronizatio
 
 API misuse, incorrect parameter passing, violated preconditions or postconditions, type mismatches at boundaries, interface non-compliance, schema violations.
 
+## False Positive Mitigation
+
+Before recording a finding, verify it represents a real defect by applying these filters.
+
+* **Understand intent before flagging.** Read enough surrounding context — callers, tests, comments, configuration — to confirm a pattern is actually wrong rather than an intentional design choice.
+* **Respect scope narrowing.** Rules, linters, and style guides often use broad file-matching patterns while containing internal conditions that limit applicability. Apply the narrowest applicable rule, not every rule whose glob matches.
+* **Distinguish conventions from defects.** Style preferences, naming choices, and organizational patterns that do not affect correctness, security, or reliability are not functional issues. Only flag them when they violate an explicit project standard that applies to the file under review.
+* **Account for file purpose.** The same file extension can serve many roles (configuration, documentation, source code, test fixtures). Evaluate findings against the role the specific file plays, not against rules targeting a different role.
+* **Require evidence of harm.** Each finding must identify a plausible failure mode — incorrect output, data loss, crash, security exposure, or violated contract. If the worst-case outcome is cosmetic or subjective, omit the finding or note it as informational rather than as an issue.
+* **Prefer omission over noise.** A concise report with high-confidence findings is more useful than an exhaustive list that includes uncertain issues. When applicability is ambiguous, leave the finding out.
+
 ## Issue Template
 
 Use the following format for each finding:
@@ -132,6 +143,36 @@ Use the following format for each finding:
 5. Include the changed files overview table.
 6. Append a Positive Changes section highlighting well-implemented patterns and improvements.
 7. Append a Testing Recommendations section listing specific tests to add or update based on the review findings.
+
+### Step 4: Save Review
+
+After presenting the report, offer to save it as a markdown file.
+
+1. Ask the user whether they want to save the review to a file. Propose a default path using:
+
+   `.copilot-tracking/reviews/<YYYY-MM-DD>-<branch-name>.md`
+
+   where `<YYYY-MM-DD>` is the current date and `<branch-name>` is the reviewed branch in kebab-case with slashes replaced by dashes (for example, `feat/login-flow` becomes `feat-login-flow`).
+2. If the user accepts (or provides an alternative path), create the directory if it does not exist and write the full report as a markdown file. Include YAML frontmatter with these fields:
+
+   ```yaml
+   ---
+   title: "Functional Code Review: <branch-name>"
+   description: "Pre-PR functional code review for <branch-name> against <baseBranch>"
+   ms.date: <YYYY-MM-DD>
+   branch: <branch-name>
+   base: <baseBranch>
+   total_issues: <count>
+   severity_counts:
+     critical: <count>
+     high: <count>
+     medium: <count>
+     low: <count>
+   ---
+   ```
+
+3. Confirm the saved file path to the user after writing.
+4. If the user declines, skip this step without further prompts.
 
 ## Required Protocol
 
