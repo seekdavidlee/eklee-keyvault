@@ -9,7 +9,7 @@ The Bicep templates ensure when creating Azure Key Vault, we are using Azure rol
 ![Build status](https://github.com/seekdavidlee/Eklee-KeyVault/actions/workflows/cicd.yml/badge.svg)
 ![Infra](https://github.com/seekdavidlee/Eklee-KeyVault/actions/workflows/deploy-infra.yml/badge.svg)
 
-### Cost
+## Cost
 
 The primary costs are Azure Container Apps, Azure Storage, and Azure Key Vault. The Container App is configured to scale to zero when idle, so you are only charged for compute when the app is actively handling requests. Expect a cold-start delay of a few seconds when the app scales up from zero. Overall cost should be minimal for light usage.
 
