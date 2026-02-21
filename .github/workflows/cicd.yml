@@ -214,6 +214,8 @@ jobs:
               --name "$CONTAINER_APP_NAME" \
               --resource-group "$RESOURCE_GROUP" \
               --image "$IMAGE" \
+              --min-replicas 0 \
+              --max-replicas 1 \
               --set-env-vars \
                 AZURE_CLIENT_ID="$IDENTITY_CLIENT_ID" \
                 StorageUri="$STORAGE_BLOB_URI" \
