@@ -166,11 +166,13 @@ jobs:
           # Discover infrastructure resources from the resource group
           ENV_NAME=$(az containerapp env list --resource-group "$RESOURCE_GROUP" --query "[0].name" -o tsv)
           IDENTITY_ID=$(az identity list --resource-group "$RESOURCE_GROUP" --query "[0].id" -o tsv)
+          IDENTITY_CLIENT_ID=$(az identity list --resource-group "$RESOURCE_GROUP" --query "[0].clientId" -o tsv)
           KEYVAULT_URI=$(az keyvault list --resource-group "$RESOURCE_GROUP" --query "[0].properties.vaultUri" -o tsv)
           STORAGE_BLOB_URI=$(az storage account list --resource-group "$RESOURCE_GROUP" --query "[0].primaryEndpoints.blob" -o tsv)
 
           echo "Container Apps Environment: $ENV_NAME"
           echo "Managed Identity: $IDENTITY_ID"
+          echo "Managed Identity Client ID: $IDENTITY_CLIENT_ID"
           echo "Key Vault URI: $KEYVAULT_URI"
           echo "Storage Blob URI: $STORAGE_BLOB_URI"
 
@@ -197,6 +199,7 @@ jobs:
               --min-replicas 1 \
               --max-replicas 1 \
               --env-vars \
+                AZURE_CLIENT_ID="$IDENTITY_CLIENT_ID" \
                 StorageUri="$STORAGE_BLOB_URI" \
                 StorageContainerName=configs \
                 KeyVaultUri="$KEYVAULT_URI" \
@@ -212,6 +215,7 @@ jobs:
               --resource-group "$RESOURCE_GROUP" \
               --image "$IMAGE" \
               --set-env-vars \
+                AZURE_CLIENT_ID="$IDENTITY_CLIENT_ID" \
                 StorageUri="$STORAGE_BLOB_URI" \
                 StorageContainerName=configs \
                 KeyVaultUri="$KEYVAULT_URI" \

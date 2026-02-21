@@ -183,9 +183,13 @@ else {
     Write-Host "Azure CLI pre-authorized successfully." -ForegroundColor Green
 }
 
-# --- Ensure SPA redirect URI is configured (needed for the React UI) ---
-$spaRedirectUri = "http://localhost:5173"
-Write-Host "Ensuring SPA redirect URI '$spaRedirectUri' is configured..." -ForegroundColor Cyan
+# --- Ensure SPA redirect URIs are configured (needed for the React UI) ---
+# Always include localhost for local dev; add deployed environment URIs when provided.
+$spaRedirectUris = @("http://localhost:5173")
+if ($AzureAdRedirectUriDev) { $spaRedirectUris += $AzureAdRedirectUriDev }
+if ($AzureAdRedirectUriProd) { $spaRedirectUris += $AzureAdRedirectUriProd }
+
+Write-Host "Ensuring SPA redirect URIs are configured: $($spaRedirectUris -join ', ')..." -ForegroundColor Cyan
 
 # Get the objectId (needed for Graph API call)
 if (-not $app.id) {
@@ -195,7 +199,7 @@ $objectId = $app.id
 
 $spaBody = @{
     spa = @{
-        redirectUris = @($spaRedirectUri)
+        redirectUris = $spaRedirectUris
     }
 } | ConvertTo-Json -Depth 5
 
@@ -211,7 +215,7 @@ try {
 finally {
     Remove-Item $tempFileSpa -ErrorAction SilentlyContinue
 }
-Write-Host "SPA redirect URI configured." -ForegroundColor Green
+Write-Host "SPA redirect URIs configured." -ForegroundColor Green
 
 # --- Determine the audience ---
 $audience = "api://$clientId"
