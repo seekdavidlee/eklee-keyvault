@@ -3,7 +3,7 @@ import { createRoot } from 'react-dom/client';
 import { PublicClientApplication, EventType } from '@azure/msal-browser';
 import { msalConfig, apiScopes } from './auth/msalConfig';
 import { AuthProvider } from './auth/AuthProvider';
-import { setAuthToken } from './services/apiClient';
+import { configureMsalInterceptor } from './services/apiClient';
 import { App } from './App';
 
 const msalInstance = new PublicClientApplication(msalConfig);
@@ -15,7 +15,7 @@ msalInstance.initialize().then(() => {
     msalInstance.setActiveAccount(accounts[0]);
   }
 
-  // Listen for login success events to set the active account and auth token
+  // Listen for login success events to set the active account
   msalInstance.addEventCallback((event) => {
     if (
       event.eventType === EventType.LOGIN_SUCCESS &&
@@ -29,18 +29,10 @@ msalInstance.initialize().then(() => {
     }
   });
 
-  // Acquire token silently on startup and set it on the API client
-  const activeAccount = msalInstance.getActiveAccount();
-  if (activeAccount) {
-    msalInstance
-      .acquireTokenSilent({ ...apiScopes, account: activeAccount })
-      .then((response) => {
-        setAuthToken(response.accessToken);
-      })
-      .catch(() => {
-        // Token acquisition failed — AuthProvider will handle re-login
-      });
-  }
+  // Install an axios interceptor that acquires a token before every API call.
+  // This avoids the race condition on first login where the app renders
+  // before a one-shot token acquisition completes.
+  configureMsalInterceptor(msalInstance, apiScopes.scopes);
 
   createRoot(document.getElementById('root')!).render(
     <StrictMode>
