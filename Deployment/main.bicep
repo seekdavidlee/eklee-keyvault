@@ -125,6 +125,21 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2025-01-01' = {
   }
 }
 
+// Blob service for creating containers
+resource blobService 'Microsoft.Storage/storageAccounts/blobServices@2025-01-01' = {
+  parent: storageAccount
+  name: 'default'
+}
+
+// Container used for application configuration data
+resource configsContainer 'Microsoft.Storage/storageAccounts/blobServices/containers@2025-01-01' = {
+  parent: blobService
+  name: 'configs'
+  properties: {
+    publicAccess: 'None'
+  }
+}
+
 // ============================================================================
 // KEY VAULT
 // ============================================================================
