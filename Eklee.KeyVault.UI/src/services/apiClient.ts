@@ -1,5 +1,6 @@
 import axios from 'axios';
 import type { IPublicClientApplication, AccountInfo } from '@azure/msal-browser';
+import { InteractionRequiredAuthError } from '@azure/msal-browser';
 
 /**
  * Axios instance for communicating with the Eklee KeyVault API.
@@ -27,11 +28,20 @@ export function configureMsalInterceptor(
   apiClient.interceptors.request.use(async (config) => {
     const account: AccountInfo | null = msalInstance.getActiveAccount();
     if (account) {
-      const response = await msalInstance.acquireTokenSilent({
-        scopes,
-        account,
-      });
-      config.headers.Authorization = `Bearer ${response.accessToken}`;
+      try {
+        const response = await msalInstance.acquireTokenSilent({
+          scopes,
+          account,
+        });
+        config.headers.Authorization = `Bearer ${response.accessToken}`;
+      } catch (error) {
+        if (error instanceof InteractionRequiredAuthError) {
+          await msalInstance.acquireTokenRedirect({ scopes });
+          // The redirect will navigate away; this throw prevents the request from firing.
+          throw new axios.Cancel('Redirecting to login');
+        }
+        throw error;
+      }
     }
     return config;
   });
