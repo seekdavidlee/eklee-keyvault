@@ -1,7 +1,7 @@
 <#
 .SYNOPSIS
-    Looks up or creates the "eklee-azkeyvault-viewer" Azure AD app registration
-    and updates appsettings.json with the AzureAd configuration.
+    Looks up or creates the "eklee-azkeyvault-viewer" Azure AD app registration,
+    updates appsettings.json, and optionally sets GitHub Actions environment variables.
 
 .DESCRIPTION
     1. Checks for an existing app registration named "eklee-azkeyvault-viewer".
@@ -9,14 +9,67 @@
        to protect the API.
     3. Updates the local appsettings.json AzureAd section with Instance, TenantId,
        ClientId, and Audience.
+    4. When GitHubOrganization and GitHubRepoName are provided, sets per-environment
+       (dev/prod) GitHub Actions variables for VITE_AZURE_AD_CLIENT_ID,
+       VITE_AZURE_AD_AUTHORITY, and VITE_AZURE_AD_REDIRECT_URI.
+
+.PARAMETER AppName
+    The display name of the Azure AD app registration. Defaults to "eklee-azkeyvault-viewer".
+
+.PARAMETER AppSettingsPath
+    Path to the appsettings.json file to update. Defaults to the file in the script directory.
+
+.PARAMETER GitHubOrganization
+    The GitHub organization (or username) that owns the repository.
+    Required to set GitHub Actions environment variables.
+
+.PARAMETER GitHubRepoName
+    The name of the GitHub repository.
+    Required to set GitHub Actions environment variables.
+
+.PARAMETER AzureAdRedirectUriDev
+    The redirect URI for the dev environment (e.g. the dev Container App URL).
+    Required when setting GitHub variables.
+
+.PARAMETER AzureAdRedirectUriProd
+    The redirect URI for the prod environment (e.g. the prod Container App URL).
+    Optional. When omitted, only the dev environment variables are set.
 
 .NOTES
     Requires: Azure CLI (az) logged in with sufficient permissions.
+    Requires: GitHub CLI (gh) authenticated when setting GitHub variables.
+
+.EXAMPLE
+    .\setup-app-registration.ps1
+
+    Creates/updates the app registration and updates local appsettings.json only.
+
+.EXAMPLE
+    .\setup-app-registration.ps1 -GitHubOrganization "seekdavidlee" -GitHubRepoName "eklee-keyvault" -AzureAdRedirectUriDev "https://eklee-keyvault.proudisland-cfc9d53d.eastus2.azurecontainerapps.io"
+
+    Sets VITE_AZURE_AD_* GitHub environment variables for the dev environment.
+
+.EXAMPLE
+    .\setup-app-registration.ps1 -GitHubOrganization "seekdavidlee" -GitHubRepoName "eklee-keyvault" -AzureAdRedirectUriDev "https://eklee-keyvault-dev.nicemeadow.eastus2.azurecontainerapps.io" -AzureAdRedirectUriProd "https://eklee-keyvault.nicemeadow.eastus2.azurecontainerapps.io"
+
+    Sets VITE_AZURE_AD_* GitHub environment variables for both dev and prod.
 #>
 
 param(
     [string]$AppName = "eklee-azkeyvault-viewer",
-    [string]$AppSettingsPath = (Join-Path $PSScriptRoot "appsettings.json")
+    [string]$AppSettingsPath = (Join-Path $PSScriptRoot "appsettings.json"),
+
+    [Parameter(Mandatory = $false)]
+    [string]$GitHubOrganization,
+
+    [Parameter(Mandatory = $false)]
+    [string]$GitHubRepoName,
+
+    [Parameter(Mandatory = $false)]
+    [string]$AzureAdRedirectUriDev,
+
+    [Parameter(Mandatory = $false)]
+    [string]$AzureAdRedirectUriProd
 )
 
 Set-StrictMode -Version Latest
@@ -214,3 +267,47 @@ if (Test-Path $envFilePath) {
     Write-Host "  Updated    : $envFilePath"
 }
 Write-Host ""
+
+# --- Set GitHub Actions environment variables (optional) ---
+if ($GitHubOrganization -and $GitHubRepoName) {
+    if (-not $AzureAdRedirectUriDev) {
+        Write-Error "AzureAdRedirectUriDev is required when setting GitHub environment variables."
+        exit 1
+    }
+
+    $ghRepo = "${GitHubOrganization}/${GitHubRepoName}"
+    Write-Host "Setting GitHub Actions environment variables for $ghRepo..." -ForegroundColor Cyan
+
+    $environments = @(
+        @{ Name = 'dev';  RedirectUri = $AzureAdRedirectUriDev }
+    )
+    if ($AzureAdRedirectUriProd) {
+        $environments += @{ Name = 'prod'; RedirectUri = $AzureAdRedirectUriProd }
+    }
+
+    foreach ($env in $environments) {
+        $envName = $env.Name
+
+        $ghVars = @{
+            VITE_AZURE_AD_CLIENT_ID    = $clientId
+            VITE_AZURE_AD_AUTHORITY    = "https://login.microsoftonline.com/$tenantId"
+            VITE_AZURE_AD_REDIRECT_URI = $env.RedirectUri
+        }
+
+        foreach ($var in $ghVars.GetEnumerator()) {
+            Write-Host "  -> Setting '$($var.Key)' = '$($var.Value)' for environment '$envName'..." -ForegroundColor Yellow
+            $var.Value | gh variable set $var.Key --repo $ghRepo --env $envName
+            if ($LASTEXITCODE -eq 0) {
+                Write-Host "  [OK] Variable '$($var.Key)' set for environment '$envName'" -ForegroundColor Green
+            }
+            else {
+                Write-Error "Failed to set variable '$($var.Key)' for environment '$envName'"
+                exit 1
+            }
+        }
+    }
+
+    Write-Host ""
+    Write-Host "  [OK] All GitHub environment variables configured for $ghRepo" -ForegroundColor Green
+    Write-Host ""
+}
