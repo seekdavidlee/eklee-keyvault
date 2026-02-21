@@ -9,18 +9,30 @@ Project("{2150E333-8FDC-42A3-9474-1A3956D46DE8}") = "Solution Items", "Solution 
 		README.md = README.md
 	EndProjectSection
 EndProject
-Project("{9A19103F-16F7-4668-BE54-9A1E7A4F7556}") = "EKlee.KeyVault.Client", "EKlee.KeyVault.Client\EKlee.KeyVault.Client.csproj", "{3E57C303-890E-46C2-B95A-FD6CBDDC9B2C}"
+Project("{FAE04EC0-301F-11D3-BF4B-00C04F79EFBC}") = "Eklee.KeyVault.Api", "Eklee.KeyVault.Api\Eklee.KeyVault.Api.csproj", "{360BA215-9CD8-449B-9AD9-310043193C25}"
 EndProject
 Global
 	GlobalSection(SolutionConfigurationPlatforms) = preSolution
 		Debug|Any CPU = Debug|Any CPU
+		Debug|x64 = Debug|x64
+		Debug|x86 = Debug|x86
 		Release|Any CPU = Release|Any CPU
+		Release|x64 = Release|x64
+		Release|x86 = Release|x86
 	EndGlobalSection
 	GlobalSection(ProjectConfigurationPlatforms) = postSolution
-		{3E57C303-890E-46C2-B95A-FD6CBDDC9B2C}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
-		{3E57C303-890E-46C2-B95A-FD6CBDDC9B2C}.Debug|Any CPU.Build.0 = Debug|Any CPU
-		{3E57C303-890E-46C2-B95A-FD6CBDDC9B2C}.Release|Any CPU.ActiveCfg = Release|Any CPU
-		{3E57C303-890E-46C2-B95A-FD6CBDDC9B2C}.Release|Any CPU.Build.0 = Release|Any CPU
+		{360BA215-9CD8-449B-9AD9-310043193C25}.Debug|Any CPU.ActiveCfg = Debug|Any CPU
+		{360BA215-9CD8-449B-9AD9-310043193C25}.Debug|Any CPU.Build.0 = Debug|Any CPU
+		{360BA215-9CD8-449B-9AD9-310043193C25}.Debug|x64.ActiveCfg = Debug|Any CPU
+		{360BA215-9CD8-449B-9AD9-310043193C25}.Debug|x64.Build.0 = Debug|Any CPU
+		{360BA215-9CD8-449B-9AD9-310043193C25}.Debug|x86.ActiveCfg = Debug|Any CPU
+		{360BA215-9CD8-449B-9AD9-310043193C25}.Debug|x86.Build.0 = Debug|Any CPU
+		{360BA215-9CD8-449B-9AD9-310043193C25}.Release|Any CPU.ActiveCfg = Release|Any CPU
+		{360BA215-9CD8-449B-9AD9-310043193C25}.Release|Any CPU.Build.0 = Release|Any CPU
+		{360BA215-9CD8-449B-9AD9-310043193C25}.Release|x64.ActiveCfg = Release|Any CPU
+		{360BA215-9CD8-449B-9AD9-310043193C25}.Release|x64.Build.0 = Release|Any CPU
+		{360BA215-9CD8-449B-9AD9-310043193C25}.Release|x86.ActiveCfg = Release|Any CPU
+		{360BA215-9CD8-449B-9AD9-310043193C25}.Release|x86.Build.0 = Release|Any CPU
 	EndGlobalSection
 	GlobalSection(SolutionProperties) = preSolution
 		HideSolutionNode = FALSE

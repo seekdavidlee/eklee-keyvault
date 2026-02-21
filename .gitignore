@@ -271,6 +271,7 @@ __pycache__/
 # Working Directory
 .wd/
 properties/
-package-lock.json
 *appsettings.json
 *appsettings.Development.json
+
+**/.env

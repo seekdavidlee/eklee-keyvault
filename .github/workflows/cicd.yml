@@ -1,0 +1,234 @@
+name: CI/CD
+
+on:
+  push:
+    branches:
+      - '**'
+    paths-ignore:
+      - 'Deployment/**'
+      - '**.md'
+  pull_request:
+    branches:
+      - main
+    paths-ignore:
+      - 'Deployment/**'
+      - '**.md'
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  setup:
+    name: Choose Secrets Environment
+    runs-on: ubuntu-latest
+    steps:
+      - id: setup
+        name: Setup Environment
+        # main branch uses prod; all other branches use dev
+        run: |
+          if [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
+            echo "build_env=prod" >> $GITHUB_OUTPUT
+          else
+            echo "build_env=dev" >> $GITHUB_OUTPUT
+          fi
+    outputs:
+      build_env: ${{ steps.setup.outputs.build_env }}
+
+  test-dotnet:
+    name: Test .NET Build
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
+
+      - name: Restore dependencies
+        run: dotnet restore Eklee.KeyVault.Api/Eklee.KeyVault.Api.csproj
+
+      - name: Build API
+        run: dotnet build Eklee.KeyVault.Api/Eklee.KeyVault.Api.csproj --no-restore --configuration Release
+
+  test-npm:
+    name: Test npm Build
+    runs-on: ubuntu-latest
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: Eklee.KeyVault.UI/package-lock.json
+
+      - name: Install dependencies
+        working-directory: Eklee.KeyVault.UI
+        run: npm ci
+
+      - name: Build UI
+        working-directory: Eklee.KeyVault.UI
+        run: npm run build
+
+  build-and-push:
+    name: Build and Push Docker Image
+    needs: [setup, test-dotnet, test-npm]
+    runs-on: ubuntu-latest
+    environment: ${{ needs.setup.outputs.build_env }}
+    outputs:
+      image: ${{ steps.image-tag.outputs.image }}
+    
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Login to Azure with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Login to Azure Container Registry
+        run: |
+          az acr login --name ${{ vars.ACR_NAME }}
+
+      - name: Set image tag
+        id: image-tag
+        run: |
+          # Use short SHA for dev, release tag for main
+          if [[ "${{ needs.setup.outputs.build_env }}" == "prod" ]]; then
+            TAG="latest"
+          else
+            TAG="dev-${GITHUB_SHA::8}"
+          fi
+          echo "tag=$TAG" >> $GITHUB_OUTPUT
+          echo "image=${{ vars.ACR_NAME }}.azurecr.io/eklee-keyvault:$TAG" >> $GITHUB_OUTPUT
+
+      - name: Build Docker image
+        run: |
+          docker build -t ${{ steps.image-tag.outputs.image }} \
+            --build-arg VITE_AZURE_AD_CLIENT_ID=${{ vars.VITE_AZURE_AD_CLIENT_ID }} \
+            --build-arg VITE_AZURE_AD_AUTHORITY=${{ vars.VITE_AZURE_AD_AUTHORITY }} \
+            --build-arg VITE_AZURE_AD_REDIRECT_URI=${{ vars.VITE_AZURE_AD_REDIRECT_URI }} \
+            --target runtime \
+            .
+
+      - name: Push Docker image to ACR
+        run: |
+          docker push ${{ steps.image-tag.outputs.image }}
+
+      - name: Tag and push additional tags
+        if: needs.setup.outputs.build_env == 'prod'
+        run: |
+          # For production, also tag with the commit SHA
+          docker tag ${{ steps.image-tag.outputs.image }} \
+            ${{ vars.ACR_NAME }}.azurecr.io/eklee-keyvault:${GITHUB_SHA::8}
+          docker push ${{ vars.ACR_NAME }}.azurecr.io/eklee-keyvault:${GITHUB_SHA::8}
+
+      - name: Output image details
+        run: |
+          echo "✅ Successfully built and pushed image:"
+          echo "   ${{ steps.image-tag.outputs.image }}"
+          if [[ "${{ needs.setup.outputs.build_env }}" == "prod" ]]; then
+            echo "   ${{ vars.ACR_NAME }}.azurecr.io/eklee-keyvault:${GITHUB_SHA::8}"
+          fi
+
+  deploy:
+    name: Deploy to Azure Container Apps
+    needs: [setup, build-and-push]
+    runs-on: ubuntu-latest
+    environment: ${{ needs.setup.outputs.build_env }}
+
+    steps:
+      - name: Login to Azure with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Deploy Container App
+        run: |
+          RESOURCE_GROUP="${{ vars.RESOURCE_GROUP }}"
+          IMAGE="${{ needs.build-and-push.outputs.image }}"
+          ACR_SERVER="${{ vars.ACR_NAME }}.azurecr.io"
+          CONTAINER_APP_NAME="eklee-keyvault"
+
+          # Discover infrastructure resources from the resource group
+          ENV_NAME=$(az containerapp env list --resource-group "$RESOURCE_GROUP" --query "[0].name" -o tsv)
+          IDENTITY_ID=$(az identity list --resource-group "$RESOURCE_GROUP" --query "[0].id" -o tsv)
+          IDENTITY_CLIENT_ID=$(az identity list --resource-group "$RESOURCE_GROUP" --query "[0].clientId" -o tsv)
+          KEYVAULT_URI=$(az keyvault list --resource-group "$RESOURCE_GROUP" --query "[0].properties.vaultUri" -o tsv)
+          STORAGE_BLOB_URI=$(az storage account list --resource-group "$RESOURCE_GROUP" --query "[0].primaryEndpoints.blob" -o tsv)
+
+          echo "Container Apps Environment: $ENV_NAME"
+          echo "Managed Identity: $IDENTITY_ID"
+          echo "Managed Identity Client ID: $IDENTITY_CLIENT_ID"
+          echo "Key Vault URI: $KEYVAULT_URI"
+          echo "Storage Blob URI: $STORAGE_BLOB_URI"
+
+          # Check if container app already exists
+          EXISTS=$(az containerapp show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query "name" -o tsv 2>/dev/null || echo "")
+
+          if [ -z "$EXISTS" ]; then
+            echo "Creating container app '$CONTAINER_APP_NAME'..."
+            az containerapp create \
+              --name "$CONTAINER_APP_NAME" \
+              --resource-group "$RESOURCE_GROUP" \
+              --environment "$ENV_NAME" \
+              --image "$IMAGE" \
+              --target-port 8080 \
+              --ingress external \
+              --user-assigned "$IDENTITY_ID" \
+              --registry-server "$ACR_SERVER" \
+              --registry-identity "$IDENTITY_ID" \
+              --cpu 0.5 \
+              --memory 1.0Gi \
+              --min-replicas 1 \
+              --max-replicas 1 \
+              --env-vars \
+                AZURE_CLIENT_ID="$IDENTITY_CLIENT_ID" \
+                StorageUri="$STORAGE_BLOB_URI" \
+                StorageContainerName=configs \
+                KeyVaultUri="$KEYVAULT_URI" \
+                AuthenticationMode=mi \
+                AzureAd__Instance=https://login.microsoftonline.com/ \
+                AzureAd__TenantId=${{ vars.AZURE_TENANT_ID }} \
+                AzureAd__ClientId=${{ vars.VITE_AZURE_AD_CLIENT_ID }} \
+                AzureAd__Audience=api://${{ vars.VITE_AZURE_AD_CLIENT_ID }}
+          else
+            echo "Updating container app '$CONTAINER_APP_NAME'..."
+            az containerapp update \
+              --name "$CONTAINER_APP_NAME" \
+              --resource-group "$RESOURCE_GROUP" \
+              --image "$IMAGE" \
+              --set-env-vars \
+                AZURE_CLIENT_ID="$IDENTITY_CLIENT_ID" \
+                StorageUri="$STORAGE_BLOB_URI" \
+                StorageContainerName=configs \
+                KeyVaultUri="$KEYVAULT_URI" \
+                AuthenticationMode=mi \
+                AzureAd__Instance=https://login.microsoftonline.com/ \
+                AzureAd__TenantId=${{ vars.AZURE_TENANT_ID }} \
+                AzureAd__ClientId=${{ vars.VITE_AZURE_AD_CLIENT_ID }} \
+                AzureAd__Audience=api://${{ vars.VITE_AZURE_AD_CLIENT_ID }}
+          fi
+
+          # Display deployed app URL
+          FQDN=$(az containerapp show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query "properties.configuration.ingress.fqdn" -o tsv)
+          echo "✅ Container app deployed successfully: https://$FQDN"
