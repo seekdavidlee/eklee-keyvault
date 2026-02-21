@@ -42,7 +42,10 @@ builder.Services.AddSingleton<TokenCredential>(sp =>
         {
             ProcessTimeout = TimeSpan.FromSeconds(30)
         }),
-        "mi" => new ManagedIdentityCredential(),
+        "mi" => new ManagedIdentityCredential(
+            Environment.GetEnvironmentVariable("AZURE_CLIENT_ID")
+            ?? throw new InvalidOperationException(
+                "AZURE_CLIENT_ID environment variable is required for managed identity authentication.")),
         _ => throw new InvalidOperationException(
             $"Unsupported AuthenticationMode '{config.AuthenticationMode}'. Use 'azcli' or 'mi'.")
     };
