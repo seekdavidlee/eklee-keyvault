@@ -143,9 +143,8 @@ jobs:
   deploy:
     name: Deploy to Azure Container Apps
     needs: [setup, build-and-push]
-    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
-    environment: prod
+    environment: ${{ needs.setup.outputs.build_env }}
 
     steps:
       - name: Login to Azure with OIDC
