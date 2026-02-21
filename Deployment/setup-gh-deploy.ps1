@@ -221,44 +221,64 @@ foreach ($env in $environments) {
 }
 
 # ============================================================================
-# Configure Federated Credential
+# Configure Federated Credentials (branch + environments)
 # ============================================================================
 
-Write-Step "Checking if federated credential '$federatedCredentialName' already exists..."
+# Define all federated credentials: one for main branch, one per environment
+$federatedCredentials = @(
+    @{
+        Name        = $federatedCredentialName
+        Subject     = "repo:${GitHubOrganization}/${GitHubRepoName}:ref:refs/heads/main"
+        Description = "GitHub Actions deployment from main branch"
+    }
+)
+foreach ($env in $environments) {
+    $federatedCredentials += @{
+        Name        = "github-actions-env-$($env.Name)"
+        Subject     = "repo:${GitHubOrganization}/${GitHubRepoName}:environment:$($env.Name)"
+        Description = "GitHub Actions deployment for $($env.Name) environment"
+    }
+}
+
+Write-Step "Listing existing federated credentials..."
 $existingCredentials = az ad app federated-credential list --id $objectId --output json | ConvertFrom-Json
 
-$credentialExists = $false
-if ($existingCredentials) {
-    foreach ($cred in $existingCredentials) {
-        if ($cred.name -eq $federatedCredentialName) {
-            $credentialExists = $true
-            break
+foreach ($fedCred in $federatedCredentials) {
+    $credName = $fedCred.Name
+
+    $credentialExists = $false
+    if ($existingCredentials) {
+        foreach ($cred in $existingCredentials) {
+            if ($cred.name -eq $credName) {
+                $credentialExists = $true
+                break
+            }
         }
     }
-}
 
-if ($credentialExists) {
-    Write-Success "Federated credential '$federatedCredentialName' already exists"
-}
-else {
-    Write-Step "Creating federated credential for GitHub Actions..."
-
-    $credentialBody = @{
-        name        = $federatedCredentialName
-        issuer      = "https://token.actions.githubusercontent.com"
-        subject     = "repo:${GitHubOrganization}/${GitHubRepoName}:ref:refs/heads/main"
-        description = "GitHub Actions deployment from main branch"
-        audiences   = @("api://AzureADTokenExchange")
-    } | ConvertTo-Json -Compress
-
-    $credentialBody | az ad app federated-credential create --id $objectId --parameters "@-" --output none
-
-    if ($LASTEXITCODE -eq 0) {
-        Write-Success "Federated credential created for repo '${GitHubOrganization}/${GitHubRepoName}' (main branch)"
+    if ($credentialExists) {
+        Write-Success "Federated credential '$credName' already exists"
     }
     else {
-        Write-Error "Failed to create federated credential"
-        exit 1
+        Write-Step "Creating federated credential '$credName'..."
+
+        $credentialBody = @{
+            name        = $credName
+            issuer      = "https://token.actions.githubusercontent.com"
+            subject     = $fedCred.Subject
+            description = $fedCred.Description
+            audiences   = @("api://AzureADTokenExchange")
+        } | ConvertTo-Json -Compress
+
+        $credentialBody | az ad app federated-credential create --id $objectId --parameters "@-" --output none
+
+        if ($LASTEXITCODE -eq 0) {
+            Write-Success "Federated credential '$credName' created (subject: $($fedCred.Subject))"
+        }
+        else {
+            Write-Error "Failed to create federated credential '$credName'"
+            exit 1
+        }
     }
 }
 
