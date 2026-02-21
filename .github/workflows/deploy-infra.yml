@@ -1,0 +1,66 @@
+name: Deploy Infrastructure
+
+on:
+  push:
+    branches:
+      - '**'
+    paths:
+      - 'Deployment/**'
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  setup:
+    name: Choose Secrets Environment Job
+    runs-on: ubuntu-latest
+    steps:
+      - id: setup
+        name: Setup Environment Step
+        # main branch deploys to prod; all other branches deploy to dev
+        run: |
+          if [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
+            echo "build_env=prod" >> $GITHUB_OUTPUT
+          else
+            echo "build_env=dev" >> $GITHUB_OUTPUT
+          fi
+    outputs:
+      build_env: ${{ steps.setup.outputs.build_env }}
+
+  deploy-infra:
+    name: Deploy Bicep Infrastructure
+    needs: setup
+    runs-on: ubuntu-latest
+    environment: ${{ needs.setup.outputs.build_env }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Login to Azure with OIDC federated credentials
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Set deployment variables
+        id: vars
+        run: |
+          ENVIRONMENT="${{ needs.setup.outputs.build_env }}"
+          DEPLOYMENT_NAME="eklee-keyvault-$(date +%Y%m%d-%H%M%S)"
+          echo "environment=$ENVIRONMENT" >> "$GITHUB_OUTPUT"
+          echo "deploymentName=$DEPLOYMENT_NAME" >> "$GITHUB_OUTPUT"
+
+      - name: Deploy Bicep template
+        id: deploy
+        run: |
+          az deployment group create \
+            --resource-group "${{ vars.RESOURCE_GROUP }}" \
+            --template-file Deployment/main.bicep \
+            --name "${{ steps.vars.outputs.deploymentName }}" \
+            --parameters \
+              environment=${{ steps.vars.outputs.environment }} \
+              containerRegistryName=${{ vars.ACR_NAME }} \
+              containerRegistryResourceGroup=${{ vars.ACR_RESOURCE_GROUP }}
