@@ -7,12 +7,6 @@ on:
     paths-ignore:
       - 'Deployment/**'
       - '**.md'
-  pull_request:
-    branches:
-      - main
-    paths-ignore:
-      - 'Deployment/**'
-      - '**.md'
 
 permissions:
   id-token: write
