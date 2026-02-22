@@ -26,7 +26,8 @@ export function configureMsalInterceptor(
   scopes: string[]
 ) {
   apiClient.interceptors.request.use(async (config) => {
-    const account: AccountInfo | null = msalInstance.getActiveAccount();
+    const account: AccountInfo | null =
+      msalInstance.getActiveAccount() ?? msalInstance.getAllAccounts()[0] ?? null;
     if (account) {
       try {
         const response = await msalInstance.acquireTokenSilent({

@@ -8,14 +8,27 @@ import { App } from './App';
 
 const msalInstance = new PublicClientApplication(msalConfig);
 
-// Set the active account after redirect login completes
-msalInstance.initialize().then(() => {
-  const accounts = msalInstance.getAllAccounts();
-  if (accounts.length > 0) {
-    msalInstance.setActiveAccount(accounts[0]);
+// Initialize MSAL and process any redirect response BEFORE rendering.
+// This guarantees the account and tokens are available on the very first
+// render cycle, preventing the 401 that occurred on first-time login.
+msalInstance.initialize().then(async () => {
+  // handleRedirectPromise() must be awaited so that any login redirect
+  // response is fully processed (tokens cached, account available) before
+  // the React tree mounts and components start making API calls.
+  const redirectResponse = await msalInstance.handleRedirectPromise();
+  if (redirectResponse?.account) {
+    msalInstance.setActiveAccount(redirectResponse.account);
   }
 
-  // Listen for login success events to set the active account
+  // For non-redirect scenarios (page refresh), pick the first cached account.
+  if (!msalInstance.getActiveAccount()) {
+    const accounts = msalInstance.getAllAccounts();
+    if (accounts.length > 0) {
+      msalInstance.setActiveAccount(accounts[0]);
+    }
+  }
+
+  // Listen for login success events (e.g. popup login) to keep the active account current.
   msalInstance.addEventCallback((event) => {
     if (
       event.eventType === EventType.LOGIN_SUCCESS &&
@@ -30,8 +43,6 @@ msalInstance.initialize().then(() => {
   });
 
   // Install an axios interceptor that acquires a token before every API call.
-  // This avoids the race condition on first login where the app renders
-  // before a one-shot token acquisition completes.
   configureMsalInterceptor(msalInstance, apiScopes.scopes);
 
   createRoot(document.getElementById('root')!).render(
