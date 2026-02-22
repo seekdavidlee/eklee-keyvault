@@ -1,6 +1,5 @@
 import axios from 'axios';
-import type { IPublicClientApplication, AccountInfo } from '@azure/msal-browser';
-import { InteractionRequiredAuthError } from '@azure/msal-browser';
+import type { IPublicClientApplication } from '@azure/msal-browser';
 
 /**
  * Axios instance for communicating with the Eklee KeyVault API.
@@ -18,31 +17,20 @@ const apiClient = axios.create({
 /**
  * Configures an axios request interceptor that acquires a Bearer token
  * via MSAL before every API call. This eliminates the race condition where
- * the app renders and fires requests before a one-time token acquisition
- * has completed (e.g. on first login redirect).
+ * components fire requests before a one-time token acquisition has completed.
  */
 export function configureMsalInterceptor(
   msalInstance: IPublicClientApplication,
   scopes: string[]
 ) {
   apiClient.interceptors.request.use(async (config) => {
-    const account: AccountInfo | null =
-      msalInstance.getActiveAccount() ?? msalInstance.getAllAccounts()[0] ?? null;
+    const account = msalInstance.getActiveAccount();
     if (account) {
-      try {
-        const response = await msalInstance.acquireTokenSilent({
-          scopes,
-          account,
-        });
-        config.headers.Authorization = `Bearer ${response.accessToken}`;
-      } catch (error) {
-        if (error instanceof InteractionRequiredAuthError) {
-          await msalInstance.acquireTokenRedirect({ scopes });
-          // The redirect will navigate away; this throw prevents the request from firing.
-          throw new axios.Cancel('Redirecting to login');
-        }
-        throw error;
-      }
+      const response = await msalInstance.acquireTokenSilent({
+        scopes,
+        account,
+      });
+      config.headers.Authorization = `Bearer ${response.accessToken}`;
     }
     return config;
   });
