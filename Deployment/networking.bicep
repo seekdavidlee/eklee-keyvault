@@ -179,6 +179,17 @@ resource virtualNetwork 'Microsoft.Network/virtualNetworks@2024-05-01' = {
   }
 }
 
+// Named subnet references for safe non-positional access
+resource containerAppSubnet 'Microsoft.Network/virtualNetworks/subnets@2024-05-01' existing = {
+  parent: virtualNetwork
+  name: containerAppSubnetName
+}
+
+resource resourceSubnet 'Microsoft.Network/virtualNetworks/subnets@2024-05-01' existing = {
+  parent: virtualNetwork
+  name: resourceSubnetName
+}
+
 // ============================================================================
 // PRIVATE DNS ZONES
 // ============================================================================
@@ -236,7 +247,7 @@ resource storagePrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' 
   tags: tags
   properties: {
     subnet: {
-      id: virtualNetwork.properties.subnets[1].id
+      id: resourceSubnet.id
     }
     privateLinkServiceConnections: [
       {
@@ -275,7 +286,7 @@ resource keyVaultPrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01'
   tags: tags
   properties: {
     subnet: {
-      id: virtualNetwork.properties.subnets[1].id
+      id: resourceSubnet.id
     }
     privateLinkServiceConnections: [
       {
@@ -312,10 +323,10 @@ resource keyVaultPrivateEndpointDnsGroup 'Microsoft.Network/privateEndpoints/pri
 // ============================================================================
 
 @description('The resource ID of the Container Apps subnet for VNET integration')
-output containerAppSubnetId string = virtualNetwork.properties.subnets[0].id
+output containerAppSubnetId string = containerAppSubnet.id
 
 @description('The resource ID of the resource subnet for private endpoints')
-output resourceSubnetId string = virtualNetwork.properties.subnets[1].id
+output resourceSubnetId string = resourceSubnet.id
 
 @description('The name of the Virtual Network')
 output virtualNetworkName string = virtualNetwork.name
