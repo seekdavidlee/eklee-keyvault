@@ -3,10 +3,6 @@ name: Deploy Infrastructure
 on:
   workflow_dispatch:
     inputs:
-      branch:
-        description: 'Branch name to deploy from'
-        required: true
-        type: string
       environment:
         description: 'Target environment'
         required: true
@@ -14,6 +10,11 @@ on:
         options:
           - dev
           - prod
+      enablePrivateNetworking:
+        description: 'Enable private networking (VNET, private endpoints)'
+        required: false
+        type: boolean
+        default: true
 
 permissions:
   id-token: write
@@ -28,8 +29,6 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        with:
-          ref: ${{ inputs.branch }}
 
       - name: Login to Azure with OIDC federated credentials
         uses: azure/login@v2
@@ -54,5 +53,4 @@ jobs:
             --name "${{ steps.vars.outputs.deploymentName }}" \
             --parameters \
               environment=${{ steps.vars.outputs.environment }} \
-              containerRegistryName=${{ vars.ACR_NAME }} \
-              containerRegistryResourceGroup=${{ vars.ACR_RESOURCE_GROUP }}
+              enablePrivateNetworking=${{ inputs.enablePrivateNetworking }}

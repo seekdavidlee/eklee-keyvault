@@ -6,6 +6,7 @@
 // - User-Assigned Managed Identity (for future Container App)
 // - Azure Storage Account (for application data)
 // - Azure Key Vault (for secrets management)
+// - (Optional) Virtual Network with private endpoints for secure networking
 //
 // NOTE: RBAC role assignments are handled separately via assign-rbac.ps1
 // ============================================================================
@@ -24,14 +25,6 @@ param location string = resourceGroup().location
 ])
 param environment string = 'dev'
 
-@description('Name of the Azure Container Registry (without .azurecr.io)')
-@minLength(5)
-@maxLength(50)
-param containerRegistryName string
-
-@description('Resource group name where the Azure Container Registry is located')
-param containerRegistryResourceGroup string
-
 @description('Application name prefix for resource naming')
 @minLength(3)
 @maxLength(10)
@@ -39,6 +32,9 @@ param applicationName string = 'ekleekv'
 
 @description('Your Azure AD tenant ID for Key Vault access policies')
 param tenantId string = tenant().tenantId
+
+@description('Enable private networking with VNET, private endpoints, and restricted public access')
+param enablePrivateNetworking bool = false
 
 @description('Tags to apply to all resources')
 param tags object = {
@@ -57,16 +53,6 @@ var keyVaultName = toLower('${applicationName}-${environment}-${take(uniqueSuffi
 var containerAppEnvName = '${applicationName}-${environment}-env'
 var managedIdentityName = '${applicationName}-${environment}-identity'
 var logAnalyticsWorkspaceName = '${applicationName}-${environment}-logs'
-
-// ============================================================================
-// EXISTING RESOURCES
-// ============================================================================
-
-// Reference to existing Azure Container Registry
-resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-11-01-preview' existing = {
-  name: containerRegistryName
-  scope: resourceGroup(containerRegistryResourceGroup)
-}
 
 // ============================================================================
 // LOG ANALYTICS WORKSPACE
@@ -105,9 +91,10 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2025-01-01' = {
     allowBlobPublicAccess: false
     allowSharedKeyAccess: true
     defaultToOAuthAuthentication: true
+    publicNetworkAccess: enablePrivateNetworking ? 'Disabled' : 'Enabled'
     networkAcls: {
       bypass: 'AzureServices'
-      defaultAction: 'Allow'
+      defaultAction: enablePrivateNetworking ? 'Deny' : 'Allow'
     }
     encryption: {
       services: {
@@ -161,10 +148,10 @@ resource keyVault 'Microsoft.KeyVault/vaults@2024-11-01' = {
     softDeleteRetentionInDays: 90
     enableRbacAuthorization: true
     enablePurgeProtection: environment == 'prod' ? true : null
-    publicNetworkAccess: 'Enabled'
+    publicNetworkAccess: enablePrivateNetworking ? 'Disabled' : 'Enabled'
     networkAcls: {
       bypass: 'AzureServices'
-      defaultAction: 'Allow'
+      defaultAction: enablePrivateNetworking ? 'Deny' : 'Allow'
     }
   }
 }
@@ -177,6 +164,24 @@ resource managedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-
   name: managedIdentityName
   location: location
   tags: tags
+}
+
+// ============================================================================
+// PRIVATE NETWORKING MODULE (conditional on enablePrivateNetworking)
+// ============================================================================
+
+module networking 'networking.bicep' = if (enablePrivateNetworking) {
+  name: 'networking-${uniqueString(deployment().name)}'
+  params: {
+    location: location
+    applicationName: applicationName
+    environment: environment
+    tags: tags
+    storageAccountId: storageAccount.id
+    storageAccountName: storageAccount.name
+    keyVaultId: keyVault.id
+    keyVaultName: keyVault.name
+  }
 }
 
 // ============================================================================
@@ -195,6 +200,12 @@ resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2025-01-01' 
         sharedKey: logAnalyticsWorkspace.listKeys().primarySharedKey
       }
     }
+    vnetConfiguration: enablePrivateNetworking
+      ? {
+          infrastructureSubnetId: networking!.outputs.containerAppSubnetId
+          internal: false
+        }
+      : null
     zoneRedundant: false
   }
 }
@@ -229,3 +240,6 @@ output managedIdentityClientId string = managedIdentity.properties.clientId
 
 @description('The resource ID of the user-assigned managed identity')
 output managedIdentityId string = managedIdentity.id
+
+@description('The name of the Virtual Network (empty if private networking is disabled)')
+output virtualNetworkName string = enablePrivateNetworking ? networking!.outputs.virtualNetworkName : ''

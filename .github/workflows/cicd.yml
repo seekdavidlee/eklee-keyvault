@@ -195,11 +195,23 @@ jobs:
           KEYVAULT_URI=$(az keyvault list --resource-group "$RESOURCE_GROUP" --query "[0].properties.vaultUri" -o tsv)
           STORAGE_BLOB_URI=$(az storage account list --resource-group "$RESOURCE_GROUP" --query "[0].primaryEndpoints.blob" -o tsv)
 
+          # Detect VNET integration status for operational visibility
+          # When the Container Apps Environment is VNET-integrated, the Container App
+          # resolves Key Vault and Storage URLs to private IPs via private DNS zones.
+          VNET_SUBNET_ID=$(az containerapp env show --name "$ENV_NAME" --resource-group "$RESOURCE_GROUP" \
+            --query "properties.vnetConfiguration.infrastructureSubnetId" -o tsv 2>/dev/null || echo "")
+
           echo "Container Apps Environment: $ENV_NAME"
           echo "Managed Identity: $IDENTITY_ID"
           echo "Managed Identity Client ID: $IDENTITY_CLIENT_ID"
           echo "Key Vault URI: $KEYVAULT_URI"
           echo "Storage Blob URI: $STORAGE_BLOB_URI"
+          if [ -n "$VNET_SUBNET_ID" ] && [ "$VNET_SUBNET_ID" != "None" ]; then
+            echo "🔒 Private networking: ENABLED (VNET-integrated)"
+            echo "   Infrastructure subnet: $VNET_SUBNET_ID"
+          else
+            echo "🌐 Private networking: DISABLED (public access)"
+          fi
 
           # Check if container app already exists
           EXISTS=$(az containerapp show \

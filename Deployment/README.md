@@ -12,6 +12,8 @@ The infrastructure includes:
 - **Azure Key Vault** - For secure secrets and key management
 - **Log Analytics Workspace** - For application monitoring and logging
 - **RBAC Role Assignments** - Managed via separate PowerShell script (`assign-rbac.ps1`)
+- **(Optional) Virtual Network** - VNET with subnets for Container Apps and private endpoints
+- **(Optional) Private Endpoints** - Secure connectivity to Storage Account and Key Vault
 
 ## 🏗️ Architecture
 
@@ -42,6 +44,7 @@ graph TB
 | File | Description |
 |------|-------------|
 | `main.bicep` | Main infrastructure template |
+| `networking.bicep` | Private networking module (VNET, NSGs, DNS zones, private endpoints) |
 | `assign-rbac.ps1` | RBAC role assignment script (run after deployment) |
 | `README.md` | This file |
 
@@ -96,7 +99,8 @@ az group create --name $resourceGroup --location $location
 az deployment group create `
   --resource-group $resourceGroup `
   --template-file main.bicep `
-  --name "eklee-keyvault-deployment-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
+  --name "eklee-keyvault-deployment-$(Get-Date -Format 'yyyyMMdd-HHmmss')" `
+  --parameters enablePrivateNetworking=true
 
 # Assign RBAC roles (required after deployment)
 .\assign-rbac.ps1 `
@@ -105,6 +109,8 @@ az deployment group create `
   -ContainerRegistryName "myacr" `
   -ContainerRegistryResourceGroup "acr-rg"
 ```
+
+> **Note:** Set `enablePrivateNetworking` to `true` (default in the GitHub Actions workflow) to deploy with a VNET, private endpoints for Storage and Key Vault, and disabled public network access. Set to `false` for public network access.
 
 #### Production Environment
 
@@ -205,6 +211,12 @@ The deployment implements several security best practices:
 - HTTPS-only traffic enforced
 - TLS 1.2 minimum for Storage Account
 - Azure Services bypass for firewalls
+- Optional private networking mode with VNET, private endpoints, and disabled public access
+- Container Apps Environment integrates with VNET when private networking is enabled
+- Private DNS zones for Storage and Key Vault name resolution
+- Network Security Groups (NSGs) on both subnets when private networking is enabled:
+  - **Container Apps subnet**: Allows VNET inbound/outbound traffic and HTTPS outbound to Internet
+  - **Resource subnet**: Allows HTTPS inbound from VNET only, denies all Internet inbound
 
 ### ✅ Key Vault Configuration
 - Soft delete enabled (90-day retention)
@@ -243,6 +255,7 @@ az deployment group show `
 | `managedIdentityClientId` | Client ID for the managed identity |
 | `managedIdentityPrincipalId` | Principal ID for RBAC assignments |
 | `managedIdentityId` | Full resource ID of the managed identity |
+| `virtualNetworkName` | Name of the Virtual Network (empty if private networking is disabled) |
 
 ## 🔧 Common Tasks
 
