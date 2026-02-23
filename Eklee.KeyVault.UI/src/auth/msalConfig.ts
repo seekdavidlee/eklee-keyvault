@@ -1,15 +1,17 @@
 import type { Configuration, PopupRequest } from '@azure/msal-browser';
+import { config } from '../config';
 
 /**
  * MSAL configuration for Azure AD authentication.
- * Reads client ID, authority, and redirect URI from Vite environment variables.
+ * Reads from runtime config (injected at container startup) with fallback
+ * to Vite environment variables for local development.
  */
 export const msalConfig: Configuration = {
   auth: {
-    clientId: import.meta.env.VITE_AZURE_AD_CLIENT_ID,
-    authority: import.meta.env.VITE_AZURE_AD_AUTHORITY,
-    redirectUri: import.meta.env.VITE_AZURE_AD_REDIRECT_URI,
-    postLogoutRedirectUri: import.meta.env.VITE_AZURE_AD_REDIRECT_URI,
+    clientId: config.AZURE_AD_CLIENT_ID,
+    authority: config.AZURE_AD_AUTHORITY,
+    redirectUri: config.AZURE_AD_REDIRECT_URI,
+    postLogoutRedirectUri: config.AZURE_AD_REDIRECT_URI,
   },
   cache: {
     cacheLocation: 'sessionStorage',
@@ -22,5 +24,5 @@ export const msalConfig: Configuration = {
  * Azure AD requires the GUID-based scope format instead of the api:// URI.
  */
 export const apiScopes: PopupRequest = {
-  scopes: [`${import.meta.env.VITE_AZURE_AD_CLIENT_ID}/access_as_user`],
+  scopes: [`${config.AZURE_AD_CLIENT_ID}/access_as_user`],
 };
