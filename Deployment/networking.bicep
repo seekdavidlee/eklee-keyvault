@@ -325,8 +325,5 @@ resource keyVaultPrivateEndpointDnsGroup 'Microsoft.Network/privateEndpoints/pri
 @description('The resource ID of the Container Apps subnet for VNET integration')
 output containerAppSubnetId string = containerAppSubnet.id
 
-@description('The resource ID of the resource subnet for private endpoints')
-output resourceSubnetId string = resourceSubnet.id
-
 @description('The name of the Virtual Network')
 output virtualNetworkName string = virtualNetwork.name
