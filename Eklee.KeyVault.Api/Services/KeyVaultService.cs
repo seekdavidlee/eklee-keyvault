@@ -64,4 +64,32 @@ public class KeyVaultService
         logger.LogWarning("Secret {SecretName} not found or has no value", name);
         return null;
     }
+
+    /// <summary>
+    /// Creates or updates a secret in Key Vault with the specified name and value.
+    /// If a secret with the given name already exists, its value is replaced.
+    /// </summary>
+    /// <param name="name">The name of the secret to create or update.</param>
+    /// <param name="value">The secret value to store.</param>
+    /// <returns>The name of the secret that was set.</returns>
+    public async Task<string> SetSecretAsync(string name, string value)
+    {
+        var response = await secretClient.SetSecretAsync(name, value);
+        logger.LogInformation("Set secret {SecretName}", name);
+        return response.Value.Name;
+    }
+
+    /// <summary>
+    /// Starts a soft-delete operation for a secret in Key Vault.
+    /// The secret can be recovered during the vault's retention period.
+    /// </summary>
+    /// <param name="name">The name of the secret to delete.</param>
+    /// <returns>A task that completes when the delete operation has been initiated.</returns>
+    public async Task DeleteSecretAsync(string name)
+    {
+        var operation = await secretClient.StartDeleteSecretAsync(name);
+        logger.LogInformation("Initiated delete for secret {SecretName}", name);
+        await operation.WaitForCompletionAsync();
+        logger.LogInformation("Deleted secret {SecretName}", name);
+    }
 }

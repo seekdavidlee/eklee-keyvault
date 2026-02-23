@@ -7,7 +7,7 @@
     This script assigns the necessary RBAC roles to the user-assigned managed identity
     by discovering resources directly from the specified resource group. It handles:
     - AcrPull role on Container Registry
-    - Key Vault Secrets User role on Key Vault
+    - Key Vault Secrets Officer role on Key Vault
     - Storage Blob Data Contributor role on Storage Account
 
 .PARAMETER ResourceGroup
@@ -265,13 +265,13 @@ if (New-RoleAssignment `
     $successCount++
 }
 
-# 2. Key Vault Secrets User on Key Vault
-Write-Information "`n[2/3] Key Vault - Secrets User Role"
+# 2. Key Vault Secrets Officer on Key Vault
+Write-Information "`n[2/3] Key Vault - Secrets Officer Role"
 if (New-RoleAssignment `
     -PrincipalId $managedIdentityPrincipalId `
-    -RoleDefinitionName "Key Vault Secrets User" `
+    -RoleDefinitionName "Key Vault Secrets Officer" `
     -Scope $keyVaultScope `
-    -Description "Read secrets from Key Vault") {
+    -Description "Read, write, and delete secrets in Key Vault") {
     $successCount++
 }
 
@@ -308,7 +308,7 @@ if ($successCount -eq $totalRoles) {
     Write-Information "   --user-assigned $managedIdentityId"
     Write-Information "3. The Container App will have access to:"
     Write-Information "   - Pull images from Container Registry"
-    Write-Information "   - Read secrets from Key Vault"
+    Write-Information "   - Read, write, and delete secrets in Key Vault"
     Write-Information "   - Access blob storage data"
 }
 else {

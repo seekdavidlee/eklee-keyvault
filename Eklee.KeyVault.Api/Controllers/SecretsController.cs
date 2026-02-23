@@ -27,7 +27,7 @@ public class SecretsController(KeyVaultService keyVaultService, BlobService blob
     {
         try
         {
-            var metaList = await blobService.GetMetaAsync();
+            var (metaList, _) = await blobService.GetMetaAsync();
             var secrets = await keyVaultService.GetSecretsAsync();
             var views = secrets.Select(s => new SecretItemView(s, metaList)).ToList();
 
@@ -66,5 +66,85 @@ public class SecretsController(KeyVaultService keyVaultService, BlobService blob
         }
 
         return Ok(new { value });
+    }
+
+    /// <summary>
+    /// Creates or updates a Key Vault secret. Only users with the Admin role can call this endpoint.
+    /// If a secret with the specified name already exists, its value is replaced.
+    /// </summary>
+    /// <param name="name">The name of the secret to create or update.</param>
+    /// <param name="request">The request body containing the secret value.</param>
+    /// <returns>The name of the secret that was set.</returns>
+    /// <response code="200">The secret was created or updated successfully.</response>
+    /// <response code="400">The request body is invalid.</response>
+    /// <response code="403">The caller does not have the Admin role.</response>
+    [HttpPut("{name}")]
+    [Authorize(Roles = "Admin")]
+    [ProducesResponseType(StatusCodes.Status200OK)]
+    [ProducesResponseType(StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public async Task<IActionResult> SetSecret(string name, [FromBody] SecretSetRequest request)
+    {
+        if (string.IsNullOrWhiteSpace(name))
+        {
+            return Problem(
+                title: "Invalid Request",
+                detail: "Secret name cannot be empty.",
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        try
+        {
+            var secretName = await keyVaultService.SetSecretAsync(name, request.Value);
+            logger.LogInformation("Admin set secret {SecretName}", secretName);
+            return Ok(new { name = secretName });
+        }
+        catch (Azure.RequestFailedException ex) when (ex.Status == 403)
+        {
+            logger.LogWarning("Access denied when setting secret {SecretName}: {Message}", name, ex.Message);
+            return Problem(
+                title: "Access Denied",
+                detail: "You do not have permission to modify secrets in Key Vault.",
+                statusCode: StatusCodes.Status403Forbidden);
+        }
+    }
+
+    /// <summary>
+    /// Deletes a Key Vault secret by name. Only users with the Admin role can call this endpoint.
+    /// The secret is soft-deleted and can be recovered within the vault's retention period.
+    /// </summary>
+    /// <param name="name">The name of the secret to delete.</param>
+    /// <response code="204">The secret was deleted successfully.</response>
+    /// <response code="403">The caller does not have the Admin role.</response>
+    /// <response code="404">The secret was not found.</response>
+    [HttpDelete("{name}")]
+    [Authorize(Roles = "Admin")]
+    [ProducesResponseType(StatusCodes.Status204NoContent)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> DeleteSecret(string name)
+    {
+        try
+        {
+            await keyVaultService.DeleteSecretAsync(name);
+            logger.LogInformation("Admin deleted secret {SecretName}", name);
+            return NoContent();
+        }
+        catch (Azure.RequestFailedException ex) when (ex.Status == 404)
+        {
+            logger.LogWarning("Secret {SecretName} not found for deletion", name);
+            return Problem(
+                title: "Not Found",
+                detail: $"Secret '{name}' was not found.",
+                statusCode: StatusCodes.Status404NotFound);
+        }
+        catch (Azure.RequestFailedException ex) when (ex.Status == 403)
+        {
+            logger.LogWarning("Access denied when deleting secret {SecretName}: {Message}", name, ex.Message);
+            return Problem(
+                title: "Access Denied",
+                detail: "You do not have permission to delete secrets in Key Vault.",
+                statusCode: StatusCodes.Status403Forbidden);
+        }
     }
 }

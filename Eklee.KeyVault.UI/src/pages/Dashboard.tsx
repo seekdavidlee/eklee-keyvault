@@ -8,6 +8,12 @@ import {
   Typography,
   CircularProgress,
   Tooltip,
+  Button,
+  Dialog,
+  DialogTitle,
+  DialogContent,
+  DialogActions,
+  DialogContentText,
 } from '@mui/material';
 import {
   Visibility as VisibilityIcon,
@@ -15,10 +21,13 @@ import {
   Edit as EditIcon,
   Check as CheckIcon,
   Close as CloseIcon,
+  Delete as DeleteIcon,
+  Add as AddIcon,
+  Refresh as RefreshIcon,
 } from '@mui/icons-material';
 import { DataGrid, type GridColDef } from '@mui/x-data-grid';
-import { getSecrets, getSecretValue } from '../services/secretsService';
-import { updateMetadata } from '../services/metadataService';
+import { getSecrets, getSecretValue, setSecret, deleteSecret } from '../services/secretsService';
+import { getMetadata, updateMetadata } from '../services/metadataService';
 import { useUser } from '../auth/UserContext';
 import type { SecretItemView, SecretItemMetaList } from '../types';
 
@@ -35,7 +44,8 @@ interface SecretRow extends SecretItemView {
 /**
  * Dashboard page — lists Key Vault secrets in a data grid.
  * Supports searching, revealing secret values, copying to clipboard,
- * and inline editing of display names (persisted to blob storage via the API).
+ * inline editing of display names (persisted to blob storage via the API),
+ * and create / update / delete operations for Admin users.
  */
 export function Dashboard() {
   const { isAdmin } = useUser();
@@ -46,6 +56,21 @@ export function Dashboard() {
   const [error, setError] = useState<string | null>(null);
   const [success, setSuccess] = useState<string | null>(null);
 
+  // Create / Update dialog state
+  const [secretDialogOpen, setSecretDialogOpen] = useState(false);
+  const [secretDialogMode, setSecretDialogMode] = useState<'create' | 'update'>('create');
+  const [secretDialogName, setSecretDialogName] = useState('');
+  const [secretDialogValue, setSecretDialogValue] = useState('');
+  const [secretDialogSaving, setSecretDialogSaving] = useState(false);
+
+  // Delete confirmation dialog state
+  const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
+  const [deleteTargetName, setDeleteTargetName] = useState('');
+  const [deleteDialogDeleting, setDeleteDialogDeleting] = useState(false);
+
+  // Metadata ETag for optimistic concurrency
+  const [metadataEtag, setMetadataEtag] = useState<string | null>(null);
+
   // Load secrets on mount
   useEffect(() => {
     loadSecrets();
@@ -55,7 +80,15 @@ export function Dashboard() {
     setLoading(true);
     setError(null);
     try {
-      const secrets = await getSecrets();
+      const [secrets, metadataResult] = await Promise.all([
+        getSecrets(),
+        isAdmin ? getMetadata() : Promise.resolve(null),
+      ]);
+
+      if (metadataResult) {
+        setMetadataEtag(metadataResult.etag);
+      }
+
       const secretRows: SecretRow[] = secrets.map((s) => ({
         ...s,
         displayValue: PLACEHOLDER_VALUE,
@@ -151,7 +184,8 @@ export function Dashboard() {
             r.id === row.id ? row.editDisplayName : r.meta.displayName,
         })),
       };
-      await updateMetadata(metaList);
+      const newEtag = await updateMetadata(metaList, metadataEtag);
+      setMetadataEtag(newEtag);
 
       setRows((prev) =>
         prev.map((r) =>
@@ -165,9 +199,13 @@ export function Dashboard() {
         )
       );
     } catch (err) {
-      setError(
-        err instanceof Error ? err.message : 'Failed to save display name.'
-      );
+      if (isAxios409(err)) {
+        setError('Conflict: the metadata was modified by another admin. Click reload to get the latest data.');
+      } else {
+        setError(
+          err instanceof Error ? err.message : 'Failed to save display name.'
+        );
+      }
       // Revert edit state on failure
       setRows((prev) =>
         prev.map((r) =>
@@ -175,7 +213,7 @@ export function Dashboard() {
         )
       );
     }
-  }, [rows]);
+  }, [rows, metadataEtag]);
 
   const handleCancelEdit = useCallback((row: SecretRow) => {
     setRows((prev) =>
@@ -201,6 +239,93 @@ export function Dashboard() {
     },
     []
   );
+
+  // --- Create / Update secret dialog handlers ---
+
+  const handleOpenCreateDialog = useCallback(() => {
+    setSecretDialogMode('create');
+    setSecretDialogName('');
+    setSecretDialogValue('');
+    setSecretDialogOpen(true);
+  }, []);
+
+  const handleOpenUpdateDialog = useCallback((row: SecretRow) => {
+    setSecretDialogMode('update');
+    setSecretDialogName(row.name);
+    setSecretDialogValue('');
+    setSecretDialogOpen(true);
+  }, []);
+
+  const handleCloseSecretDialog = useCallback(() => {
+    setSecretDialogOpen(false);
+    setSecretDialogName('');
+    setSecretDialogValue('');
+  }, []);
+
+  const handleSaveSecret = useCallback(async () => {
+    setError(null);
+    setSuccess(null);
+
+    if (!secretDialogName.trim()) {
+      setError('Secret name is required.');
+      return;
+    }
+
+    if (!secretDialogValue) {
+      setError('Secret value is required.');
+      return;
+    }
+
+    setSecretDialogSaving(true);
+    try {
+      await setSecret(secretDialogName.trim(), secretDialogValue);
+      setSuccess(
+        secretDialogMode === 'create'
+          ? `Secret '${secretDialogName.trim()}' created successfully.`
+          : `Secret '${secretDialogName.trim()}' updated successfully.`
+      );
+      handleCloseSecretDialog();
+      await loadSecrets();
+    } catch (err) {
+      setError(
+        err instanceof Error
+          ? err.message
+          : `Failed to ${secretDialogMode} secret.`
+      );
+    } finally {
+      setSecretDialogSaving(false);
+    }
+  }, [secretDialogName, secretDialogValue, secretDialogMode, handleCloseSecretDialog]);
+
+  // --- Delete secret dialog handlers ---
+
+  const handleOpenDeleteDialog = useCallback((row: SecretRow) => {
+    setDeleteTargetName(row.name);
+    setDeleteDialogOpen(true);
+  }, []);
+
+  const handleCloseDeleteDialog = useCallback(() => {
+    setDeleteDialogOpen(false);
+    setDeleteTargetName('');
+  }, []);
+
+  const handleConfirmDelete = useCallback(async () => {
+    setError(null);
+    setSuccess(null);
+    setDeleteDialogDeleting(true);
+    try {
+      await deleteSecret(deleteTargetName);
+      setSuccess(`Secret '${deleteTargetName}' deleted successfully.`);
+      handleCloseDeleteDialog();
+      await loadSecrets();
+    } catch (err) {
+      setError(
+        err instanceof Error ? err.message : 'Failed to delete secret.'
+      );
+    } finally {
+      setDeleteDialogDeleting(false);
+    }
+  }, [deleteTargetName, handleCloseDeleteDialog]);
 
   const columns: GridColDef<SecretRow>[] = [
     {
@@ -268,7 +393,7 @@ export function Dashboard() {
     {
       field: 'actions',
       headerName: 'Actions',
-      width: 120,
+      width: isAdmin ? 200 : 120,
       sortable: false,
       filterable: false,
       renderCell: (params) => (
@@ -289,6 +414,28 @@ export function Dashboard() {
               <CopyIcon fontSize="small" />
             </IconButton>
           </Tooltip>
+          {isAdmin && (
+            <>
+              <Tooltip title="Update secret value">
+                <IconButton
+                  size="small"
+                  color="primary"
+                  onClick={() => handleOpenUpdateDialog(params.row)}
+                >
+                  <EditIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+              <Tooltip title="Delete secret">
+                <IconButton
+                  size="small"
+                  color="error"
+                  onClick={() => handleOpenDeleteDialog(params.row)}
+                >
+                  <DeleteIcon fontSize="small" />
+                </IconButton>
+              </Tooltip>
+            </>
+          )}
         </Box>
       ),
     },
@@ -310,16 +457,31 @@ export function Dashboard() {
         </Alert>
       )}
 
-      <TextField
-        label="Search secrets"
-        variant="outlined"
-        size="small"
-        fullWidth
-        sx={{ mb: 2, maxWidth: 400 }}
-        value={searchText}
-        onChange={(e) => setSearchText(e.target.value)}
-        helperText="Type at least 3 characters to filter"
-      />
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+        <TextField
+          label="Search secrets"
+          variant="outlined"
+          size="small"
+          sx={{ flexGrow: 1, maxWidth: 400 }}
+          value={searchText}
+          onChange={(e) => setSearchText(e.target.value)}
+          helperText="Type at least 3 characters to filter"
+        />
+        <Tooltip title="Reload secrets">
+          <IconButton onClick={loadSecrets}>
+            <RefreshIcon />
+          </IconButton>
+        </Tooltip>
+        {isAdmin && (
+          <Button
+            variant="contained"
+            startIcon={<AddIcon />}
+            onClick={handleOpenCreateDialog}
+          >
+            Create Secret
+          </Button>
+        )}
+      </Box>
 
       <DataGrid
         rows={filteredRows}
@@ -332,6 +494,82 @@ export function Dashboard() {
         disableRowSelectionOnClick
         autoHeight
       />
+
+      {/* Create / Update Secret Dialog */}
+      <Dialog
+        open={secretDialogOpen}
+        onClose={handleCloseSecretDialog}
+        maxWidth="sm"
+        fullWidth
+      >
+        <DialogTitle>
+          {secretDialogMode === 'create' ? 'Create Secret' : 'Update Secret Value'}
+        </DialogTitle>
+        <DialogContent>
+          <TextField
+            label="Secret Name"
+            fullWidth
+            margin="dense"
+            value={secretDialogName}
+            onChange={(e) => setSecretDialogName(e.target.value)}
+            disabled={secretDialogMode === 'update'}
+            helperText={
+              secretDialogMode === 'create'
+                ? 'A unique name for the Key Vault secret (letters, digits, and hyphens).'
+                : undefined
+            }
+          />
+          <TextField
+            label="Secret Value"
+            fullWidth
+            margin="dense"
+            multiline
+            minRows={2}
+            value={secretDialogValue}
+            onChange={(e) => setSecretDialogValue(e.target.value)}
+          />
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseSecretDialog} disabled={secretDialogSaving}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleSaveSecret}
+            variant="contained"
+            disabled={secretDialogSaving || !secretDialogName.trim() || !secretDialogValue}
+          >
+            {secretDialogSaving
+              ? 'Saving...'
+              : secretDialogMode === 'create'
+                ? 'Create'
+                : 'Update'}
+          </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Delete Confirmation Dialog */}
+      <Dialog open={deleteDialogOpen} onClose={handleCloseDeleteDialog}>
+        <DialogTitle>Delete Secret</DialogTitle>
+        <DialogContent>
+          <DialogContentText>
+            Are you sure you want to delete the secret <strong>{deleteTargetName}</strong>?
+            This action will soft-delete the secret in Key Vault.
+          </DialogContentText>
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseDeleteDialog} disabled={deleteDialogDeleting}>
+            Cancel
+          </Button>
+          <Button
+            onClick={handleConfirmDelete}
+            color="error"
+            variant="contained"
+            disabled={deleteDialogDeleting}
+          >
+            {deleteDialogDeleting ? 'Deleting...' : 'Delete'}
+          </Button>
+        </DialogActions>
+      </Dialog>
 
       <Snackbar
         open={!!success}
@@ -356,5 +594,17 @@ function isAxios403(err: unknown): boolean {
     typeof (err as { response?: { status?: number } }).response?.status ===
       'number' &&
     (err as { response: { status: number } }).response.status === 403
+  );
+}
+
+/** Type guard for Axios 409 Conflict errors. */
+function isAxios409(err: unknown): boolean {
+  return (
+    typeof err === 'object' &&
+    err !== null &&
+    'response' in err &&
+    typeof (err as { response?: { status?: number } }).response?.status ===
+      'number' &&
+    (err as { response: { status: number } }).response.status === 409
   );
 }

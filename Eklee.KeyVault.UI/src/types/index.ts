@@ -21,6 +21,16 @@ export interface SecretValueResponse {
   value: string;
 }
 
+/** Request body for creating or updating a Key Vault secret via PUT /api/secrets/{name}. */
+export interface SecretSetRequest {
+  value: string;
+}
+
+/** Response from PUT /api/secrets/{name}. */
+export interface SecretSetResponse {
+  name: string;
+}
+
 /** Authorization role for a user in the application. */
 export type UserRole = 'Admin' | 'User';
 
