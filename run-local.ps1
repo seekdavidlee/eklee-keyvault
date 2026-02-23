@@ -147,9 +147,6 @@ if (-not $NoBuild) {
         "build"
         "--target", "local"
         "-t", $ImageName
-        "--build-arg", "VITE_AZURE_AD_CLIENT_ID=$clientId"
-        "--build-arg", "VITE_AZURE_AD_AUTHORITY=$authority"
-        "--build-arg", "VITE_AZURE_AD_REDIRECT_URI=$RedirectUri"
         "."
     )
 
@@ -239,6 +236,9 @@ $runArgs = @(
     "-v", "${tokenDirDocker}:/tmp/az-tokens:ro"
     "-e", "AuthenticationMode=azcli"
     "-e", "ASPNETCORE_ENVIRONMENT=Development"
+    "-e", "VITE_AZURE_AD_CLIENT_ID=$clientId"
+    "-e", "VITE_AZURE_AD_AUTHORITY=$authority"
+    "-e", "VITE_AZURE_AD_REDIRECT_URI=$RedirectUri"
 )
 
 if ($Detached) {

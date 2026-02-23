@@ -2,27 +2,26 @@
 # Combined Dockerfile — React frontend + ASP.NET backend in a single container
 # =============================================================================
 # Production build (default target = runtime):
-#   docker build --target runtime -t eklee-keyvault \
-#     --build-arg VITE_AZURE_AD_CLIENT_ID=<client-id> \
-#     --build-arg VITE_AZURE_AD_AUTHORITY=https://login.microsoftonline.com/<tenant-id> \
-#     --build-arg VITE_AZURE_AD_REDIRECT_URI=https://your-app-url \
-#     .
+#   docker build --target runtime -t eklee-keyvault .
+#
+# Run (production — pass auth config as environment variables at runtime):
+#   docker run -p 8080:8080 \
+#     -e VITE_AZURE_AD_CLIENT_ID=<client-id> \
+#     -e VITE_AZURE_AD_AUTHORITY=https://login.microsoftonline.com/<tenant-id> \
+#     -e VITE_AZURE_AD_REDIRECT_URI=https://your-app-url \
+#     eklee-keyvault
 #
 # Local development build (includes Azure CLI for AzureCliCredential):
-#   docker build --target local -t eklee-keyvault-local \
-#     --build-arg VITE_AZURE_AD_CLIENT_ID=<client-id> \
-#     --build-arg VITE_AZURE_AD_AUTHORITY=https://login.microsoftonline.com/<tenant-id> \
-#     --build-arg VITE_AZURE_AD_REDIRECT_URI=http://localhost:8080 \
-#     .
-#
-# Run (production):
-#   docker run -p 8080:8080 eklee-keyvault
+#   docker build --target local -t eklee-keyvault-local .
 #
 # Run (local — mount Azure CLI credentials):
 #   docker run --rm -p 8080:8080 \
 #     -v "$HOME/.azure:/home/app/.azure:ro" \
 #     -e AuthenticationMode=azcli \
 #     -e ASPNETCORE_ENVIRONMENT=Development \
+#     -e VITE_AZURE_AD_CLIENT_ID=<client-id> \
+#     -e VITE_AZURE_AD_AUTHORITY=https://login.microsoftonline.com/<tenant-id> \
+#     -e VITE_AZURE_AD_REDIRECT_URI=http://localhost:8080 \
 #     eklee-keyvault-local
 # =============================================================================
 
@@ -36,19 +35,6 @@ COPY Eklee.KeyVault.UI/package.json Eklee.KeyVault.UI/package-lock.json* ./
 RUN npm ci
 
 COPY Eklee.KeyVault.UI/ .
-
-# Vite inlines VITE_* env vars at build time, so they must be set here.
-# VITE_API_BASE_URL is intentionally empty — the frontend uses relative /api
-# paths which resolve to the same origin served by ASP.NET.
-ARG VITE_API_BASE_URL=""
-ARG VITE_AZURE_AD_CLIENT_ID
-ARG VITE_AZURE_AD_AUTHORITY
-ARG VITE_AZURE_AD_REDIRECT_URI
-
-ENV VITE_API_BASE_URL=${VITE_API_BASE_URL}
-ENV VITE_AZURE_AD_CLIENT_ID=${VITE_AZURE_AD_CLIENT_ID}
-ENV VITE_AZURE_AD_AUTHORITY=${VITE_AZURE_AD_AUTHORITY}
-ENV VITE_AZURE_AD_REDIRECT_URI=${VITE_AZURE_AD_REDIRECT_URI}
 
 RUN npm run build
 
@@ -78,7 +64,11 @@ COPY --from=backend-build /app/publish .
 # Copy the React build output into wwwroot/ so ASP.NET serves it as static files
 COPY --from=frontend-build /app/dist ./wwwroot/
 
-ENTRYPOINT ["dotnet", "Eklee.KeyVault.Api.dll"]
+# Entrypoint script generates wwwroot/config.js from env vars at startup
+COPY docker-entrypoint.sh /app/docker-entrypoint.sh
+RUN sed -i 's/\r$//' /app/docker-entrypoint.sh && chmod +x /app/docker-entrypoint.sh
+
+ENTRYPOINT ["/app/docker-entrypoint.sh"]
 
 # ---------------------------------------------------------------------------
 # Stage 4: Local development — lightweight az wrapper for AzureCliCredential
@@ -95,7 +85,7 @@ FROM runtime AS local
 
 # Install the lightweight az wrapper at /usr/local/bin/az
 COPY az-wrapper.sh /usr/local/bin/az
-RUN chmod +x /usr/local/bin/az
+RUN sed -i 's/\r$//' /usr/local/bin/az && chmod +x /usr/local/bin/az
 
 # Pre-create the token mount point
 RUN mkdir -p /tmp/az-tokens

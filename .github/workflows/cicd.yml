@@ -11,6 +11,7 @@ on:
 permissions:
   id-token: write
   contents: read
+  packages: write
 
 jobs:
   setup:
@@ -110,9 +111,6 @@ jobs:
       - name: Build Docker image
         run: |
           docker build -t ${{ steps.image-tag.outputs.image }} \
-            --build-arg VITE_AZURE_AD_CLIENT_ID=${{ vars.VITE_AZURE_AD_CLIENT_ID }} \
-            --build-arg VITE_AZURE_AD_AUTHORITY=${{ vars.VITE_AZURE_AD_AUTHORITY }} \
-            --build-arg VITE_AZURE_AD_REDIRECT_URI=${{ vars.VITE_AZURE_AD_REDIRECT_URI }} \
             --target runtime \
             .
 
@@ -135,6 +133,39 @@ jobs:
           if [[ "${{ needs.setup.outputs.build_env }}" == "prod" ]]; then
             echo "   ${{ vars.ACR_NAME }}.azurecr.io/eklee-keyvault:${GITHUB_SHA::8}"
           fi
+
+  push-ghcr:
+    name: Push to GitHub Container Registry
+    needs: [setup, test-dotnet, test-npm]
+    if: github.ref == 'refs/heads/main'
+    runs-on: ubuntu-latest
+    environment: ${{ needs.setup.outputs.build_env }}
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+
+      - name: Build and push to GHCR
+        run: |
+          IMAGE="ghcr.io/${{ github.repository }}:latest"
+          IMAGE_SHA="ghcr.io/${{ github.repository }}:${GITHUB_SHA::8}"
+
+          docker build -t "$IMAGE" -t "$IMAGE_SHA" \
+            --target runtime \
+            .
+
+          docker push "$IMAGE"
+          docker push "$IMAGE_SHA"
+          echo "✅ Pushed public image to GHCR:"
+          echo "   $IMAGE"
+          echo "   $IMAGE_SHA"
 
   deploy:
     name: Deploy to Azure Container Apps
@@ -201,7 +232,10 @@ jobs:
                 AzureAd__Instance=https://login.microsoftonline.com/ \
                 AzureAd__TenantId=${{ vars.AZURE_TENANT_ID }} \
                 AzureAd__ClientId=${{ vars.VITE_AZURE_AD_CLIENT_ID }} \
-                AzureAd__Audience=api://${{ vars.VITE_AZURE_AD_CLIENT_ID }}
+                AzureAd__Audience=api://${{ vars.VITE_AZURE_AD_CLIENT_ID }} \
+                VITE_AZURE_AD_CLIENT_ID=${{ vars.VITE_AZURE_AD_CLIENT_ID }} \
+                VITE_AZURE_AD_AUTHORITY=${{ vars.VITE_AZURE_AD_AUTHORITY }} \
+                VITE_AZURE_AD_REDIRECT_URI=${{ vars.VITE_AZURE_AD_REDIRECT_URI }}
           else
             echo "Updating container app '$CONTAINER_APP_NAME'..."
             az containerapp update \
@@ -219,7 +253,10 @@ jobs:
                 AzureAd__Instance=https://login.microsoftonline.com/ \
                 AzureAd__TenantId=${{ vars.AZURE_TENANT_ID }} \
                 AzureAd__ClientId=${{ vars.VITE_AZURE_AD_CLIENT_ID }} \
-                AzureAd__Audience=api://${{ vars.VITE_AZURE_AD_CLIENT_ID }}
+                AzureAd__Audience=api://${{ vars.VITE_AZURE_AD_CLIENT_ID }} \
+                VITE_AZURE_AD_CLIENT_ID=${{ vars.VITE_AZURE_AD_CLIENT_ID }} \
+                VITE_AZURE_AD_AUTHORITY=${{ vars.VITE_AZURE_AD_AUTHORITY }} \
+                VITE_AZURE_AD_REDIRECT_URI=${{ vars.VITE_AZURE_AD_REDIRECT_URI }}
           fi
 
           # Display deployed app URL

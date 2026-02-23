@@ -169,6 +169,99 @@ The two setup scripts configure the following GitHub environment variables (per 
 
 Optionally, you can configure a custom domain for your Azure Container App. After the first deployment, add a CNAME record pointing your subdomain to the Container App's FQDN. Then configure the custom domain in the Azure portal under your Container App's settings. You will also need to update the SPA redirect URI in your Entra ID app registration to match the custom domain.
 
+## Deploy from GitHub Container Registry
+
+You can create an Azure Container App directly from the public GHCR image without
+building the Docker image yourself. This is useful for quick deployments or
+environments where you do not need a private Azure Container Registry.
+
+The public image is available at:
+
+```text
+ghcr.io/seekdavidlee/eklee-keyvault:latest
+```
+
+### Prerequisites
+
+Before you begin, ensure you have the following Azure resources already provisioned
+(for example, via the Bicep templates in the `Deployment/` folder):
+
+- A resource group
+- A Container Apps environment
+- A user-assigned managed identity (with Key Vault and Storage RBAC roles assigned)
+- An Azure Key Vault
+- An Azure Storage account
+- An Entra ID app registration (see [App Registration Setup](#app-registration-setup))
+
+### Create the Container App
+
+```sh
+# Set your variables
+RESOURCE_GROUP="<resource-group>"
+ENV_NAME="<container-apps-environment-name>"
+IDENTITY_ID="<managed-identity-resource-id>"
+IDENTITY_CLIENT_ID="<managed-identity-client-id>"
+KEYVAULT_URI="https://<your-keyvault-name>.vault.azure.net/"
+STORAGE_BLOB_URI="https://<your-storage-account>.blob.core.windows.net/"
+TENANT_ID="<your-tenant-id>"
+APP_CLIENT_ID="<your-app-registration-client-id>"
+
+az containerapp create \
+  --name eklee-keyvault \
+  --resource-group "$RESOURCE_GROUP" \
+  --environment "$ENV_NAME" \
+  --image ghcr.io/seekdavidlee/eklee-keyvault:latest \
+  --target-port 8080 \
+  --ingress external \
+  --user-assigned "$IDENTITY_ID" \
+  --cpu 0.5 \
+  --memory 1.0Gi \
+  --min-replicas 0 \
+  --max-replicas 1 \
+  --env-vars \
+    AZURE_CLIENT_ID="$IDENTITY_CLIENT_ID" \
+    StorageUri="$STORAGE_BLOB_URI" \
+    StorageContainerName=configs \
+    KeyVaultUri="$KEYVAULT_URI" \
+    AuthenticationMode=mi \
+    AzureAd__Instance=https://login.microsoftonline.com/ \
+    AzureAd__TenantId="$TENANT_ID" \
+    AzureAd__ClientId="$APP_CLIENT_ID" \
+    AzureAd__Audience="api://$APP_CLIENT_ID" \
+    VITE_AZURE_AD_CLIENT_ID="$APP_CLIENT_ID" \
+    VITE_AZURE_AD_AUTHORITY="https://login.microsoftonline.com/$TENANT_ID" \
+    VITE_AZURE_AD_REDIRECT_URI="https://<your-container-app-fqdn>"
+```
+
+Because the GHCR package is public, no `--registry-server` or `--registry-identity`
+flags are required — Azure Container Apps pulls the image anonymously.
+
+After the container app is created, retrieve the FQDN and register it as a SPA
+redirect URI in your Entra ID app registration:
+
+```sh
+FQDN=$(az containerapp show \
+  --name eklee-keyvault \
+  --resource-group "$RESOURCE_GROUP" \
+  --query "properties.configuration.ingress.fqdn" -o tsv)
+
+echo "App URL: https://$FQDN"
+
+az ad app update --id "$APP_CLIENT_ID" \
+  --spa-redirect-uris "https://$FQDN"
+```
+
+### Update an Existing Container App
+
+To update the container app to the latest image:
+
+```sh
+az containerapp update \
+  --name eklee-keyvault \
+  --resource-group "$RESOURCE_GROUP" \
+  --image ghcr.io/seekdavidlee/eklee-keyvault:latest
+```
+
 ## Post Deployment RBAC
 
 There are a few important roles to note:

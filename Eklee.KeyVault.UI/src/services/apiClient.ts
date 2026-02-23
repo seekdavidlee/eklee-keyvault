@@ -1,6 +1,7 @@
 import axios from 'axios';
 import type { IPublicClientApplication } from '@azure/msal-browser';
 import { InteractionRequiredAuthError } from '@azure/msal-browser';
+import { config } from '../config';
 
 /**
  * Axios instance for communicating with the Eklee KeyVault API.
@@ -9,7 +10,7 @@ import { InteractionRequiredAuthError } from '@azure/msal-browser';
  * so an empty base URL works with the proxy configuration.
  */
 const apiClient = axios.create({
-  baseURL: import.meta.env.VITE_API_BASE_URL || '',
+  baseURL: config.API_BASE_URL,
   headers: {
     'Content-Type': 'application/json',
   },
