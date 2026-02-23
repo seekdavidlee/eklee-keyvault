@@ -206,6 +206,12 @@ resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2025-01-01' 
           internal: false
         }
       : null
+    workloadProfiles: [
+      {
+        name: 'Consumption'
+        workloadProfileType: 'Consumption'
+      }
+    ]
     zoneRedundant: false
   }
 }
