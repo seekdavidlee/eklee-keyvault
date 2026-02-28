@@ -1,4 +1,4 @@
-import { type ReactElement } from 'react';
+import { useMemo, type ReactElement } from 'react';
 import { List, ListItemButton, ListItemIcon, ListItemText } from '@mui/material';
 import { Dashboard as DashboardIcon, People as PeopleIcon } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
@@ -18,12 +18,15 @@ export interface NavItem {
 export function useNavItems(): NavItem[] {
   const { isAdmin } = useUser();
 
-  return [
-    { label: 'Dashboard', path: '/', icon: <DashboardIcon /> },
-    ...(isAdmin
-      ? [{ label: 'User Management', path: '/users', icon: <PeopleIcon /> }]
-      : []),
-  ];
+  return useMemo(
+    () => [
+      { label: 'Dashboard', path: '/', icon: <DashboardIcon /> },
+      ...(isAdmin
+        ? [{ label: 'User Management', path: '/users', icon: <PeopleIcon /> }]
+        : []),
+    ],
+    [isAdmin],
+  );
 }
 
 /**

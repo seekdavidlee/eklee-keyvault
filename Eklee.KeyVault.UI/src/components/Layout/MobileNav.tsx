@@ -20,6 +20,10 @@ export function MobileNav() {
   const location = useLocation();
   const navItems = useNavItems();
 
+  const currentPath = navItems.some((item) => item.path === location.pathname)
+    ? location.pathname
+    : '/';
+
   const handleChange = (event: SelectChangeEvent) => {
     navigate(event.target.value);
   };
@@ -31,7 +35,7 @@ export function MobileNav() {
         <Select
           labelId="mobile-nav-label"
           id="mobile-nav-select"
-          value={location.pathname}
+          value={currentPath}
           label="Navigate"
           onChange={handleChange}
         >
