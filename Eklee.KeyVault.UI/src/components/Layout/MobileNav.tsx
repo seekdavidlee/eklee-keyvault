@@ -2,8 +2,6 @@ import {
   Box,
   FormControl,
   InputLabel,
-  ListItemIcon,
-  ListItemText,
   MenuItem,
   Select,
   type SelectChangeEvent,
@@ -42,10 +40,8 @@ export function MobileNav() {
           {navItems.map((item) => (
             <MenuItem key={item.path} value={item.path}>
               <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
-                <ListItemIcon sx={{ minWidth: 'auto' }}>
-                  {item.icon}
-                </ListItemIcon>
-                <ListItemText primary={item.label} />
+                {item.icon}
+                {item.label}
               </Box>
             </MenuItem>
           ))}

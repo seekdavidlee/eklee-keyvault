@@ -46,14 +46,14 @@ export function AppLayout({ children }: AppLayoutProps) {
   const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
   return (
-    <Box sx={{ display: 'flex', minHeight: '100vh' }}>
+    <Box sx={{ display: 'flex', minHeight: '100vh', width: '100%', maxWidth: '100vw', overflow: 'hidden' }}>
       {/* Top navigation bar */}
       <AppBar
         position="fixed"
         sx={{ zIndex: (theme) => theme.zIndex.drawer + 1 }}
       >
-        <Toolbar>
-          <Typography variant="h6" noWrap sx={{ flexGrow: 1 }}>
+        <Toolbar sx={{ flexWrap: 'wrap', minHeight: { xs: 'auto' }, py: { xs: 0.5, md: 0 } }}>
+          <Typography variant="h6" noWrap sx={{ flexGrow: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {header} - {username}
           </Typography>
           {role && (
@@ -61,13 +61,13 @@ export function AppLayout({ children }: AppLayoutProps) {
               label={role}
               size="small"
               color={role === 'Admin' ? 'warning' : 'default'}
-              sx={{ mr: 2 }}
+              sx={{ mr: 1 }}
             />
           )}
-          <Typography variant="body2" sx={{ mr: 2 }}>
+          <Typography variant="body2" noWrap sx={{ mr: 1, display: { xs: 'none', sm: 'block' } }}>
             {displayName}
           </Typography>
-          <Button color="inherit" onClick={handleSignOut}>
+          <Button color="inherit" size="small" onClick={handleSignOut}>
             Sign Out
           </Button>
         </Toolbar>
@@ -96,8 +96,10 @@ export function AppLayout({ children }: AppLayoutProps) {
         component="main"
         sx={{
           flexGrow: 1,
+          minWidth: 0,
           display: 'flex',
           flexDirection: 'column',
+          overflow: 'hidden',
         }}
       >
         <Toolbar /> {/* Spacer for AppBar height */}
@@ -105,7 +107,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         {/* Mobile navigation dropdown — shown on small screens */}
         {showSidebar && isMobile && <MobileNav />}
 
-        <Box sx={{ flexGrow: 1, p: 3 }}>{children}</Box>
+        <Box sx={{ flexGrow: 1, p: 3, overflowX: 'auto' }}>{children}</Box>
 
         {/* Footer */}
         {footer && (
