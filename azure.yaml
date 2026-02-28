@@ -8,3 +8,9 @@ infra:
   provider: bicep
   path: Deployment
   module: azd
+
+hooks:
+  preprovision:
+    shell: pwsh
+    run: ./Deployment/setup-azd-app-registration.ps1
+    interactive: true

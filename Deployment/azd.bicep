@@ -19,13 +19,13 @@ targetScope = 'subscription'
 param prefix string
 
 @description('The Azure region where resources will be deployed')
-param location string = deployment().location
+param location string
 
-@description('Your Azure AD tenant ID used for authentication')
-param tenantId string
+@description('Your Azure AD tenant ID used for authentication (set by preprovision hook)')
+param tenantId string = tenant().tenantId
 
-@description('The Azure AD app registration client ID used for authentication')
-param clientId string
+@description('The Azure AD app registration client ID used for authentication (set by preprovision hook)')
+param clientId string = ''
 
 @description('Tags to apply to all resources')
 param tags object = {
