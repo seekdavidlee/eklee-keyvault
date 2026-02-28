@@ -14,6 +14,12 @@ import {
   DialogContent,
   DialogActions,
   DialogContentText,
+  List,
+  ListItemButton,
+  ListItemIcon,
+  ListItemText,
+  useMediaQuery,
+  useTheme,
 } from '@mui/material';
 import {
   Visibility as VisibilityIcon,
@@ -70,6 +76,39 @@ export function Dashboard() {
 
   // Metadata ETag for optimistic concurrency
   const [metadataEtag, setMetadataEtag] = useState<string | null>(null);
+
+  // Mobile actions dialog state
+  const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
+  const [mobileActionsRow, setMobileActionsRow] = useState<SecretRow | null>(null);
+  const [mobileViewValue, setMobileViewValue] = useState<string | null>(null);
+
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+
+  const handleOpenMobileActions = useCallback((row: SecretRow) => {
+    setMobileActionsRow(row);
+    setMobileViewValue(null);
+    setMobileActionsOpen(true);
+  }, []);
+
+  const handleCloseMobileActions = useCallback(() => {
+    setMobileActionsOpen(false);
+    setMobileActionsRow(null);
+    setMobileViewValue(null);
+  }, []);
+
+  const handleMobileView = useCallback(async (row: SecretRow) => {
+    try {
+      const value = await getSecretValue(row.id);
+      setMobileViewValue(value);
+      setRows((prev) =>
+        prev.map((r) => (r.id === row.id ? { ...r, displayValue: value } : r))
+      );
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Unable to get secret.');
+      handleCloseMobileActions();
+    }
+  }, [handleCloseMobileActions]);
 
   // Load secrets on mount
   useEffect(() => {
@@ -332,7 +371,7 @@ export function Dashboard() {
       field: 'displayName',
       headerName: 'Name',
       flex: 1,
-      minWidth: 200,
+      minWidth: isMobile ? 120 : 200,
       renderCell: (params) => {
         const row = params.row;
         if (row.isEditingDisplayName) {
@@ -362,10 +401,26 @@ export function Dashboard() {
             </Box>
           );
         }
+
+        const displayText = row.meta.displayName ?? row.name;
+
+        // On mobile, clicking the name opens the actions dialog
+        if (isMobile) {
+          return (
+            <Typography
+              variant="body2"
+              sx={{ cursor: 'pointer', color: 'primary.main', '&:hover': { textDecoration: 'underline' } }}
+              onClick={() => handleOpenMobileActions(row)}
+            >
+              {displayText}
+            </Typography>
+          );
+        }
+
         return (
           <Box sx={{ display: 'flex', alignItems: 'center', gap: 1 }}>
             <Typography variant="body2">
-              {row.meta.displayName ?? row.name}
+              {displayText}
             </Typography>
             {isAdmin && (
               <IconButton size="small" onClick={() => handleStartEdit(row)}>
@@ -376,69 +431,74 @@ export function Dashboard() {
         );
       },
     },
-    {
-      field: 'displayValue',
-      headerName: 'Value',
-      flex: 1,
-      minWidth: 200,
-      renderCell: (params) => (
-        <Typography
-          variant="body2"
-          sx={{ fontFamily: 'monospace' }}
-        >
-          {params.row.displayValue}
-        </Typography>
-      ),
-    },
-    {
-      field: 'actions',
-      headerName: 'Actions',
-      width: isAdmin ? 200 : 120,
-      sortable: false,
-      filterable: false,
-      renderCell: (params) => (
-        <Box>
-          <Tooltip title="Show secret">
-            <IconButton
-              size="small"
-              onClick={() => handleShowSecret(params.row)}
-            >
-              <VisibilityIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-          <Tooltip title="Copy to clipboard">
-            <IconButton
-              size="small"
-              onClick={() => handleCopyToClipboard(params.row)}
-            >
-              <CopyIcon fontSize="small" />
-            </IconButton>
-          </Tooltip>
-          {isAdmin && (
-            <>
-              <Tooltip title="Update secret value">
-                <IconButton
-                  size="small"
-                  color="primary"
-                  onClick={() => handleOpenUpdateDialog(params.row)}
-                >
-                  <EditIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-              <Tooltip title="Delete secret">
-                <IconButton
-                  size="small"
-                  color="error"
-                  onClick={() => handleOpenDeleteDialog(params.row)}
-                >
-                  <DeleteIcon fontSize="small" />
-                </IconButton>
-              </Tooltip>
-            </>
-          )}
-        </Box>
-      ),
-    },
+    // Hide Value and Actions columns on mobile
+    ...(!isMobile
+      ? [
+          {
+            field: 'displayValue',
+            headerName: 'Value',
+            flex: 1,
+            minWidth: 200,
+            renderCell: (params: { row: SecretRow }) => (
+              <Typography
+                variant="body2"
+                sx={{ fontFamily: 'monospace' }}
+              >
+                {params.row.displayValue}
+              </Typography>
+            ),
+          } satisfies GridColDef<SecretRow>,
+          {
+            field: 'actions',
+            headerName: 'Actions',
+            width: isAdmin ? 200 : 120,
+            sortable: false,
+            filterable: false,
+            renderCell: (params: { row: SecretRow }) => (
+              <Box>
+                <Tooltip title="Show secret">
+                  <IconButton
+                    size="small"
+                    onClick={() => handleShowSecret(params.row)}
+                  >
+                    <VisibilityIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+                <Tooltip title="Copy to clipboard">
+                  <IconButton
+                    size="small"
+                    onClick={() => handleCopyToClipboard(params.row)}
+                  >
+                    <CopyIcon fontSize="small" />
+                  </IconButton>
+                </Tooltip>
+                {isAdmin && (
+                  <>
+                    <Tooltip title="Update secret value">
+                      <IconButton
+                        size="small"
+                        color="primary"
+                        onClick={() => handleOpenUpdateDialog(params.row)}
+                      >
+                        <EditIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                    <Tooltip title="Delete secret">
+                      <IconButton
+                        size="small"
+                        color="error"
+                        onClick={() => handleOpenDeleteDialog(params.row)}
+                      >
+                        <DeleteIcon fontSize="small" />
+                      </IconButton>
+                    </Tooltip>
+                  </>
+                )}
+              </Box>
+            ),
+          } satisfies GridColDef<SecretRow>,
+        ]
+      : []),
   ];
 
   if (loading) {
@@ -544,6 +604,77 @@ export function Dashboard() {
                 ? 'Create'
                 : 'Update'}
           </Button>
+        </DialogActions>
+      </Dialog>
+
+      {/* Mobile Actions Dialog */}
+      <Dialog
+        open={mobileActionsOpen}
+        onClose={handleCloseMobileActions}
+        maxWidth="xs"
+        fullWidth
+      >
+        <DialogTitle>
+          {mobileActionsRow?.meta.displayName ?? mobileActionsRow?.name}
+        </DialogTitle>
+        <DialogContent>
+          {mobileViewValue !== null ? (
+            <Typography
+              variant="body2"
+              sx={{ fontFamily: 'monospace', wordBreak: 'break-all', p: 1, bgcolor: 'grey.100', borderRadius: 1 }}
+            >
+              {mobileViewValue}
+            </Typography>
+          ) : (
+            <List disablePadding>
+              <ListItemButton
+                onClick={() => mobileActionsRow && handleMobileView(mobileActionsRow)}
+              >
+                <ListItemIcon><VisibilityIcon /></ListItemIcon>
+                <ListItemText primary="View Secret" />
+              </ListItemButton>
+              <ListItemButton
+                onClick={() => {
+                  if (mobileActionsRow) {
+                    handleCopyToClipboard(mobileActionsRow);
+                    handleCloseMobileActions();
+                  }
+                }}
+              >
+                <ListItemIcon><CopyIcon /></ListItemIcon>
+                <ListItemText primary="Copy to Clipboard" />
+              </ListItemButton>
+              {isAdmin && (
+                <>
+                  <ListItemButton
+                    onClick={() => {
+                      if (mobileActionsRow) {
+                        handleOpenUpdateDialog(mobileActionsRow);
+                        handleCloseMobileActions();
+                      }
+                    }}
+                  >
+                    <ListItemIcon><EditIcon color="primary" /></ListItemIcon>
+                    <ListItemText primary="Edit Secret" />
+                  </ListItemButton>
+                  <ListItemButton
+                    onClick={() => {
+                      if (mobileActionsRow) {
+                        handleOpenDeleteDialog(mobileActionsRow);
+                        handleCloseMobileActions();
+                      }
+                    }}
+                  >
+                    <ListItemIcon><DeleteIcon color="error" /></ListItemIcon>
+                    <ListItemText primary="Delete Secret" />
+                  </ListItemButton>
+                </>
+              )}
+            </List>
+          )}
+        </DialogContent>
+        <DialogActions>
+          <Button onClick={handleCloseMobileActions}>Close</Button>
         </DialogActions>
       </Dialog>
 

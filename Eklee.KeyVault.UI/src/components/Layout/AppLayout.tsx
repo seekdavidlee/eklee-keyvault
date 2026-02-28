@@ -31,7 +31,6 @@ export function AppLayout({ children }: AppLayoutProps) {
   const { role, accessDenied } = useUser();
 
   const displayName = accounts[0]?.name ?? 'Unknown';
-  const username = accounts[0]?.username ?? 'Unknown';
 
   const header = 'KeyVault Client';
   const footer = 'KeyVault Client 2024';
@@ -52,9 +51,9 @@ export function AppLayout({ children }: AppLayoutProps) {
         position="fixed"
         sx={{ zIndex: (theme) => theme.zIndex.drawer + 1 }}
       >
-        <Toolbar sx={{ flexWrap: 'wrap', minHeight: { xs: 'auto' }, py: { xs: 0.5, md: 0 } }}>
+        <Toolbar>
           <Typography variant="h6" noWrap sx={{ flexGrow: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
-            {header} - {username}
+            {header}
           </Typography>
           {role && (
             <Chip
