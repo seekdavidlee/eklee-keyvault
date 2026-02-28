@@ -7,10 +7,13 @@ import {
   Toolbar,
   Typography,
   Button,
+  useMediaQuery,
+  useTheme,
 } from '@mui/material';
 import { useMsal } from '@azure/msal-react';
 import { useUser } from '../../auth/UserContext';
 import { Sidebar } from './Sidebar';
+import { MobileNav } from './MobileNav';
 
 /** Width of the sidebar navigation drawer in pixels. */
 const DRAWER_WIDTH = 220;
@@ -38,6 +41,9 @@ export function AppLayout({ children }: AppLayoutProps) {
   };
 
   const showSidebar = !accessDenied && role !== null;
+
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
 
   return (
     <Box sx={{ display: 'flex', minHeight: '100vh' }}>
@@ -67,8 +73,8 @@ export function AppLayout({ children }: AppLayoutProps) {
         </Toolbar>
       </AppBar>
 
-      {/* Sidebar drawer — only shown when the user has access */}
-      {showSidebar && (
+      {/* Sidebar drawer — only shown on desktop when the user has access */}
+      {showSidebar && !isMobile && (
         <Drawer
           variant="permanent"
           sx={{
@@ -95,6 +101,10 @@ export function AppLayout({ children }: AppLayoutProps) {
         }}
       >
         <Toolbar /> {/* Spacer for AppBar height */}
+
+        {/* Mobile navigation dropdown — shown on small screens */}
+        {showSidebar && isMobile && <MobileNav />}
+
         <Box sx={{ flexGrow: 1, p: 3 }}>{children}</Box>
 
         {/* Footer */}
