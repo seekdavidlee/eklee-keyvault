@@ -7,10 +7,13 @@ import {
   Toolbar,
   Typography,
   Button,
+  useMediaQuery,
+  useTheme,
 } from '@mui/material';
 import { useMsal } from '@azure/msal-react';
 import { useUser } from '../../auth/UserContext';
 import { Sidebar } from './Sidebar';
+import { MobileNav } from './MobileNav';
 
 /** Width of the sidebar navigation drawer in pixels. */
 const DRAWER_WIDTH = 220;
@@ -28,7 +31,6 @@ export function AppLayout({ children }: AppLayoutProps) {
   const { role, accessDenied } = useUser();
 
   const displayName = accounts[0]?.name ?? 'Unknown';
-  const username = accounts[0]?.username ?? 'Unknown';
 
   const header = 'KeyVault Client';
   const footer = 'KeyVault Client 2024';
@@ -39,36 +41,39 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   const showSidebar = !accessDenied && role !== null;
 
+  const theme = useTheme();
+  const isMobile = useMediaQuery(theme.breakpoints.down('md'));
+
   return (
-    <Box sx={{ display: 'flex', minHeight: '100vh' }}>
+    <Box sx={{ display: 'flex', minHeight: '100vh', width: '100%', maxWidth: '100vw', overflow: 'hidden' }}>
       {/* Top navigation bar */}
       <AppBar
         position="fixed"
         sx={{ zIndex: (theme) => theme.zIndex.drawer + 1 }}
       >
         <Toolbar>
-          <Typography variant="h6" noWrap sx={{ flexGrow: 1 }}>
-            {header} - {username}
+          <Typography variant="h6" noWrap sx={{ flexGrow: 1, minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {header}
           </Typography>
           {role && (
             <Chip
               label={role}
               size="small"
               color={role === 'Admin' ? 'warning' : 'default'}
-              sx={{ mr: 2 }}
+              sx={{ mr: 1 }}
             />
           )}
-          <Typography variant="body2" sx={{ mr: 2 }}>
+          <Typography variant="body2" noWrap sx={{ mr: 1, display: { xs: 'none', sm: 'block' } }}>
             {displayName}
           </Typography>
-          <Button color="inherit" onClick={handleSignOut}>
+          <Button color="inherit" size="small" onClick={handleSignOut}>
             Sign Out
           </Button>
         </Toolbar>
       </AppBar>
 
-      {/* Sidebar drawer — only shown when the user has access */}
-      {showSidebar && (
+      {/* Sidebar drawer — only shown on desktop when the user has access */}
+      {showSidebar && !isMobile && (
         <Drawer
           variant="permanent"
           sx={{
@@ -90,12 +95,18 @@ export function AppLayout({ children }: AppLayoutProps) {
         component="main"
         sx={{
           flexGrow: 1,
+          minWidth: 0,
           display: 'flex',
           flexDirection: 'column',
+          overflow: 'hidden',
         }}
       >
         <Toolbar /> {/* Spacer for AppBar height */}
-        <Box sx={{ flexGrow: 1, p: 3 }}>{children}</Box>
+
+        {/* Mobile navigation dropdown — shown on small screens */}
+        {showSidebar && isMobile && <MobileNav />}
+
+        <Box sx={{ flexGrow: 1, p: 3, overflowX: 'auto' }}>{children}</Box>
 
         {/* Footer */}
         {footer && (
