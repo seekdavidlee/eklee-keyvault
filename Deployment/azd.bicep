@@ -27,6 +27,9 @@ param tenantId string = tenant().tenantId
 @description('The Azure AD app registration client ID used for authentication (set by preprovision hook)')
 param clientId string = ''
 
+@description('The full container image reference including digest (set by preprovision hook)')
+param containerImage string = 'ghcr.io/seekdavidlee/eklee-keyvault:latest'
+
 @description('Tags to apply to all resources')
 param tags object = {
   Application: 'Eklee-KeyVault'
@@ -61,6 +64,7 @@ module resources 'azd-resources.bicep' = {
     location: location
     tenantId: tenantId
     clientId: clientId
+    containerImage: containerImage
     tags: tags
   }
 }

@@ -241,3 +241,14 @@ Write-Host ""
 Write-Host "Run 'azd up' to provision and deploy." -ForegroundColor Green
 Write-Host "Post-deploy hook will update SPA redirect URIs using the deployed Container App URL." -ForegroundColor Green
 Write-Host ""
+
+# ---------------------------------------------------------------------------
+# Resolve the latest container image digest from ghcr.io
+# ---------------------------------------------------------------------------
+$resolveScript = Join-Path $PSScriptRoot "resolve-container-image.ps1"
+Write-Host "Resolving latest container image..." -ForegroundColor Cyan
+& $resolveScript
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "Failed to resolve container image. See errors above."
+    exit 1
+}

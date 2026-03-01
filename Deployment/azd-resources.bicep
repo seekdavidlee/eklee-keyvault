@@ -22,6 +22,9 @@ param tenantId string
 @description('The Azure AD app registration client ID used for authentication')
 param clientId string
 
+@description('The full container image reference including digest (set by preprovision hook)')
+param containerImage string = 'ghcr.io/seekdavidlee/eklee-keyvault:latest'
+
 @description('Tags to apply to all resources')
 param tags object
 
@@ -240,7 +243,7 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
       containers: [
         {
           name: 'eklee-keyvault'
-          image: 'ghcr.io/seekdavidlee/eklee-keyvault:latest'
+          image: containerImage
           resources: {
             cpu: json('0.5')
             memory: '1Gi'

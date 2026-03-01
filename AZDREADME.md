@@ -16,6 +16,12 @@ The `preprovision` hook in [azure.yaml](azure.yaml) automatically runs
 This script creates (or reuses) an Azure AD app registration named `<prefix>-app` and stores
 `clientId` and `tenantId` in the azd environment.
 
+At the end of the preprovision hook, [resolve-container-image.ps1](Deployment/resolve-container-image.ps1)
+queries the public `ghcr.io` registry for the latest digest of the `seekdavidlee/eklee-keyvault:latest`
+tag and stores the full image reference (with `@sha256:...` digest) in the `CONTAINER_IMAGE` azd
+environment variable. This ensures every `azd up` deploys the most recent container image by
+forcing a new Container App revision whenever the digest changes.
+
 The script also resolves Azure location for provisioning. It first checks `AZURE_LOCATION`, then
 `infra.parameters.location`, then process environment `AZURE_LOCATION`. If none are set, it prompts
 for a location and stores it in the azd environment for future runs.
@@ -54,7 +60,7 @@ The template deploys the following resources (no private networking, no ACR):
   - Key Vault Secrets Officer on the Key Vault
   - Storage Blob Data Contributor on the Storage Account
 - **Container Apps Environment**: Consumption workload profile
-- **Container App**: running `ghcr.io/seekdavidlee/eklee-keyvault:latest`
+- **Container App**: running the image resolved from `ghcr.io/seekdavidlee/eklee-keyvault` (pinned by digest)
 
 ## Authentication
 
