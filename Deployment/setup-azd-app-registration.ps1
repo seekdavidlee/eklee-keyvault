@@ -229,6 +229,29 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 # ---------------------------------------------------------------------------
+# Generate Eklee.KeyVault.Api/appsettings.json
+# ---------------------------------------------------------------------------
+$appSettingsPath = Join-Path $PSScriptRoot "..\Eklee.KeyVault.Api\appsettings.json"
+
+if (Test-Path $appSettingsPath) {
+    Write-Host "appsettings.json already exists at $appSettingsPath. Skipping generation." -ForegroundColor Green
+}
+else {
+    Write-Host "Generating $appSettingsPath..." -ForegroundColor Cyan
+
+    $appSettingsContent = @{
+        AzureAd = @{
+            Instance = "https://login.microsoftonline.com/"
+            TenantId = $tenantId
+            ClientId = $clientId
+        }
+    } | ConvertTo-Json -Depth 3
+
+    $appSettingsContent | Out-File -FilePath $appSettingsPath -Encoding utf8
+    Write-Host "appsettings.json written with AzureAd configuration." -ForegroundColor Green
+}
+
+# ---------------------------------------------------------------------------
 # Summary
 # ---------------------------------------------------------------------------
 Write-Host ""

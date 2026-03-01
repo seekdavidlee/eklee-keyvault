@@ -1,4 +1,4 @@
-#!/usr/bin/env pwsh
+﻿#!/usr/bin/env pwsh
 <#
 .SYNOPSIS
     Copies secrets from a source Azure Key Vault into the Eklee KeyVault API,
@@ -162,7 +162,7 @@ $failed = 0
 
 foreach ($secretName in $sourceSecrets) {
     if ($existingNames -contains $secretName) {
-        Write-Skip "Skipping '$secretName' — already exists in API."
+        Write-Skip "Skipping '$secretName' - already exists in API."
         $skipped++
         continue
     }
