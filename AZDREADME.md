@@ -120,6 +120,16 @@ azd down --purge
 
 The `--purge` flag also purges soft-deleted Key Vault instances.
 
+> [!IMPORTANT]
+> `azd down` only removes Azure Resource Manager resources. The Entra ID app registration
+> (`<prefix>-app`) created during provisioning is **not** deleted automatically. Remove it
+> manually:
+>
+> ```powershell
+> $appId = az ad app list --display-name "<prefix>-app" --query "[0].appId" -o tsv
+> az ad app delete --id $appId
+> ```
+
 ## Troubleshooting
 
 If `azd up` fails in the `preprovision` hook with:
