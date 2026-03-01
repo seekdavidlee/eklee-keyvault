@@ -1,0 +1,13 @@
+{
+  "parameters": {
+    "location": {
+      "value": "${AZURE_LOCATION}"
+    },
+    "clientId": {
+      "value": "${APP_CLIENT_ID}"
+    },
+    "containerImage": {
+      "value": "${CONTAINER_IMAGE}"
+    }
+  }
+}

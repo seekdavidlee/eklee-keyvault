@@ -1,0 +1,20 @@
+# yaml-language-server: $schema=https://raw.githubusercontent.com/Azure/azure-dev/main/schemas/v1.0/azure.yaml.json
+name: eklee-keyvault
+
+metadata:
+  template: eklee-keyvault
+
+infra:
+  provider: bicep
+  path: Deployment
+  module: azd
+
+hooks:
+  preprovision:
+    shell: pwsh
+    run: ./Deployment/setup-azd-app-registration.ps1
+    interactive: true
+  postdeploy:
+    shell: pwsh
+    run: ./Deployment/update-app-registration-redirect-uri.ps1
+    interactive: false
