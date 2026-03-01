@@ -1,0 +1,7 @@
+{
+  "parameters": {
+    "clientId": {
+      "value": "${APP_CLIENT_ID}"
+    }
+  }
+}

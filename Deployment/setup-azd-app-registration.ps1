@@ -237,6 +237,14 @@ else {
 # ---------------------------------------------------------------------------
 Write-Host "Storing clientId and tenantId in azd environment..." -ForegroundColor Cyan
 
+# Set as azd environment values (referenced by azd.parameters.json)
+azd env set APP_CLIENT_ID $clientId
+if ($LASTEXITCODE -ne 0) {
+    Write-Error "Failed to set APP_CLIENT_ID in azd environment."
+    exit 1
+}
+
+# Also store as infra parameters for backwards compatibility
 azd env config set infra.parameters.clientId $clientId
 if ($LASTEXITCODE -ne 0) {
     Write-Error "Failed to set clientId in azd environment."
