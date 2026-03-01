@@ -8,6 +8,9 @@
     },
     "containerImage": {
       "value": "${CONTAINER_IMAGE}"
+    },
+    "customDomainName": {
+      "value": "${CUSTOM_DOMAIN_NAME}"
     }
   }
 }

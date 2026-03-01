@@ -25,6 +25,9 @@ param clientId string
 @description('The full container image reference including digest (set by preprovision hook)')
 param containerImage string = 'ghcr.io/seekdavidlee/eklee-keyvault:latest'
 
+@description('Optional custom domain name (e.g. myapp.example.com). When set, used for VITE redirect and API base URLs instead of the default Container App FQDN.')
+param customDomainName string = ''
+
 @description('Tags to apply to all resources')
 param tags object
 
@@ -39,6 +42,11 @@ var containerAppEnvName = '${prefix}-env'
 var containerAppName = '${prefix}-app'
 var managedIdentityName = '${prefix}-identity'
 var logAnalyticsWorkspaceName = '${prefix}-logs'
+
+// Resolve application base URL: use custom domain when provided, otherwise fall back to the default Container App FQDN
+var appBaseUrl = !empty(customDomainName)
+  ? 'https://${customDomainName}'
+  : 'https://${containerAppName}.${containerAppEnvironment.properties.defaultDomain}'
 
 // Well-known RBAC role definition IDs
 var keyVaultSecretsOfficerRoleId = subscriptionResourceId(
@@ -214,6 +222,23 @@ resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2025-01-01' 
 }
 
 // ============================================================================
+// MANAGED CERTIFICATE — provisioned only when a custom domain is configured
+// ============================================================================
+// Prerequisites: CNAME and TXT DNS records must be configured BEFORE deployment.
+// Certificate provisioning may take several minutes while Azure validates the domain.
+
+resource managedCertificate 'Microsoft.App/managedEnvironments/managedCertificates@2025-01-01' = if (!empty(customDomainName)) {
+  parent: containerAppEnvironment
+  name: 'cert-${replace(customDomainName, '.', '-')}'
+  location: location
+  tags: tags
+  properties: {
+    subjectName: customDomainName
+    domainControlValidation: 'CNAME'
+  }
+}
+
+// ============================================================================
 // CONTAINER APP — Eklee KeyVault API + UI
 // ============================================================================
 
@@ -237,6 +262,13 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
         targetPort: 8080
         transport: 'auto'
         allowInsecure: false
+        customDomains: !empty(customDomainName) ? [
+          {
+            name: customDomainName
+            certificateId: managedCertificate.id
+            bindingType: 'SniEnabled'
+          }
+        ] : []
       }
     }
     template: {
@@ -298,11 +330,11 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
             }
             {
               name: 'VITE_AZURE_AD_REDIRECT_URI'
-              value: 'https://${containerAppName}.${containerAppEnvironment.properties.defaultDomain}'
+              value: appBaseUrl
             }
             {
               name: 'VITE_API_BASE_URL'
-              value: 'https://${containerAppName}.${containerAppEnvironment.properties.defaultDomain}'
+              value: appBaseUrl
             }
           ]
           probes: [

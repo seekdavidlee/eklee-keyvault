@@ -30,6 +30,9 @@ param clientId string = ''
 @description('The full container image reference including digest (set by preprovision hook)')
 param containerImage string = 'ghcr.io/seekdavidlee/eklee-keyvault:latest'
 
+@description('Optional custom domain name (e.g. myapp.example.com). When set, used for VITE redirect and API base URLs instead of the default Container App FQDN.')
+param customDomainName string = ''
+
 @description('Tags to apply to all resources')
 param tags object = {
   Application: 'Eklee-KeyVault'
@@ -65,6 +68,7 @@ module resources 'azd-resources.bicep' = {
     tenantId: tenantId
     clientId: clientId
     containerImage: containerImage
+    customDomainName: customDomainName
     tags: tags
   }
 }

@@ -101,6 +101,65 @@ Redirect URI update is automatic during `azd up`. The `postdeploy` hook appends 
 `VITE_AZURE_AD_REDIRECT_URI` and `VITE_API_BASE_URL` are automatically set during provisioning
 using the Container App's inferred FQDN.
 
+## Custom Domain Name
+
+To use a custom domain instead of the auto-generated Container App FQDN for
+`VITE_AZURE_AD_REDIRECT_URI` and `VITE_API_BASE_URL`, follow the steps below.
+
+### Step 1: Deploy without a custom domain
+
+Run `azd up` first to provision the Container App and obtain its FQDN:
+
+```bash
+azd up
+```
+
+Note the `containerAppFqdn` output (e.g. `<prefix>-app.<hash>.<region>.azurecontainerapps.io`).
+
+### Step 2: Configure DNS records
+
+At your DNS provider, create the following records for your custom domain
+(e.g. `pwm.example.com`):
+
+| Type  | Host                      | Value                                            |
+|-------|---------------------------|--------------------------------------------------|
+| CNAME | `www` or `{subdomain}`    | `<containerAppFqdn>` (from step 1)              |
+| TXT   | `asuid.{subdomain}`      | Domain verification token from the Azure portal  |
+
+To find the TXT verification token, open the Container App in the Azure portal and
+navigate to **Custom domains > Add custom domain**. The token is displayed in the
+**Domain validation** section.
+
+### Step 3: Set the environment variable and redeploy
+
+```powershell
+azd env set CUSTOM_DOMAIN_NAME "pwm.example.com"
+azd up
+```
+
+This value is persisted in the azd environment (`.azure/<env-name>/.env`) so you only
+need to set it once. All subsequent `azd up` runs will use it automatically.
+
+When `CUSTOM_DOMAIN_NAME` is set:
+
+- A managed TLS certificate is provisioned on the Container Apps Environment.
+  Certificate provisioning may take several minutes while Azure validates DNS.
+- The Container App's ingress is configured with a `customDomains` binding using that
+  certificate, so the custom domain is preserved across deployments.
+- `VITE_AZURE_AD_REDIRECT_URI` and `VITE_API_BASE_URL` are set to
+  `https://<custom-domain>` instead of the default Container App FQDN.
+- The `postdeploy` hook registers `https://<custom-domain>` as an additional SPA redirect
+  URI on the app registration (alongside the Container App URL and `http://localhost:5173`).
+
+When `CUSTOM_DOMAIN_NAME` is empty or not set, the default Container App FQDN behavior
+is preserved and no managed certificate is deployed.
+
+To remove a previously set custom domain, clear the variable:
+
+```powershell
+azd env set CUSTOM_DOMAIN_NAME ""
+```
+
 ## Outputs Reference
 
 | Output                          | Description                                        |
