@@ -54,10 +54,8 @@ if (-not $Prefix) {
 }
 
 # ---------------------------------------------------------------------------
-# Sync AZURE_LOCATION from the location infrastructure parameter
-# azd prompts for location as an infra param; copy it to AZURE_LOCATION
-# which is required for the ARM deployment metadata on subscription-scoped
-# deployments.
+# Verify AZURE_LOCATION is set (azd sets this via the standard location prompt
+# and azd.parameters.json maps it to the Bicep 'location' parameter).
 # ---------------------------------------------------------------------------
 $locationOutput = azd env get-value AZURE_LOCATION 2>&1
 $currentLocation = $null
@@ -65,37 +63,10 @@ if ($LASTEXITCODE -eq 0 -and $locationOutput -notmatch 'ERROR') {
     $currentLocation = ($locationOutput | Out-String).Trim()
 }
 if (-not $currentLocation) {
-    $rawLocation = (azd env config get infra.parameters.location 2>$null | Out-String).Trim().Trim('"')
-    if ($rawLocation) {
-        azd env set AZURE_LOCATION $rawLocation 2>$null
-        azd env config set infra.parameters.location $rawLocation 2>$null
-        Write-Host "AZURE_LOCATION set to '$rawLocation' from infra parameter." -ForegroundColor Green
-    }
-    else {
-        $locationFromEnv = ($env:AZURE_LOCATION | Out-String).Trim().Trim('"')
-        if ($locationFromEnv) {
-            azd env set AZURE_LOCATION $locationFromEnv 2>$null
-            azd env config set infra.parameters.location $locationFromEnv 2>$null
-            Write-Host "AZURE_LOCATION set to '$locationFromEnv' from process environment." -ForegroundColor Green
-        }
-        else {
-            Write-Host "No Azure location found in current azd environment." -ForegroundColor Yellow
-            $promptLocation = (Read-Host "Enter Azure location (for example: centralus)")
-            $promptLocation = ($promptLocation | Out-String).Trim().Trim('"')
-            if (-not $promptLocation) {
-                Write-Error "Could not determine Azure location. Set AZURE_LOCATION or infra.parameters.location and retry."
-                exit 1
-            }
-
-            azd env set AZURE_LOCATION $promptLocation 2>$null
-            azd env config set infra.parameters.location $promptLocation 2>$null
-            Write-Host "AZURE_LOCATION set to '$promptLocation' from interactive input." -ForegroundColor Green
-        }
-    }
+    Write-Error "AZURE_LOCATION is not set. Run 'azd env set AZURE_LOCATION <region>' and retry."
+    exit 1
 }
-else {
-    Write-Host "AZURE_LOCATION is '$currentLocation'." -ForegroundColor Green
-}
+Write-Host "AZURE_LOCATION is '$currentLocation'." -ForegroundColor Green
 
 $AppName = "$Prefix-app"
 Write-Host "App registration name: $AppName" -ForegroundColor Cyan
