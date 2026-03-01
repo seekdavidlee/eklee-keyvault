@@ -27,6 +27,10 @@ values. You can also run it manually:
 .\Deployment\setup-azd-app-registration.ps1 -Prefix "foobarkv1"
 ```
 
+At the end of `azd up`, the `postdeploy` hook runs
+[update-app-registration-redirect-uri.ps1](Deployment/update-app-registration-redirect-uri.ps1)
+to add the deployed Container App URL to the app registration SPA redirect URIs.
+
 ## Collected Parameters
 
 `azd` prompts for the following parameters during provisioning (unless already stored):
@@ -85,10 +89,8 @@ the default browser login may open in an unintended browser profile.
 
 ## Post-Deployment Configuration
 
-After the first deployment, one manual step is required:
-
-1. **Update the redirect URI**: Add the `containerAppUrl` output value as a redirect URI in your
-   Azure AD app registration under **Authentication > Single-page application**.
+Redirect URI update is automatic during `azd up`. The `postdeploy` hook appends the current
+`containerAppUrl` to SPA redirect URIs while retaining existing redirect URIs.
 
 `VITE_AZURE_AD_REDIRECT_URI` and `VITE_API_BASE_URL` are automatically set during provisioning
 using the Container App's inferred FQDN.

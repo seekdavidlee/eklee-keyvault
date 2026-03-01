@@ -14,3 +14,7 @@ hooks:
     shell: pwsh
     run: ./Deployment/setup-azd-app-registration.ps1
     interactive: true
+  postdeploy:
+    shell: pwsh
+    run: ./Deployment/update-app-registration-redirect-uri.ps1
+    interactive: false

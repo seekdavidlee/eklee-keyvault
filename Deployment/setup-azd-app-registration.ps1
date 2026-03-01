@@ -260,4 +260,5 @@ Write-Host "  Client ID  : $clientId"
 Write-Host "  Audience   : api://$clientId"
 Write-Host ""
 Write-Host "Run 'azd up' to provision and deploy." -ForegroundColor Green
+Write-Host "Post-deploy hook will update SPA redirect URIs using the deployed Container App URL." -ForegroundColor Green
 Write-Host ""
