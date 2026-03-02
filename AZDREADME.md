@@ -142,10 +142,13 @@ need to set it once. All subsequent `azd up` runs will use it automatically.
 
 When `CUSTOM_DOMAIN_NAME` is set:
 
-- A managed TLS certificate is provisioned on the Container Apps Environment.
-  Certificate provisioning may take several minutes while Azure validates DNS.
-- The Container App's ingress is configured with a `customDomains` binding using that
-  certificate, so the custom domain is preserved across deployments.
+- **Phase 1**: The Container App is deployed with the custom hostname registered but TLS
+  binding disabled (`bindingType: Disabled`). Azure requires the hostname to exist on a
+  Container App before it will provision a managed certificate.
+- **Certificate provisioning**: A managed TLS certificate is created on the Container Apps
+  Environment using CNAME-based domain validation. This may take several minutes.
+- **Phase 2**: The Container App is redeployed with the managed certificate bound
+  (`bindingType: SniEnabled`), enabling HTTPS for the custom domain.
 - `VITE_AZURE_AD_REDIRECT_URI` and `VITE_API_BASE_URL` are set to
   `https://<custom-domain>` instead of the default Container App FQDN.
 - The `postdeploy` hook registers `https://<custom-domain>` as an additional SPA redirect

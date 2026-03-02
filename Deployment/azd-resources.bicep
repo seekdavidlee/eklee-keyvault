@@ -222,10 +222,41 @@ resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2025-01-01' 
 }
 
 // ============================================================================
+// CONTAINER APP — Phase 1: Deploy with custom domain hostname (binding disabled)
+// ============================================================================
+// When a custom domain is configured, the hostname must be registered on the
+// Container App BEFORE Azure will provision a managed certificate. Phase 1
+// deploys (or updates) the app with bindingType 'Disabled' so the hostname
+// exists. When no custom domain is set, this is the only deployment needed.
+
+module containerAppPhase1 'container-app.bicep' = {
+  name: 'container-app-phase1-${uniqueString(deployment().name)}'
+  params: {
+    name: containerAppName
+    location: location
+    tags: tags
+    containerImage: containerImage
+    managedEnvironmentId: containerAppEnvironment.id
+    managedIdentityId: managedIdentity.id
+    managedIdentityClientId: managedIdentity.properties.clientId
+    keyVaultUri: keyVault.properties.vaultUri
+    storageBlobEndpoint: storageAccount.properties.primaryEndpoints.blob
+    storageContainerName: 'configs'
+    tenantId: tenantId
+    clientId: clientId
+    loginEndpoint: environment().authentication.loginEndpoint
+    appBaseUrl: appBaseUrl
+    customDomainName: customDomainName
+    // No certificate yet — the binding is Disabled so Azure accepts the hostname
+  }
+}
+
+// ============================================================================
 // MANAGED CERTIFICATE — provisioned only when a custom domain is configured
 // ============================================================================
 // Prerequisites: CNAME and TXT DNS records must be configured BEFORE deployment.
 // Certificate provisioning may take several minutes while Azure validates the domain.
+// The hostname must already be registered on a Container App (phase 1 above).
 
 resource managedCertificate 'Microsoft.App/managedEnvironments/managedCertificates@2025-01-01' = if (!empty(customDomainName)) {
   parent: containerAppEnvironment
@@ -236,135 +267,41 @@ resource managedCertificate 'Microsoft.App/managedEnvironments/managedCertificat
     subjectName: customDomainName
     domainControlValidation: 'CNAME'
   }
+  dependsOn: [
+    containerAppPhase1
+  ]
 }
 
 // ============================================================================
-// CONTAINER APP — Eklee KeyVault API + UI
+// CONTAINER APP — Phase 2: Bind the managed certificate (SniEnabled)
 // ============================================================================
+// Once the certificate is provisioned, redeploy the Container App with the
+// certificate bound. When no custom domain is set, this is an idempotent
+// deployment identical to phase 1.
 
-resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
-  name: containerAppName
-  location: location
-  tags: tags
-  identity: {
-    type: 'UserAssigned'
-    userAssignedIdentities: {
-      '${managedIdentity.id}': {}
-    }
-  }
-  properties: {
+module containerAppPhase2 'container-app.bicep' = {
+  name: 'container-app-phase2-${uniqueString(deployment().name)}'
+  params: {
+    name: containerAppName
+    location: location
+    tags: tags
+    containerImage: containerImage
     managedEnvironmentId: containerAppEnvironment.id
-    workloadProfileName: 'Consumption'
-    configuration: {
-      activeRevisionsMode: 'Single'
-      ingress: {
-        external: true
-        targetPort: 8080
-        transport: 'auto'
-        allowInsecure: false
-        customDomains: !empty(customDomainName) ? [
-          {
-            name: customDomainName
-            certificateId: managedCertificate.id
-            bindingType: 'SniEnabled'
-          }
-        ] : []
-      }
-    }
-    template: {
-      containers: [
-        {
-          name: 'eklee-keyvault'
-          image: containerImage
-          resources: {
-            cpu: json('0.5')
-            memory: '1Gi'
-          }
-          env: [
-            // ASP.NET backend configuration
-            {
-              name: 'KeyVaultUri'
-              value: keyVault.properties.vaultUri
-            }
-            {
-              name: 'StorageUri'
-              value: storageAccount.properties.primaryEndpoints.blob
-            }
-            {
-              name: 'StorageContainerName'
-              value: 'configs'
-            }
-            {
-              name: 'AuthenticationMode'
-              value: 'mi'
-            }
-            {
-              name: 'AZURE_CLIENT_ID'
-              value: managedIdentity.properties.clientId
-            }
-            // Azure AD authentication settings
-            {
-              name: 'AzureAd__Instance'
-              value: environment().authentication.loginEndpoint
-            }
-            {
-              name: 'AzureAd__TenantId'
-              value: tenantId
-            }
-            {
-              name: 'AzureAd__ClientId'
-              value: clientId
-            }
-            {
-              name: 'AzureAd__Audience'
-              value: 'api://${clientId}'
-            }
-            // React frontend runtime configuration (injected by docker-entrypoint.sh)
-            {
-              name: 'VITE_AZURE_AD_CLIENT_ID'
-              value: clientId
-            }
-            {
-              name: 'VITE_AZURE_AD_AUTHORITY'
-              value: '${environment().authentication.loginEndpoint}${tenantId}'
-            }
-            {
-              name: 'VITE_AZURE_AD_REDIRECT_URI'
-              value: appBaseUrl
-            }
-            {
-              name: 'VITE_API_BASE_URL'
-              value: appBaseUrl
-            }
-          ]
-          probes: [
-            {
-              type: 'Liveness'
-              httpGet: {
-                path: '/healthz'
-                port: 8080
-              }
-              initialDelaySeconds: 10
-              periodSeconds: 30
-            }
-            {
-              type: 'Readiness'
-              httpGet: {
-                path: '/healthz'
-                port: 8080
-              }
-              initialDelaySeconds: 5
-              periodSeconds: 10
-            }
-          ]
-        }
-      ]
-      scale: {
-        minReplicas: 0
-        maxReplicas: 1
-      }
-    }
+    managedIdentityId: managedIdentity.id
+    managedIdentityClientId: managedIdentity.properties.clientId
+    keyVaultUri: keyVault.properties.vaultUri
+    storageBlobEndpoint: storageAccount.properties.primaryEndpoints.blob
+    storageContainerName: 'configs'
+    tenantId: tenantId
+    clientId: clientId
+    loginEndpoint: environment().authentication.loginEndpoint
+    appBaseUrl: appBaseUrl
+    customDomainName: customDomainName
+    customDomainCertificateId: !empty(customDomainName) ? managedCertificate.id : ''
   }
+  dependsOn: [
+    containerAppPhase1
+  ]
 }
 
 // ============================================================================
@@ -393,10 +330,10 @@ output managedIdentityPrincipalId string = managedIdentity.properties.principalI
 output managedIdentityClientId string = managedIdentity.properties.clientId
 
 @description('The name of the Container App')
-output containerAppName string = containerApp.name
+output containerAppName string = containerAppPhase2.outputs.containerAppName
 
 @description('The FQDN of the Container App (update VITE_AZURE_AD_REDIRECT_URI and app registration redirect URI with this value)')
-output containerAppFqdn string = containerApp.properties.configuration.ingress.fqdn
+output containerAppFqdn string = containerAppPhase2.outputs.containerAppFqdn
 
 @description('The full URL of the Container App')
-output containerAppUrl string = 'https://${containerApp.properties.configuration.ingress.fqdn}'
+output containerAppUrl string = containerAppPhase2.outputs.containerAppUrl
