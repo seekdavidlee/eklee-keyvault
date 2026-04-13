@@ -73,9 +73,123 @@ jobs:
         working-directory: Eklee.KeyVault.UI
         run: npm run build
 
+  e2e-test:
+    name: Playwright E2E Tests
+    needs: [setup, test-dotnet, test-npm]
+    if: needs.setup.outputs.build_env == 'dev'
+    runs-on: ubuntu-latest
+    environment: dev
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v4
+        with:
+          node-version: '22'
+          cache: 'npm'
+          cache-dependency-path: Eklee.KeyVault.UI/package-lock.json
+
+      - name: Setup .NET
+        uses: actions/setup-dotnet@v4
+        with:
+          dotnet-version: '10.0.x'
+          dotnet-quality: 'preview'
+
+      - name: Install UI dependencies
+        working-directory: Eklee.KeyVault.UI
+        run: npm ci
+
+      - name: Install Playwright browsers
+        working-directory: Eklee.KeyVault.UI
+        run: npx playwright install --with-deps chromium
+
+      - name: Build UI
+        working-directory: Eklee.KeyVault.UI
+        run: npm run build
+
+      - name: Publish API
+        run: dotnet publish Eklee.KeyVault.Api/Eklee.KeyVault.Api.csproj -c Release -o ./publish
+
+      - name: Copy UI build to API wwwroot
+        run: cp -r Eklee.KeyVault.UI/dist/* ./publish/wwwroot/
+
+      - name: Login to Azure with OIDC
+        uses: azure/login@v2
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Get access token for E2E tests
+        id: token
+        run: |
+          TOKEN=$(az account get-access-token \
+            --resource "${{ vars.VITE_AZURE_AD_CLIENT_ID }}" \
+            --query accessToken -o tsv)
+          echo "::add-mask::$TOKEN"
+          echo "access_token=$TOKEN" >> "$GITHUB_OUTPUT"
+
+      - name: Start application
+        env:
+          ASPNETCORE_ENVIRONMENT: Development
+          ASPNETCORE_URLS: http://localhost:8080
+          AzureAd__Instance: https://login.microsoftonline.com/
+          AzureAd__TenantId: ${{ vars.AZURE_TENANT_ID }}
+          AzureAd__ClientId: ${{ vars.VITE_AZURE_AD_CLIENT_ID }}
+          KeyVaultUri: ${{ vars.E2E_KEYVAULT_URI }}
+          StorageUri: ${{ vars.E2E_STORAGE_URI }}
+          StorageContainerName: configs
+          AuthenticationMode: azcli
+        run: |
+          cd publish
+          # Generate runtime config for the SPA
+          cat > wwwroot/config.js <<EOF
+          window.__RUNTIME_CONFIG__ = {
+            AZURE_AD_CLIENT_ID: "${{ vars.VITE_AZURE_AD_CLIENT_ID }}",
+            AZURE_AD_AUTHORITY: "${{ vars.VITE_AZURE_AD_AUTHORITY }}",
+            AZURE_AD_REDIRECT_URI: "http://localhost:8080",
+            API_BASE_URL: ""
+          };
+          EOF
+          nohup dotnet Eklee.KeyVault.Api.dll > /tmp/app.log 2>&1 &
+          echo "APP_PID=$!" >> "$GITHUB_ENV"
+
+      - name: Wait for application to be ready
+        run: |
+          echo "Waiting for app on http://localhost:8080/healthz..."
+          for i in $(seq 1 30); do
+            if curl -sf http://localhost:8080/healthz > /dev/null 2>&1; then
+              echo "App is ready!"
+              exit 0
+            fi
+            sleep 2
+          done
+          echo "App failed to start. Logs:"
+          cat /tmp/app.log
+          exit 1
+
+      - name: Run Playwright tests
+        working-directory: Eklee.KeyVault.UI
+        env:
+          E2E_BASE_URL: http://localhost:8080
+          E2E_CLIENT_ID: ${{ vars.VITE_AZURE_AD_CLIENT_ID }}
+          E2E_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          E2E_ACCESS_TOKEN: ${{ steps.token.outputs.access_token }}
+        run: npx playwright test
+
+      - name: Upload Playwright report
+        uses: actions/upload-artifact@v4
+        if: always()
+        with:
+          name: playwright-report
+          path: Eklee.KeyVault.UI/playwright-report/
+          retention-days: 14
+
   build-and-push:
     name: Build and Push Docker Image
-    needs: [setup, test-dotnet, test-npm]
+    needs: [setup, test-dotnet, test-npm, e2e-test]
     runs-on: ubuntu-latest
     environment: ${{ needs.setup.outputs.build_env }}
     outputs:
@@ -136,7 +250,7 @@ jobs:
 
   push-ghcr:
     name: Push to GitHub Container Registry
-    needs: [setup, test-dotnet, test-npm]
+    needs: [setup, test-dotnet, test-npm, e2e-test]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     environment: ${{ needs.setup.outputs.build_env }}

@@ -278,3 +278,8 @@ properties/
 
 .copilot-tracking/
 Deployment/main.json
+
+# Playwright
+**/playwright-report/
+**/test-results/
+**/blob-report/
