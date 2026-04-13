@@ -1,6 +1,6 @@
 ---
-mode: 'agent'
-tools: ['codebase']
+agent: 'agent'
+tools: ['search/codebase']
 description: 'Create optimized multi-stage Dockerfiles for any language or framework'
 ---
 
@@ -17,7 +17,7 @@ Your goal is to help me create efficient multi-stage Dockerfiles that follow bes
 ## Base Images
 
 - Start with official, minimal base images when possible
-- Specify exact version tags to ensure reproducible builds (e.g., `python:3.11-slim` not just `python`)
+- Specify exact version tags to ensure reproducible builds (e.g., `mcr.microsoft.com/dotnet/aspnet:10.0` not just `dotnet/aspnet`)
 - Consider distroless images for runtime stages where appropriate
 - Use Alpine-based images for smaller footprints when compatible with your application
 - Ensure the runtime image has the minimal necessary dependencies
