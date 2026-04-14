@@ -113,7 +113,13 @@ jobs:
         run: dotnet publish Eklee.KeyVault.Api/Eklee.KeyVault.Api.csproj -c Release -o ./publish
 
       - name: Copy UI build to API wwwroot
-        run: cp -r Eklee.KeyVault.UI/dist/* ./publish/wwwroot/
+        run: |
+          mkdir -p ./publish/wwwroot
+          if [ ! -d "Eklee.KeyVault.UI/dist" ]; then
+            echo "UI build output directory 'Eklee.KeyVault.UI/dist' does not exist."
+            exit 1
+          fi
+          cp -r Eklee.KeyVault.UI/dist/. ./publish/wwwroot/
 
       - name: Login to Azure with OIDC
         uses: azure/login@v2
