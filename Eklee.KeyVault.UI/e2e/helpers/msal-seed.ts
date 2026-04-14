@@ -59,11 +59,24 @@ export async function seedMsalSession(
   // addInitScript runs in the browser context BEFORE any page JavaScript,
   // so the MSAL cache is populated before PublicClientApplication.initialize()
   // reads sessionStorage.
+  //
+  // MSAL Browser v5 uses schema version 2 with pipe-separated, lowercased
+  // cache keys and a "msal.2." prefix for registry keys.
   await page.addInitScript((data) => {
     const now = Math.floor(Date.now() / 1000);
+    const SEP = '|';
+    const homeTenantId = data.homeAccountId.split('.')[1] || data.tenantId;
 
-    // Account entity — MSAL uses this to identify the signed-in user
-    const accountKey = `${data.homeAccountId}-${data.environment}-${data.tenantId}`;
+    // Account entity key: msal.2|<homeAccountId>|<environment>|<tenantId>
+    const accountKey = [
+      'msal.2',
+      data.homeAccountId,
+      data.environment,
+      homeTenantId,
+    ]
+      .join(SEP)
+      .toLowerCase();
+
     const accountEntity = {
       homeAccountId: data.homeAccountId,
       environment: data.environment,
@@ -72,11 +85,25 @@ export async function seedMsalSession(
       username: data.upn,
       name: data.name,
       authorityType: 'MSSTS',
+      lastUpdatedAt: String(Date.now()),
     };
 
-    // Access token entity — acquireTokenSilent returns this without a network call
+    // Access token entity key:
+    //   msal.2|<homeAccountId>|<environment>|accesstoken|<clientId>|<realm>|<target>||
     const scopes = `${data.clientId}/access_as_user openid profile offline_access`;
-    const tokenKey = `${data.homeAccountId}-${data.environment}-accesstoken-${data.clientId}-${data.tenantId}-${scopes}`;
+    const tokenKey = [
+      'msal.2',
+      data.homeAccountId,
+      data.environment,
+      'accesstoken',
+      data.clientId,
+      data.tenantId,
+      scopes,
+      '', // claims hash (empty)
+    ]
+      .join(SEP)
+      .toLowerCase();
+
     const tokenEntity = {
       homeAccountId: data.homeAccountId,
       environment: data.environment,
@@ -91,13 +118,13 @@ export async function seedMsalSession(
       cachedAt: String(now),
     };
 
-    // Key registries — MSAL iterates these to discover cached entries
+    // Key registries — MSAL v5 uses "msal.2.account.keys" / "msal.2.token.keys.<clientId>"
     sessionStorage.setItem(
-      'msal.account.keys',
+      'msal.2.account.keys',
       JSON.stringify([accountKey])
     );
     sessionStorage.setItem(
-      `msal.token.keys.${data.clientId}`,
+      `msal.2.token.keys.${data.clientId}`,
       JSON.stringify({
         idToken: [],
         accessToken: [tokenKey],
@@ -109,10 +136,14 @@ export async function seedMsalSession(
     sessionStorage.setItem(accountKey, JSON.stringify(accountEntity));
     sessionStorage.setItem(tokenKey, JSON.stringify(tokenEntity));
 
-    // Active account hint so MSAL skips account selection
+    // Active account — MSAL v5 uses "active-account-filters" with a JSON object
     sessionStorage.setItem(
-      `msal.${data.clientId}.active-account`,
-      data.homeAccountId
+      `msal.${data.clientId}.active-account-filters`,
+      JSON.stringify({
+        homeAccountId: data.homeAccountId,
+        localAccountId: data.oid,
+        tenantId: data.tenantId,
+      })
     );
   }, seedData);
 }
