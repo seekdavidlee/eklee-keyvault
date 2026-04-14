@@ -10,13 +10,31 @@ test.describe('Secrets CRUD', () => {
   const secretValue = 'initial-secret-value';
   const updatedSecretValue = 'updated-secret-value';
 
-  test.beforeEach(async ({ page }) => {
+  test.beforeEach(async ({ page, request }) => {
     test.skip(
       !accessToken,
       'E2E_ACCESS_TOKEN is required. Run: az account get-access-token --resource <clientId> --query accessToken -o tsv'
     );
 
     await seedMsalSession(page, { clientId, tenantId, accessToken });
+
+    // Ensure the test user is registered (auto-registers as Admin if first user)
+    const meResponse = await request.get('/api/useraccess/me', {
+      headers: { Authorization: `Bearer ${accessToken}` },
+    });
+
+    test.skip(
+      meResponse.status() === 403,
+      'E2E test user is not registered for access. Use a fresh environment or register the user as Admin.'
+    );
+
+    if (meResponse.ok()) {
+      const me = await meResponse.json();
+      test.skip(
+        me.role !== 'Admin',
+        'E2E test user must have the Admin role for secrets CRUD operations.'
+      );
+    }
   });
 
   test('create, read, update, and delete a secret', async ({ page }) => {
