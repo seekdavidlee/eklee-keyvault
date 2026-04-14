@@ -137,6 +137,19 @@ jobs:
           echo "::add-mask::$TOKEN"
           echo "access_token=$TOKEN" >> "$GITHUB_OUTPUT"
 
+      - name: Validate required environment variables
+        run: |
+          missing=()
+          [[ -z "${{ vars.E2E_KEYVAULT_URI }}" ]] && missing+=("E2E_KEYVAULT_URI")
+          [[ -z "${{ vars.E2E_STORAGE_URI }}" ]] && missing+=("E2E_STORAGE_URI")
+          [[ -z "${{ vars.VITE_AZURE_AD_CLIENT_ID }}" ]] && missing+=("VITE_AZURE_AD_CLIENT_ID")
+          [[ -z "${{ vars.AZURE_TENANT_ID }}" ]] && missing+=("AZURE_TENANT_ID")
+          if [[ ${#missing[@]} -gt 0 ]]; then
+            echo "::error::Missing required environment variables: ${missing[*]}"
+            echo "Set these in GitHub Settings → Environments → dev → Variables"
+            exit 1
+          fi
+
       - name: Start application
         env:
           ASPNETCORE_ENVIRONMENT: Development
