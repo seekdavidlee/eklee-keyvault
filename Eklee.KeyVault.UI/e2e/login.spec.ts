@@ -13,6 +13,17 @@ test.describe('Authentication', () => {
     );
 
     await seedMsalSession(page, { clientId, tenantId, accessToken });
+
+    // Intercept all API requests and inject the Bearer token directly.
+    // This avoids relying on MSAL's acquireTokenSilent which may fail
+    // when the seeded cache entry doesn't perfectly match the SDK lookup.
+    await page.route('**/api/**', async (route) => {
+      const headers = {
+        ...route.request().headers(),
+        authorization: `Bearer ${accessToken}`,
+      };
+      await route.continue({ headers });
+    });
   });
 
   test('authenticated user can view the application', async ({ page }) => {
