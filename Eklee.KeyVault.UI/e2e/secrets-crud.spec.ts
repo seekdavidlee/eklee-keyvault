@@ -69,8 +69,8 @@ test.describe('Secrets CRUD', () => {
       page.getByText(`Secret '${secretName}' created successfully.`)
     ).toBeVisible({ timeout: 15_000 });
 
-    // The secret should appear in the data grid
-    await expect(page.getByRole('gridcell', { name: secretName })).toBeVisible();
+    // The secret should appear in the data grid (loadSecrets runs after the snackbar)
+    await expect(page.getByRole('gridcell', { name: secretName })).toBeVisible({ timeout: 15_000 });
 
     // --- READ ---
     // Find the row containing our secret and click the "Show secret" button
