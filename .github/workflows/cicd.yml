@@ -156,8 +156,13 @@ jobs:
           SA_NAME=$(echo "${{ vars.E2E_STORAGE_URI }}" | sed -E 's|https://([^.]+)\.blob\.core\.windows\.net/?|\1|')
           echo "sa_name=$SA_NAME" >> "$GITHUB_OUTPUT"
 
+          # Generate a unique container name for this E2E run to ensure first-user auto-registration works
+          E2E_CONTAINER="e2e-$(date +%s)"
+          echo "e2e_container=$E2E_CONTAINER" >> "$GITHUB_OUTPUT"
+
           echo "Key Vault name: $KV_NAME"
           echo "Storage Account name: $SA_NAME"
+          echo "E2E container name: $E2E_CONTAINER"
 
       - name: Verify RBAC for CI identity
         run: |
@@ -226,31 +231,52 @@ jobs:
 
           echo "enabled=true" >> "$GITHUB_OUTPUT"
 
-      - name: Wait for network access propagation
+      - name: Wait for network access propagation and create E2E container
         run: |
           set -euo pipefail
           echo "Waiting for public network access to propagate..."
 
+          KV_NAME="${{ steps.resources.outputs.kv_name }}"
           SA_NAME="${{ steps.resources.outputs.sa_name }}"
-          CONTAINER="configs"
+          E2E_CONTAINER="${{ steps.resources.outputs.e2e_container }}"
           MAX_ATTEMPTS=30
           INTERVAL=5
 
+          KV_READY=false
+          SA_READY=false
+
           for i in $(seq 1 $MAX_ATTEMPTS); do
-            if az storage blob list \
-              --account-name "$SA_NAME" \
-              --container-name "$CONTAINER" \
-              --auth-mode login \
-              --num-results 1 \
-              --output none 2>/dev/null; then
-              echo "✅ Storage Account '$SA_NAME' is accessible (attempt $i)."
+            if [[ "$KV_READY" == false ]]; then
+              if az keyvault secret list \
+                --vault-name "$KV_NAME" \
+                --maxresults 1 \
+                --output none 2>/dev/null; then
+                echo "✅ Key Vault '$KV_NAME' is accessible (attempt $i)."
+                KV_READY=true
+              fi
+            fi
+
+            if [[ "$SA_READY" == false ]]; then
+              if az storage container create \
+                --account-name "$SA_NAME" \
+                --name "$E2E_CONTAINER" \
+                --auth-mode login \
+                --output none 2>/dev/null; then
+                echo "✅ Storage Account '$SA_NAME' is accessible — container '$E2E_CONTAINER' created (attempt $i)."
+                SA_READY=true
+              fi
+            fi
+
+            if [[ "$KV_READY" == true && "$SA_READY" == true ]]; then
+              echo "✅ All resources accessible."
               exit 0
             fi
-            echo "Attempt $i/$MAX_ATTEMPTS: Storage not yet accessible. Retrying in ${INTERVAL}s..."
+
+            echo "Attempt $i/$MAX_ATTEMPTS: Waiting... (KV=$KV_READY, SA=$SA_READY)"
             sleep $INTERVAL
           done
 
-          echo "::error::Storage Account '$SA_NAME' not accessible after $((MAX_ATTEMPTS * INTERVAL))s."
+          echo "::error::Resources not accessible after $((MAX_ATTEMPTS * INTERVAL))s (KV=$KV_READY, SA=$SA_READY)."
           exit 1
 
       - name: Get access token for E2E tests
@@ -271,7 +297,7 @@ jobs:
           AzureAd__ClientId: ${{ vars.VITE_AZURE_AD_CLIENT_ID }}
           KeyVaultUri: ${{ vars.E2E_KEYVAULT_URI }}
           StorageUri: ${{ vars.E2E_STORAGE_URI }}
-          StorageContainerName: configs
+          StorageContainerName: ${{ steps.resources.outputs.e2e_container }}
           AuthenticationMode: azcli
           ALLOW_ACL_AUTH: "true"
           AllowedOrigins__0: http://localhost:8080
@@ -322,6 +348,18 @@ jobs:
             Eklee.KeyVault.UI/test-results/
             /tmp/app.log
           retention-days: 7
+
+      - name: Delete E2E blob container
+        if: always() && steps.resources.outputs.e2e_container
+        run: |
+          set -euo pipefail
+          echo "Deleting container '${{ steps.resources.outputs.e2e_container }}'..."
+          az storage container delete \
+            --account-name "${{ steps.resources.outputs.sa_name }}" \
+            --name "${{ steps.resources.outputs.e2e_container }}" \
+            --auth-mode login \
+            --output none 2>/dev/null || true
+          echo "✅ Container '${{ steps.resources.outputs.e2e_container }}' deleted."
 
       - name: Disable public network access
         if: always() && steps.enable-public-access.outputs.enabled == 'true'
