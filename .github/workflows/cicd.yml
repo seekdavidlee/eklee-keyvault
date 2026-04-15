@@ -13,6 +13,10 @@ permissions:
   contents: read
   packages: write
 
+concurrency:
+  group: cicd-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   setup:
     name: Choose Secrets Environment
@@ -209,12 +213,14 @@ jobs:
           az keyvault update \
             --name "${{ steps.resources.outputs.kv_name }}" \
             --public-network-access Enabled \
+            --default-action Allow \
             --output none
           echo "✅ Key Vault '${{ steps.resources.outputs.kv_name }}' public access enabled."
 
           az storage account update \
             --name "${{ steps.resources.outputs.sa_name }}" \
             --public-network-access Enabled \
+            --default-action Allow \
             --output none
           echo "✅ Storage Account '${{ steps.resources.outputs.sa_name }}' public access enabled."
 
@@ -325,12 +331,14 @@ jobs:
 
           az keyvault update \
             --name "${{ steps.resources.outputs.kv_name }}" \
+            --default-action Deny \
             --public-network-access Disabled \
             --output none
           echo "✅ Key Vault '${{ steps.resources.outputs.kv_name }}' public access disabled."
 
           az storage account update \
             --name "${{ steps.resources.outputs.sa_name }}" \
+            --default-action Deny \
             --public-network-access Disabled \
             --output none
           echo "✅ Storage Account '${{ steps.resources.outputs.sa_name }}' public access disabled."
