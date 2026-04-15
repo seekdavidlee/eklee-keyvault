@@ -220,6 +220,11 @@ jobs:
 
           echo "enabled=true" >> "$GITHUB_OUTPUT"
 
+      - name: Wait for network access propagation
+        run: |
+          echo "Waiting 30s for public network access changes to propagate..."
+          sleep 30
+
       - name: Get access token for E2E tests
         id: token
         run: |
@@ -241,6 +246,7 @@ jobs:
           StorageContainerName: configs
           AuthenticationMode: azcli
           ALLOW_ACL_AUTH: "true"
+          AllowedOrigins__0: http://localhost:8080
         run: |
           cd publish
           # Generate runtime config for the SPA

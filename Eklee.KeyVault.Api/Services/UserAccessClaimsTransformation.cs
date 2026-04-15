@@ -1,5 +1,6 @@
 using System.Security.Claims;
-using Eklee.KeyVault.Api.Services;
+using Azure;
+using Eklee.KeyVault.Api.Models;
 using Microsoft.AspNetCore.Authentication;
 
 namespace Eklee.KeyVault.Api.Services;
@@ -9,7 +10,7 @@ namespace Eklee.KeyVault.Api.Services;
 /// Runs after JWT validation on every authenticated request, adding a <see cref="ClaimTypes.Role"/>
 /// claim so that <c>[Authorize(Roles = "...")]</c> works natively.
 /// </summary>
-public class UserAccessClaimsTransformation(UserAccessService userAccessService) : IClaimsTransformation
+public class UserAccessClaimsTransformation(UserAccessService userAccessService, ILogger<UserAccessClaimsTransformation> logger) : IClaimsTransformation
 {
     /// <summary>
     /// Inspects the user's "oid" claim (Entra ID object identifier) and, if the user is
@@ -27,7 +28,16 @@ public class UserAccessClaimsTransformation(UserAccessService userAccessService)
             return principal;
         }
 
-        var role = await userAccessService.GetUserRoleAsync(objectId);
+        UserRole? role;
+        try
+        {
+            role = await userAccessService.GetUserRoleAsync(objectId);
+        }
+        catch (RequestFailedException ex)
+        {
+            logger.LogWarning(ex, "Failed to retrieve user role from blob storage for {ObjectId}. Proceeding without role.", objectId);
+            return principal;
+        }
         if (role is null)
         {
             return principal;
