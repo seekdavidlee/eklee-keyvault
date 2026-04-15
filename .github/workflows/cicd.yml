@@ -222,8 +222,30 @@ jobs:
 
       - name: Wait for network access propagation
         run: |
-          echo "Waiting 30s for public network access changes to propagate..."
-          sleep 30
+          set -euo pipefail
+          echo "Waiting for public network access to propagate..."
+
+          SA_NAME="${{ steps.resources.outputs.sa_name }}"
+          CONTAINER="configs"
+          MAX_ATTEMPTS=30
+          INTERVAL=5
+
+          for i in $(seq 1 $MAX_ATTEMPTS); do
+            if az storage blob list \
+              --account-name "$SA_NAME" \
+              --container-name "$CONTAINER" \
+              --auth-mode login \
+              --num-results 1 \
+              --output none 2>/dev/null; then
+              echo "✅ Storage Account '$SA_NAME' is accessible (attempt $i)."
+              exit 0
+            fi
+            echo "Attempt $i/$MAX_ATTEMPTS: Storage not yet accessible. Retrying in ${INTERVAL}s..."
+            sleep $INTERVAL
+          done
+
+          echo "::error::Storage Account '$SA_NAME' not accessible after $((MAX_ATTEMPTS * INTERVAL))s."
+          exit 1
 
       - name: Get access token for E2E tests
         id: token
