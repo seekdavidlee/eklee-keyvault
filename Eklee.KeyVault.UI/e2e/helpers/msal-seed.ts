@@ -39,6 +39,7 @@ export async function seedMsalSession(
     claims.preferred_username ||
     'e2e-test@test.com') as string;
   const name = (claims.name || 'E2E Test User') as string;
+  const exp = claims.exp as number;
 
   const homeAccountId = `${oid}.${tid}`;
   const environment = 'login.microsoftonline.com';
@@ -52,6 +53,7 @@ export async function seedMsalSession(
     name,
     oid,
     accessToken,
+    exp,
   };
 
   // addInitScript runs in the browser context BEFORE any page JavaScript,
@@ -102,14 +104,6 @@ export async function seedMsalSession(
       .join(SEP)
       .toLowerCase();
 
-    // Use a synthetic expiry far in the future so MSAL always considers the
-    // cached token valid. MSAL's acquireTokenSilent applies a ~5 min clock-skew
-    // buffer; if the real JWT exp is near the current time (common in CI where
-    // the token is obtained early in the pipeline), MSAL considers it expired,
-    // throws before the request reaches the network layer, and Playwright's
-    // route handler never gets to inject the Bearer token.
-    const syntheticExp = now + 3600;
-
     const tokenEntity = {
       homeAccountId: data.homeAccountId,
       environment: data.environment,
@@ -119,8 +113,8 @@ export async function seedMsalSession(
       secret: data.accessToken,
       target: scopes,
       tokenType: 'Bearer',
-      expiresOn: String(syntheticExp),
-      extendedExpiresOn: String(syntheticExp + 3600),
+      expiresOn: String(data.exp),
+      extendedExpiresOn: String(data.exp),
       cachedAt: String(now),
     };
 
