@@ -49,6 +49,31 @@ to add the deployed Container App URL to the app registration SPA redirect URIs.
 `tenantId` and `clientId` are no longer prompted. The preprovision hook script populates both
 values in the current azd environment by creating or reusing the app registration.
 
+## Custom Domain
+
+If you have a custom domain for the Container App, set `CUSTOM_DOMAIN_NAME` in the azd
+environment before running `azd up`:
+
+```bash
+azd env set CUSTOM_DOMAIN_NAME "mydomain.com"
+```
+
+The `postprovision` hook runs
+[apply-custom-domain.ps1](Deployment/apply-custom-domain.ps1) automatically after
+each provisioning to:
+
+1. Add the custom hostname to the Container App
+2. Bind a managed certificate (CNAME validation)
+3. Update `VITE_AZURE_AD_REDIRECT_URI` and `VITE_API_BASE_URL` environment
+   variables on the Container App to use the custom domain
+
+The `postdeploy` hook also adds `https://<custom-domain>` to the app registration
+SPA redirect URIs.
+
+> [!NOTE]
+> Your DNS must have a CNAME record pointing the custom domain to the Container
+> App FQDN before the managed certificate can be provisioned.
+
 ## Provisioned Resources
 
 The template deploys the following resources (no private networking, no ACR):

@@ -133,6 +133,15 @@ $localhostRedirectUri = Normalize-RedirectUri -UriValue "http://localhost:5173"
 $redirectUriMap[$localhostRedirectUri.ToLowerInvariant()] = $localhostRedirectUri
 $redirectUriMap[$containerAppUrl.ToLowerInvariant()] = $containerAppUrl
 
+# Include custom domain redirect URI if configured
+$customDomain = Get-AzdEnvValue -Name "CUSTOM_DOMAIN_NAME"
+if ($customDomain) {
+    $customDomainUri = Normalize-RedirectUri -UriValue "https://$customDomain"
+    if ($customDomainUri) {
+        $redirectUriMap[$customDomainUri.ToLowerInvariant()] = $customDomainUri
+    }
+}
+
 [string[]]$redirectUris = @($redirectUriMap.Values)
 if ($redirectUris.Count -eq 0) {
     Write-Error "No redirect URIs available to apply."
