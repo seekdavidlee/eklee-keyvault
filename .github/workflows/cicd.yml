@@ -384,6 +384,7 @@ jobs:
   build-and-push:
     name: Build and Push Docker Image
     needs: [setup, test-dotnet, test-npm, e2e-test]
+    if: ${{ !failure() && !cancelled() }}
     runs-on: ubuntu-latest
     environment: ${{ needs.setup.outputs.build_env }}
     outputs:
@@ -445,7 +446,7 @@ jobs:
   push-ghcr:
     name: Push to GitHub Container Registry
     needs: [setup, test-dotnet, test-npm, e2e-test]
-    if: github.ref == 'refs/heads/main'
+    if: ${{ github.ref == 'refs/heads/main' && !failure() && !cancelled() }}
     runs-on: ubuntu-latest
     environment: ${{ needs.setup.outputs.build_env }}
 
@@ -478,6 +479,7 @@ jobs:
   deploy:
     name: Deploy to Azure Container Apps
     needs: [setup, build-and-push]
+    if: ${{ !failure() && !cancelled() }}
     runs-on: ubuntu-latest
     environment: ${{ needs.setup.outputs.build_env }}
 
