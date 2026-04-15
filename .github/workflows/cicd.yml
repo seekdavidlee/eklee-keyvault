@@ -240,6 +240,7 @@ jobs:
           StorageUri: ${{ vars.E2E_STORAGE_URI }}
           StorageContainerName: configs
           AuthenticationMode: azcli
+          ALLOW_ACL_AUTH: "true"
         run: |
           cd publish
           # Generate runtime config for the SPA
