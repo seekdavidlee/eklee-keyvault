@@ -92,14 +92,19 @@ Do NOT proceed to Phase 2 until the user explicitly approves.
 
 ```shell
 git fetch origin main
-git checkout -b security/<fix-name> origin/main
+git switch --create security/<fix-name> --no-track origin/main
 ```
 
 Verify the branch was created:
 
 ```shell
 git branch --show-current
+git rev-parse --abbrev-ref --symbolic-full-name @{u}
 ```
+
+If the upstream check succeeds and returns `origin/main`, stop and fix it before
+continuing. The implementation branch must not track `origin/main` before the
+first push.
 
 ### Step 2.2: Apply NuGet Fixes
 
@@ -224,16 +229,19 @@ Present a summary table:
 
 Where Status is one of: **FIXED**, **PARTIAL**, **FAILED**.
 
-### Step 3.5: Prompt for Push
+### Step 3.5: Prompt for Push and PR Creation
 
 If all items show **FIXED** and builds pass:
 
-> "All security fixes verified successfully. To push the branch and create a PR, approve the following commands:"
+> "All security fixes verified successfully. Type **approve push** to publish the branch and open the PR, or provide changes before push."
 
 ```shell
-git push -u origin security/<fix-name>
-gh pr create --title "security: fix Critical/High Dependabot alerts" --body "## Security Fixes\n\n<plan-summary>" --base main
+git push -u origin HEAD
+gh pr create --head security/<fix-name> --title "security: fix Critical/High Dependabot alerts" --body "## Security Fixes\n\n<plan-summary>" --base main
 ```
+
+When the user types **approve push**, run both commands. Do not stop after
+printing the commands.
 
 If any items show **PARTIAL** or **FAILED**, report the issues and ask the user how to proceed.
 
@@ -250,5 +258,9 @@ Do NOT push or create a PR without explicit user approval.
 - ALWAYS verify builds pass before committing
 - ALWAYS use `gh api` or `gh` CLI for GitHub operations (not MCP)
 - ALWAYS use `git` CLI for version control operations
+- ALWAYS create the remediation branch with `--no-track` so it does not inherit
+	`origin/main` as its upstream
+- ALWAYS publish the branch with `git push -u origin HEAD`; NEVER rely on a bare
+	`git push` for the first publication of a new remediation branch
 - PREFER `dotnet add package` for NuGet upgrades and `npm install` for npm upgrades over manual file edits
 - If a patched version introduces breaking changes, document them and ask the user before proceeding

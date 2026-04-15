@@ -18,12 +18,33 @@ builder.Services.Configure<Microsoft.AspNetCore.Authentication.JwtBearer.JwtBear
     Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme,
     options =>
     {
-        options.TokenValidationParameters.ValidAudiences = new[]
-        {
+        options.TokenValidationParameters.ValidAudiences =
+        [
             $"api://{clientId}",
             clientId
-        };
+        ];
+
+        // Allow tokens without scp/roles claims to pass JWT validation.
+        // Role-based authorization is handled by UserAccessClaimsTransformation
+        // which enriches the principal from the user_access.json blob.
+        options.TokenValidationParameters.RoleClaimType = System.Security.Claims.ClaimTypes.Role;
     });
+
+// In CI/CD the service principal token has no scp/roles claim.
+// Set ALLOW_ACL_AUTH=true in the E2E pipeline to bypass the IDW10201 check.
+// Production keeps the stricter default that requires scp or roles in the token.
+var allowAclAuth = string.Equals(
+    builder.Configuration["ALLOW_ACL_AUTH"], "true", StringComparison.OrdinalIgnoreCase);
+
+if (allowAclAuth)
+{
+    builder.Services.Configure<MicrosoftIdentityOptions>(
+        Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme,
+        options =>
+        {
+            options.AllowWebApiToBeAuthorizedByACL = true;
+        });
+}
 
 builder.Services.AddAuthorization();
 
