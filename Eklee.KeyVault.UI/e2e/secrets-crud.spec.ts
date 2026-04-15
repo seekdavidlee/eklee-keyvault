@@ -61,7 +61,7 @@ test.describe('Secrets CRUD', () => {
 
     // Fill out the create dialog
     await page.getByLabel(/secret name/i).fill(secretName);
-    await page.getByLabel(/secret value/i).fill(secretValue);
+    await page.getByRole('textbox', { name: /secret value/i }).fill(secretValue);
     await page.getByRole('button', { name: /^create$/i }).click();
 
     // Wait for the success snackbar
@@ -87,7 +87,7 @@ test.describe('Secrets CRUD', () => {
     await expect(page.getByLabel(/secret name/i)).toBeDisabled();
 
     // Fill in the new value and save
-    await page.getByLabel(/secret value/i).fill(updatedSecretValue);
+    await page.getByRole('textbox', { name: /secret value/i }).fill(updatedSecretValue);
     await page.getByRole('button', { name: /^update$/i }).click();
 
     // Wait for the success snackbar

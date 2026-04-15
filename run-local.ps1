@@ -23,6 +23,9 @@
 .PARAMETER NoBuild
     Skip the Docker build step and run using the existing image.
 
+.PARAMETER ForceBuild
+    Force a Docker rebuild even if source files haven't changed.
+
 .PARAMETER RedirectUri
     Override the MSAL redirect URI baked into the SPA. Default: http://localhost:<Port>.
 
@@ -45,6 +48,7 @@ param(
     [string]$ImageName = "eklee-keyvault-local",
     [switch]$Detached,
     [switch]$NoBuild,
+    [switch]$ForceBuild,
     [string]$RedirectUri
 )
 
@@ -121,8 +125,19 @@ $azureAdSection = $appSettings.AzureAd
 $clientId = $azureAdSection.ClientId
 $tenantId = $azureAdSection.TenantId
 
-if (-not $clientId -or -not $tenantId) {
-    Write-ErrorStatus "AzureAd:ClientId or AzureAd:TenantId is missing in appsettings.json."
+$storageUri = $appSettings.StorageUri
+$storageContainerName = $appSettings.StorageContainerName
+$keyVaultUri = $appSettings.KeyVaultUri
+
+$missingVars = @()
+if (-not $clientId)            { $missingVars += "AzureAd:ClientId" }
+if (-not $tenantId)            { $missingVars += "AzureAd:TenantId" }
+if (-not $storageUri)          { $missingVars += "StorageUri" }
+if (-not $storageContainerName){ $missingVars += "StorageContainerName" }
+if (-not $keyVaultUri)         { $missingVars += "KeyVaultUri" }
+
+if ($missingVars.Count -gt 0) {
+    Write-ErrorStatus "Missing required settings in appsettings.json: $($missingVars -join ', ')"
     exit 1
 }
 
@@ -131,37 +146,191 @@ if (-not $RedirectUri) {
     $RedirectUri = "http://localhost:$Port"
 }
 
-Write-Status "  ClientId:    $clientId"
-Write-Status "  TenantId:    $tenantId"
-Write-Status "  Authority:   $authority"
-Write-Status "  RedirectUri: $RedirectUri"
+Write-Status "  ClientId:            $clientId"
+Write-Status "  TenantId:            $tenantId"
+Write-Status "  Authority:           $authority"
+Write-Status "  RedirectUri:         $RedirectUri"
+Write-Status "  KeyVaultUri:         $keyVaultUri"
+Write-Status "  StorageUri:          $storageUri"
+Write-Status "  StorageContainerName: $storageContainerName"
 
 # ---------------------------------------------------------------------------
-# Build the Docker image
+# Verify Key Vault RBAC for the current user
 # ---------------------------------------------------------------------------
-if (-not $NoBuild) {
-    Write-Status "Building Docker image '$ImageName'..."
-    Write-Status "  (this may take a few minutes on first build)"
+$vaultName = ([Uri]$keyVaultUri).Host.Split('.')[0]
+Write-Status "Checking Key Vault RBAC for vault '$vaultName'..."
 
-    $buildArgs = @(
-        "build"
-        "--target", "local"
-        "-t", $ImageName
-        "."
-    )
+$prevEAP3 = $ErrorActionPreference
+$ErrorActionPreference = "Continue"
+$signedInObjectId = az ad signed-in-user show --query id -o tsv 2>$null
+$adExitCode = $LASTEXITCODE
+$ErrorActionPreference = $prevEAP3
 
-    Push-Location $scriptRoot
-    try {
-        & docker @buildArgs
-        if ($LASTEXITCODE -ne 0) {
-            Write-ErrorStatus "Docker build failed with exit code $LASTEXITCODE."
-            exit $LASTEXITCODE
+if ($adExitCode -ne 0 -or -not $signedInObjectId) {
+    Write-Status "Could not resolve signed-in user object ID. Skipping RBAC checks." "Yellow"
+}
+else {
+    # --- Key Vault role check ---
+    $prevEAP4 = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    $kvResourceId = az keyvault show --name $vaultName --query id -o tsv 2>$null
+    $kvExitCode = $LASTEXITCODE
+    $ErrorActionPreference = $prevEAP4
+
+    if ($kvExitCode -ne 0 -or -not $kvResourceId) {
+        Write-Status "Could not resolve Key Vault resource ID. Skipping Key Vault RBAC check." "Yellow"
+    }
+    else {
+        $prevEAP5 = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        $kvRolesJson = az role assignment list --assignee $signedInObjectId --scope $kvResourceId --output json 2>$null
+        $kvRaExitCode = $LASTEXITCODE
+        $ErrorActionPreference = $prevEAP5
+
+        if ($kvRaExitCode -ne 0 -or -not $kvRolesJson) {
+            Write-Status "Could not query Key Vault role assignments. Skipping RBAC check." "Yellow"
         }
-        Write-Status "Docker image built successfully." "Green"
+        else {
+            $kvRoles = $kvRolesJson | ConvertFrom-Json
+            $requiredKvRole = "Key Vault Secrets Officer"
+            $hasKvRole = $kvRoles | Where-Object { $_.roleDefinitionName -eq $requiredKvRole }
+
+            if ($hasKvRole) {
+                Write-Status "User has '$requiredKvRole' role on vault '$vaultName'." "Green"
+            }
+            else {
+                $assignedKvRoles = ($kvRoles | ForEach-Object { $_.roleDefinitionName }) -join ", "
+                if ($assignedKvRoles) {
+                    Write-ErrorStatus "User does NOT have '$requiredKvRole' on vault '$vaultName'. Assigned roles: $assignedKvRoles"
+                }
+                else {
+                    Write-ErrorStatus "User has NO role assignments on vault '$vaultName'. Required: '$requiredKvRole'."
+                }
+                Write-Status "Assign it with: az role assignment create --assignee $signedInObjectId --role '$requiredKvRole' --scope $kvResourceId" "Yellow"
+                exit 1
+            }
+        }
     }
-    finally {
-        Pop-Location
+
+    # --- Storage Account role check ---
+    $storageAccountName = ([Uri]$storageUri).Host.Split('.')[0]
+    Write-Status "Checking Storage Account RBAC for '$storageAccountName'..."
+
+    $prevEAP6 = $ErrorActionPreference
+    $ErrorActionPreference = "Continue"
+    $storageResourceId = az storage account show --name $storageAccountName --query id -o tsv 2>$null
+    $saExitCode = $LASTEXITCODE
+    $ErrorActionPreference = $prevEAP6
+
+    if ($saExitCode -ne 0 -or -not $storageResourceId) {
+        Write-Status "Could not resolve Storage Account resource ID. Skipping Storage RBAC check." "Yellow"
     }
+    else {
+        $prevEAP7 = $ErrorActionPreference
+        $ErrorActionPreference = "Continue"
+        $storageRolesJson = az role assignment list --assignee $signedInObjectId --scope $storageResourceId --output json 2>$null
+        $srExitCode = $LASTEXITCODE
+        $ErrorActionPreference = $prevEAP7
+
+        if ($srExitCode -ne 0 -or -not $storageRolesJson) {
+            Write-Status "Could not query Storage role assignments. Skipping RBAC check." "Yellow"
+        }
+        else {
+            $storageRoles = $storageRolesJson | ConvertFrom-Json
+            $requiredStorageRole = "Storage Blob Data Contributor"
+            $hasStorageRole = $storageRoles | Where-Object { $_.roleDefinitionName -eq $requiredStorageRole }
+
+            if ($hasStorageRole) {
+                Write-Status "User has '$requiredStorageRole' role on storage account '$storageAccountName'." "Green"
+            }
+            else {
+                $assignedStorageRoles = ($storageRoles | ForEach-Object { $_.roleDefinitionName }) -join ", "
+                if ($assignedStorageRoles) {
+                    Write-ErrorStatus "User does NOT have '$requiredStorageRole' on storage account '$storageAccountName'. Assigned roles: $assignedStorageRoles"
+                }
+                else {
+                    Write-ErrorStatus "User has NO role assignments on storage account '$storageAccountName'. Required: '$requiredStorageRole'."
+                }
+                Write-Status "Assign it with: az role assignment create --assignee $signedInObjectId --role '$requiredStorageRole' --scope $storageResourceId" "Yellow"
+                exit 1
+            }
+        }
+    }
+}
+
+# ---------------------------------------------------------------------------
+# Build the Docker image (with content-hash caching)
+# ---------------------------------------------------------------------------
+function Get-BuildContextHash {
+    # Hash all files that contribute to the Docker build, respecting .dockerignore.
+    $excludeDirs = @('bin', 'obj', 'node_modules', 'dist', '.git', '.vs', '.vscode')
+    $excludeExtensions = @('.md')
+
+    $sourceFiles = Get-ChildItem $scriptRoot -Recurse -File |
+        Where-Object {
+            $rel = $_.FullName.Substring($scriptRoot.Length + 1)
+            $parts = $rel.Split([IO.Path]::DirectorySeparatorChar)
+            # Exclude files whose path contains an ignored directory segment
+            $inExcluded = $false
+            foreach ($part in $parts) {
+                if ($excludeDirs -contains $part) { $inExcluded = $true; break }
+            }
+            -not $inExcluded -and $excludeExtensions -notcontains $_.Extension
+        } |
+        Sort-Object FullName
+
+    $sha = [System.Security.Cryptography.SHA256]::Create()
+    foreach ($file in $sourceFiles) {
+        $bytes = [System.Text.Encoding]::UTF8.GetBytes($file.FullName.Substring($scriptRoot.Length))
+        $sha.TransformBlock($bytes, 0, $bytes.Length, $bytes, 0) | Out-Null
+        $content = [System.IO.File]::ReadAllBytes($file.FullName)
+        $sha.TransformBlock($content, 0, $content.Length, $content, 0) | Out-Null
+    }
+    $sha.TransformFinalBlock(@(), 0, 0) | Out-Null
+    return ([BitConverter]::ToString($sha.Hash) -replace '-', '').Substring(0, 12).ToLowerInvariant()
+}
+
+if (-not $NoBuild) {
+    Write-Status "Computing build context hash..."
+    $currentHash = Get-BuildContextHash
+    $taggedImage = "${ImageName}:${currentHash}"
+
+    $imageExists = (docker images -q $taggedImage 2>$null)
+
+    if ($imageExists -and -not $ForceBuild) {
+        Write-Status "Source files unchanged — skipping Docker build ($currentHash)." "Green"
+    }
+    else {
+        if (-not $imageExists) {
+            Write-Status "No image for hash $currentHash — building '$taggedImage'..."
+        }
+        else {
+            Write-Status "Force rebuilding '$taggedImage'..."
+        }
+        Write-Status "  (this may take a few minutes on first build)"
+
+        $buildArgs = @(
+            "build"
+            "--target", "local"
+            "-t", $taggedImage
+            "."
+        )
+
+        Push-Location $scriptRoot
+        try {
+            & docker @buildArgs
+            if ($LASTEXITCODE -ne 0) {
+                Write-ErrorStatus "Docker build failed with exit code $LASTEXITCODE."
+                exit $LASTEXITCODE
+            }
+            Write-Status "Docker image built successfully." "Green"
+        }
+        finally {
+            Pop-Location
+        }
+    }
+    # Always point the run at the hash-tagged image
+    $ImageName = $taggedImage
 }
 else {
     Write-Status "Skipping build (-NoBuild). Using existing image '$ImageName'."
@@ -236,6 +405,9 @@ $runArgs = @(
     "-v", "${tokenDirDocker}:/tmp/az-tokens:ro"
     "-e", "AuthenticationMode=azcli"
     "-e", "ASPNETCORE_ENVIRONMENT=Development"
+    "-e", "KeyVaultUri=$keyVaultUri"
+    "-e", "StorageUri=$storageUri"
+    "-e", "StorageContainerName=$storageContainerName"
     "-e", "VITE_AZURE_AD_CLIENT_ID=$clientId"
     "-e", "VITE_AZURE_AD_AUTHORITY=$authority"
     "-e", "VITE_AZURE_AD_REDIRECT_URI=$RedirectUri"

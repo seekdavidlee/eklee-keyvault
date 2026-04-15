@@ -128,15 +128,6 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Get access token for E2E tests
-        id: token
-        run: |
-          TOKEN=$(az account get-access-token \
-            --resource "${{ vars.VITE_AZURE_AD_CLIENT_ID }}" \
-            --query accessToken -o tsv)
-          echo "::add-mask::$TOKEN"
-          echo "access_token=$TOKEN" >> "$GITHUB_OUTPUT"
-
       - name: Validate required environment variables
         run: |
           missing=()
@@ -149,6 +140,94 @@ jobs:
             echo "Set these in GitHub Settings → Environments → dev → Variables"
             exit 1
           fi
+
+      - name: Resolve resource names from URIs
+        id: resources
+        run: |
+          # Extract Key Vault name from URI (e.g. https://myvault.vault.azure.net/)
+          KV_NAME=$(echo "${{ vars.E2E_KEYVAULT_URI }}" | sed -E 's|https://([^.]+)\.vault\.azure\.net/?|\1|')
+          echo "kv_name=$KV_NAME" >> "$GITHUB_OUTPUT"
+
+          # Extract Storage Account name from URI (e.g. https://myaccount.blob.core.windows.net/)
+          SA_NAME=$(echo "${{ vars.E2E_STORAGE_URI }}" | sed -E 's|https://([^.]+)\.blob\.core\.windows\.net/?|\1|')
+          echo "sa_name=$SA_NAME" >> "$GITHUB_OUTPUT"
+
+          echo "Key Vault name: $KV_NAME"
+          echo "Storage Account name: $SA_NAME"
+
+      - name: Verify RBAC for CI identity
+        run: |
+          set -euo pipefail
+
+          # Resolve the service principal object ID for the federated identity
+          SP_OBJECT_ID=$(az ad sp show --id "${{ vars.AZURE_CLIENT_ID }}" --query id -o tsv)
+          echo "Service Principal Object ID: $SP_OBJECT_ID"
+
+          ERRORS=()
+
+          # --- Key Vault RBAC check ---
+          KV_RESOURCE_ID=$(az keyvault show --name "${{ steps.resources.outputs.kv_name }}" --query id -o tsv)
+          KV_ROLES=$(az role assignment list --assignee "$SP_OBJECT_ID" --scope "$KV_RESOURCE_ID" --output json)
+          REQUIRED_KV_ROLE="Key Vault Secrets Officer"
+          HAS_KV_ROLE=$(echo "$KV_ROLES" | jq -r --arg role "$REQUIRED_KV_ROLE" '[.[] | select(.roleDefinitionName == $role)] | length')
+
+          if [[ "$HAS_KV_ROLE" -gt 0 ]]; then
+            echo "✅ CI identity has '$REQUIRED_KV_ROLE' on Key Vault '${{ steps.resources.outputs.kv_name }}'."
+          else
+            ASSIGNED=$(echo "$KV_ROLES" | jq -r '[.[].roleDefinitionName] | join(", ")')
+            echo "::error::CI identity does NOT have '$REQUIRED_KV_ROLE' on Key Vault '${{ steps.resources.outputs.kv_name }}'. Assigned roles: ${ASSIGNED:-none}"
+            echo "Fix: az role assignment create --assignee $SP_OBJECT_ID --role '$REQUIRED_KV_ROLE' --scope $KV_RESOURCE_ID"
+            ERRORS+=("Missing $REQUIRED_KV_ROLE on Key Vault")
+          fi
+
+          # --- Storage Account RBAC check ---
+          SA_RESOURCE_ID=$(az storage account show --name "${{ steps.resources.outputs.sa_name }}" --query id -o tsv)
+          SA_ROLES=$(az role assignment list --assignee "$SP_OBJECT_ID" --scope "$SA_RESOURCE_ID" --output json)
+          REQUIRED_SA_ROLE="Storage Blob Data Contributor"
+          HAS_SA_ROLE=$(echo "$SA_ROLES" | jq -r --arg role "$REQUIRED_SA_ROLE" '[.[] | select(.roleDefinitionName == $role)] | length')
+
+          if [[ "$HAS_SA_ROLE" -gt 0 ]]; then
+            echo "✅ CI identity has '$REQUIRED_SA_ROLE' on Storage Account '${{ steps.resources.outputs.sa_name }}'."
+          else
+            ASSIGNED=$(echo "$SA_ROLES" | jq -r '[.[].roleDefinitionName] | join(", ")')
+            echo "::error::CI identity does NOT have '$REQUIRED_SA_ROLE' on Storage Account '${{ steps.resources.outputs.sa_name }}'. Assigned roles: ${ASSIGNED:-none}"
+            echo "Fix: az role assignment create --assignee $SP_OBJECT_ID --role '$REQUIRED_SA_ROLE' --scope $SA_RESOURCE_ID"
+            ERRORS+=("Missing $REQUIRED_SA_ROLE on Storage Account")
+          fi
+
+          if [[ ${#ERRORS[@]} -gt 0 ]]; then
+            echo "::error::RBAC check failed. Grant the required roles to the CI service principal (${{ vars.AZURE_CLIENT_ID }})."
+            exit 1
+          fi
+
+      - name: Enable public network access for E2E tests
+        id: enable-public-access
+        run: |
+          set -euo pipefail
+          echo "Temporarily enabling public network access..."
+
+          az keyvault update \
+            --name "${{ steps.resources.outputs.kv_name }}" \
+            --public-network-access Enabled \
+            --output none
+          echo "✅ Key Vault '${{ steps.resources.outputs.kv_name }}' public access enabled."
+
+          az storage account update \
+            --name "${{ steps.resources.outputs.sa_name }}" \
+            --public-network-access Enabled \
+            --output none
+          echo "✅ Storage Account '${{ steps.resources.outputs.sa_name }}' public access enabled."
+
+          echo "enabled=true" >> "$GITHUB_OUTPUT"
+
+      - name: Get access token for E2E tests
+        id: token
+        run: |
+          TOKEN=$(az account get-access-token \
+            --resource "${{ vars.VITE_AZURE_AD_CLIENT_ID }}" \
+            --query accessToken -o tsv)
+          echo "::add-mask::$TOKEN"
+          echo "access_token=$TOKEN" >> "$GITHUB_OUTPUT"
 
       - name: Start application
         env:
@@ -213,6 +292,24 @@ jobs:
           name: playwright-test-results
           path: Eklee.KeyVault.UI/test-results/
           retention-days: 7
+
+      - name: Disable public network access
+        if: always() && steps.enable-public-access.outputs.enabled == 'true'
+        run: |
+          set -euo pipefail
+          echo "Restoring private network access..."
+
+          az keyvault update \
+            --name "${{ steps.resources.outputs.kv_name }}" \
+            --public-network-access Disabled \
+            --output none
+          echo "✅ Key Vault '${{ steps.resources.outputs.kv_name }}' public access disabled."
+
+          az storage account update \
+            --name "${{ steps.resources.outputs.sa_name }}" \
+            --public-network-access Disabled \
+            --output none
+          echo "✅ Storage Account '${{ steps.resources.outputs.sa_name }}' public access disabled."
 
   build-and-push:
     name: Build and Push Docker Image
