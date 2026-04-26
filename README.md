@@ -77,6 +77,20 @@ dotnet run
 
 The API listens on `http://localhost:5000` by default.
 
+### Updating NuGet Packages
+
+Run the update script from the repo root to update all NuGet packages in the API project to their latest stable versions:
+
+```powershell
+.\UpdateNuget.ps1
+```
+
+To target a different project file:
+
+```powershell
+.\UpdateNuget.ps1 -ProjectPath "path/to/Project.csproj"
+```
+
 ### Running Locally with Docker
 
 The `run-local.ps1` script builds and runs the full application (API + UI) in a single Docker container using your local Azure CLI credentials.

@@ -12,7 +12,7 @@ namespace Eklee.KeyVault.Api.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 [Authorize(Roles = "Admin,User")]
-public class SecretsController(KeyVaultService keyVaultService, BlobService blobService, ILogger<SecretsController> logger) : ControllerBase
+public partial class SecretsController(KeyVaultService keyVaultService, BlobService blobService, ILogger<SecretsController> logger) : ControllerBase
 {
     /// <summary>
     /// Lists all Key Vault secrets combined with their user-defined display metadata.
@@ -31,12 +31,12 @@ public class SecretsController(KeyVaultService keyVaultService, BlobService blob
             var secrets = await keyVaultService.GetSecretsAsync();
             var views = secrets.Select(s => new SecretItemView(s, metaList)).ToList();
 
-            logger.LogInformation("Returning {Count} secrets", views.Count);
+            LogReturningSecrets(logger, views.Count);
             return Ok(views);
         }
         catch (Azure.RequestFailedException ex) when (ex.Status == 403)
         {
-            logger.LogWarning("Access denied when listing secrets: {Message}", ex.Message);
+            LogAccessDeniedListingSecrets(logger, ex.Message);
             return Problem(
                 title: "Access Denied",
                 detail: "You do not have access. Please contact your administrator.",
@@ -96,12 +96,12 @@ public class SecretsController(KeyVaultService keyVaultService, BlobService blob
         try
         {
             var secretName = await keyVaultService.SetSecretAsync(name, request.Value);
-            logger.LogInformation("Admin set secret {SecretName}", secretName);
+            LogAdminSetSecret(logger, secretName.SanitizeForLog());
             return Ok(new { name = secretName });
         }
         catch (Azure.RequestFailedException ex) when (ex.Status == 403)
         {
-            logger.LogWarning("Access denied when setting secret {SecretName}: {Message}", name, ex.Message);
+            LogAccessDeniedSettingSecret(logger, name.SanitizeForLog(), ex.Message);
             return Problem(
                 title: "Access Denied",
                 detail: "You do not have permission to modify secrets in Key Vault.",
@@ -127,12 +127,12 @@ public class SecretsController(KeyVaultService keyVaultService, BlobService blob
         try
         {
             await keyVaultService.DeleteSecretAsync(name);
-            logger.LogInformation("Admin deleted secret {SecretName}", name);
+            LogAdminDeletedSecret(logger, name.SanitizeForLog());
             return NoContent();
         }
         catch (Azure.RequestFailedException ex) when (ex.Status == 404)
         {
-            logger.LogWarning("Secret {SecretName} not found for deletion", name);
+            LogSecretNotFoundForDeletion(logger, name.SanitizeForLog());
             return Problem(
                 title: "Not Found",
                 detail: $"Secret '{name}' was not found.",
@@ -140,11 +140,32 @@ public class SecretsController(KeyVaultService keyVaultService, BlobService blob
         }
         catch (Azure.RequestFailedException ex) when (ex.Status == 403)
         {
-            logger.LogWarning("Access denied when deleting secret {SecretName}: {Message}", name, ex.Message);
+            LogAccessDeniedDeletingSecret(logger, name.SanitizeForLog(), ex.Message);
             return Problem(
                 title: "Access Denied",
                 detail: "You do not have permission to delete secrets in Key Vault.",
                 statusCode: StatusCodes.Status403Forbidden);
         }
     }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Returning {Count} secrets")]
+    private static partial void LogReturningSecrets(ILogger logger, int count);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Access denied when listing secrets: {ErrorMessage}")]
+    private static partial void LogAccessDeniedListingSecrets(ILogger logger, string errorMessage);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Admin set secret {SecretName}")]
+    private static partial void LogAdminSetSecret(ILogger logger, string secretName);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Access denied when setting secret {SecretName}: {ErrorMessage}")]
+    private static partial void LogAccessDeniedSettingSecret(ILogger logger, string secretName, string errorMessage);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Admin deleted secret {SecretName}")]
+    private static partial void LogAdminDeletedSecret(ILogger logger, string secretName);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Secret {SecretName} not found for deletion")]
+    private static partial void LogSecretNotFoundForDeletion(ILogger logger, string secretName);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Access denied when deleting secret {SecretName}: {ErrorMessage}")]
+    private static partial void LogAccessDeniedDeletingSecret(ILogger logger, string secretName, string errorMessage);
 }

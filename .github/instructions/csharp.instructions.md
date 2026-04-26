@@ -15,6 +15,10 @@ applyTo: '**/*.cs'
 - Handle edge cases and write clear exception handling.
 - For libraries or external dependencies, mention their usage and purpose in comments.
 
+## Code Organization
+
+- Place shared static helper and extension methods in a dedicated `Extensions.cs` file rather than duplicating them across individual classes.
+
 ## Naming Conventions
 
 - Follow PascalCase for component names, method names, and public members.
