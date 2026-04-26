@@ -81,12 +81,12 @@ public class UserAccessController(UserAccessService userAccessService, ILogger<U
                 try
                 {
                     await userAccessService.UpdateUserAccessListAsync(list, etag);
-                    logger.LogInformation("Backfilled ObjectId for user {Email}", email);
+                    logger.LogInformation("Backfilled ObjectId for user {ObjectId}", objectId);
                 }
                 catch (RequestFailedException ex) when (ex.Status is 409 or 412)
                 {
                     // Non-critical — next login will retry the backfill
-                    logger.LogWarning("ETag conflict during ObjectId backfill for {Email}: {Message}", email, ex.Message);
+                    logger.LogWarning("ETag conflict during ObjectId backfill for {ObjectId}: {Message}", objectId, ex.Message);
                 }
             }
         }

@@ -8,7 +8,7 @@ namespace Eklee.KeyVault.Api.Services;
 /// Provides direct access to Azure Key Vault secrets using <see cref="SecretClient"/> with
 /// a <see cref="TokenCredential"/> resolved from DI based on the configured authentication mode.
 /// </summary>
-public class KeyVaultService
+public partial class KeyVaultService
 {
     private readonly SecretClient secretClient;
     private readonly ILogger<KeyVaultService> logger;
@@ -43,7 +43,7 @@ public class KeyVaultService
             });
         }
 
-        logger.LogInformation("Listed {Count} secrets from Key Vault", items.Count);
+        LogListedSecrets(logger, items.Count);
         return items;
     }
 
@@ -57,11 +57,11 @@ public class KeyVaultService
         var response = await secretClient.GetSecretAsync(name);
         if (response?.Value is not null)
         {
-            logger.LogInformation("Retrieved secret {SecretName}", name);
+            LogRetrievedSecret(logger, name.SanitizeForLog());
             return response.Value.Value;
         }
 
-        logger.LogWarning("Secret {SecretName} not found or has no value", name);
+        LogSecretNotFound(logger, name.SanitizeForLog());
         return null;
     }
 
@@ -75,7 +75,7 @@ public class KeyVaultService
     public async Task<string> SetSecretAsync(string name, string value)
     {
         var response = await secretClient.SetSecretAsync(name, value);
-        logger.LogInformation("Set secret {SecretName}", name);
+        LogSetSecret(logger, name.SanitizeForLog());
         return response.Value.Name;
     }
 
@@ -88,8 +88,26 @@ public class KeyVaultService
     public async Task DeleteSecretAsync(string name)
     {
         var operation = await secretClient.StartDeleteSecretAsync(name);
-        logger.LogInformation("Initiated delete for secret {SecretName}", name);
+        LogInitiatedDelete(logger, name.SanitizeForLog());
         await operation.WaitForCompletionAsync();
-        logger.LogInformation("Deleted secret {SecretName}", name);
+        LogDeletedSecret(logger, name.SanitizeForLog());
     }
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Listed {Count} secrets from Key Vault")]
+    private static partial void LogListedSecrets(ILogger logger, int count);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Retrieved secret {SecretName}")]
+    private static partial void LogRetrievedSecret(ILogger logger, string secretName);
+
+    [LoggerMessage(Level = LogLevel.Warning, Message = "Secret {SecretName} not found or has no value")]
+    private static partial void LogSecretNotFound(ILogger logger, string secretName);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Set secret {SecretName}")]
+    private static partial void LogSetSecret(ILogger logger, string secretName);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Initiated delete for secret {SecretName}")]
+    private static partial void LogInitiatedDelete(ILogger logger, string secretName);
+
+    [LoggerMessage(Level = LogLevel.Information, Message = "Deleted secret {SecretName}")]
+    private static partial void LogDeletedSecret(ILogger logger, string secretName);
 }
