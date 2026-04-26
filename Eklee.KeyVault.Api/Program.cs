@@ -64,9 +64,10 @@ builder.Services.AddSingleton<TokenCredential>(sp =>
             ProcessTimeout = TimeSpan.FromSeconds(30)
         }),
         "mi" => new ManagedIdentityCredential(
-            Environment.GetEnvironmentVariable("AZURE_CLIENT_ID")
-            ?? throw new InvalidOperationException(
-                "AZURE_CLIENT_ID environment variable is required for managed identity authentication.")),
+            ManagedIdentityId.FromUserAssignedClientId(
+                Environment.GetEnvironmentVariable("AZURE_CLIENT_ID")
+                ?? throw new InvalidOperationException(
+                    "AZURE_CLIENT_ID environment variable is required for managed identity authentication."))),
         _ => throw new InvalidOperationException(
             $"Unsupported AuthenticationMode '{config.AuthenticationMode}'. Use 'azcli' or 'mi'.")
     };
@@ -90,7 +91,7 @@ builder.Services.AddProblemDetails();
 builder.Services.AddEndpointsApiExplorer();
 builder.Services.AddSwaggerGen(options =>
 {
-    options.SwaggerDoc("v1", new Microsoft.OpenApi.Models.OpenApiInfo
+    options.SwaggerDoc("v1", new Microsoft.OpenApi.OpenApiInfo
     {
         Title = "Eklee KeyVault API",
         Version = "v1",
@@ -98,28 +99,21 @@ builder.Services.AddSwaggerGen(options =>
     });
 
     // Add Bearer token input to the Swagger UI
-    options.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.Models.OpenApiSecurityScheme
+    options.AddSecurityDefinition("Bearer", new Microsoft.OpenApi.OpenApiSecurityScheme
     {
         Name = "Authorization",
-        Type = Microsoft.OpenApi.Models.SecuritySchemeType.Http,
+        Type = Microsoft.OpenApi.SecuritySchemeType.Http,
         Scheme = "bearer",
         BearerFormat = "JWT",
-        In = Microsoft.OpenApi.Models.ParameterLocation.Header,
+        In = Microsoft.OpenApi.ParameterLocation.Header,
         Description = "Enter your JWT token (without the 'Bearer ' prefix)."
     });
 
-    options.AddSecurityRequirement(new Microsoft.OpenApi.Models.OpenApiSecurityRequirement
+    options.AddSecurityRequirement(doc => new Microsoft.OpenApi.OpenApiSecurityRequirement
     {
         {
-            new Microsoft.OpenApi.Models.OpenApiSecurityScheme
-            {
-                Reference = new Microsoft.OpenApi.Models.OpenApiReference
-                {
-                    Type = Microsoft.OpenApi.Models.ReferenceType.SecurityScheme,
-                    Id = "Bearer"
-                }
-            },
-            Array.Empty<string>()
+            new Microsoft.OpenApi.OpenApiSecuritySchemeReference("Bearer", doc),
+            new List<string>()
         }
     });
 });
