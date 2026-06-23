@@ -1,44 +1,34 @@
 #!/usr/bin/env pwsh
 <#
 .SYNOPSIS
-    Assigns AcrPush role to the GitHub deploy service principal and sets ACR GitHub variables.
+    Assigns AcrPush role to the GitHub deploy service principal.
 
 .DESCRIPTION
     This script should be run AFTER the Bicep infrastructure deployment has created the
-    Azure Container Registry. It discovers the ACR in each environment resource group,
-    assigns the AcrPush role to the GitHub deploy app registration's service principal,
-    and sets the ACR_NAME and ACR_LOGIN_SERVER GitHub Actions environment variables.
+    Azure Container Registry. It discovers the ACR in each environment resource group
+    and assigns the AcrPush role to the GitHub deploy app registration's service principal.
+
+    The CI/CD workflow discovers the ACR name at runtime from the resource group, so no
+    GitHub Actions variables are set by this script.
 
     Prerequisites:
     1. Run setup-gh-deploy.ps1 first (creates app registration and resource groups)
     2. Run Bicep deployment (creates ACR in each environment resource group)
     3. Run this script
 
-.PARAMETER GitHubOrganization
-    The GitHub organization (or username) that owns the repository.
-
-.PARAMETER GitHubRepoName
-    The name of the GitHub repository.
-
 .PARAMETER ResourceGroupName
     The base name of the Azure resource groups. Expects resource groups with '-dev'
     and '-prod' suffixes to exist.
 
 .EXAMPLE
-    .\assign-gh-deploy-acr-rbac.ps1 -GitHubOrganization "seekdavidlee" -GitHubRepoName "eklee-keyvault" -ResourceGroupName "rg-eklee-keyvault"
+    .\assign-gh-deploy-rbac.ps1 -ResourceGroupName "rg-eklee-keyvault"
 
-    Discovers ACR in 'rg-eklee-keyvault-dev' and 'rg-eklee-keyvault-prod', assigns
-    AcrPush to the deploy service principal, and sets GitHub environment variables.
+    Discovers ACR in 'rg-eklee-keyvault-dev' and 'rg-eklee-keyvault-prod' and assigns
+    AcrPush to the deploy service principal.
 #>
 
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)]
-    [string]$GitHubOrganization,
-
-    [Parameter(Mandatory = $true)]
-    [string]$GitHubRepoName,
-
     [Parameter(Mandatory = $true)]
     [string]$ResourceGroupName
 )
@@ -125,8 +115,6 @@ $environments = @(
     @{ Name = 'prod'; ResourceGroup = "${ResourceGroupName}-prod" }
 )
 
-$ghRepo = "${GitHubOrganization}/${GitHubRepoName}"
-
 foreach ($env in $environments) {
     $envName = $env.Name
     $rgName = $env.ResourceGroup
@@ -177,25 +165,8 @@ foreach ($env in $environments) {
         }
     }
 
-    # Set GitHub environment variables for ACR
-    $acrVariables = @{
-        ACR_NAME         = $acrName
-        ACR_LOGIN_SERVER = $acrLoginServer
-    }
-
-    foreach ($var in $acrVariables.GetEnumerator()) {
-        Write-Step "Setting variable '$($var.Key)' = '$($var.Value)' for environment '$envName'..."
-        $var.Value | gh variable set $var.Key --repo $ghRepo --env $envName
-        if ($LASTEXITCODE -eq 0) {
-            Write-Success "Variable '$($var.Key)' set for environment '$envName'"
-        }
-        else {
-            Write-Error "Failed to set variable '$($var.Key)' for environment '$envName'"
-            exit 1
-        }
-    }
 }
 
 Write-Host ""
-Write-Success "ACR RBAC and GitHub variables configured for $ghRepo"
+Write-Success "ACR RBAC configured for all environments"
 Write-Host ""

@@ -401,9 +401,20 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Discover ACR from resource group
+        id: acr
+        run: |
+          ACR_NAME=$(az acr list --resource-group "${{ vars.RESOURCE_GROUP }}" --query "[0].name" -o tsv)
+          if [[ -z "$ACR_NAME" ]]; then
+            echo "::error::No Azure Container Registry found in resource group '${{ vars.RESOURCE_GROUP }}'."
+            exit 1
+          fi
+          echo "acr_name=$ACR_NAME" >> "$GITHUB_OUTPUT"
+          echo "Discovered ACR: $ACR_NAME"
+
       - name: Login to Azure Container Registry
         run: |
-          az acr login --name ${{ vars.ACR_NAME }}
+          az acr login --name ${{ steps.acr.outputs.acr_name }}
 
       - name: Set image tag
         id: image-tag
@@ -415,7 +426,7 @@ jobs:
             TAG="dev-${GITHUB_SHA::8}"
           fi
           echo "tag=$TAG" >> $GITHUB_OUTPUT
-          echo "image=${{ vars.ACR_NAME }}.azurecr.io/eklee-keyvault:$TAG" >> $GITHUB_OUTPUT
+          echo "image=${{ steps.acr.outputs.acr_name }}.azurecr.io/eklee-keyvault:$TAG" >> $GITHUB_OUTPUT
 
       - name: Build Docker image
         run: |
@@ -432,15 +443,15 @@ jobs:
         run: |
           # For production, also tag with the commit SHA
           docker tag ${{ steps.image-tag.outputs.image }} \
-            ${{ vars.ACR_NAME }}.azurecr.io/eklee-keyvault:${GITHUB_SHA::8}
-          docker push ${{ vars.ACR_NAME }}.azurecr.io/eklee-keyvault:${GITHUB_SHA::8}
+            ${{ steps.acr.outputs.acr_name }}.azurecr.io/eklee-keyvault:${GITHUB_SHA::8}
+          docker push ${{ steps.acr.outputs.acr_name }}.azurecr.io/eklee-keyvault:${GITHUB_SHA::8}
 
       - name: Output image details
         run: |
           echo "✅ Successfully built and pushed image:"
           echo "   ${{ steps.image-tag.outputs.image }}"
           if [[ "${{ needs.setup.outputs.build_env }}" == "prod" ]]; then
-            echo "   ${{ vars.ACR_NAME }}.azurecr.io/eklee-keyvault:${GITHUB_SHA::8}"
+            echo "   ${{ steps.acr.outputs.acr_name }}.azurecr.io/eklee-keyvault:${GITHUB_SHA::8}"
           fi
 
   push-ghcr:
@@ -495,8 +506,11 @@ jobs:
         run: |
           RESOURCE_GROUP="${{ vars.RESOURCE_GROUP }}"
           IMAGE="${{ needs.build-and-push.outputs.image }}"
-          ACR_SERVER="${{ vars.ACR_NAME }}.azurecr.io"
           CONTAINER_APP_NAME="eklee-keyvault"
+
+          # Discover ACR from resource group
+          ACR_NAME=$(az acr list --resource-group "$RESOURCE_GROUP" --query "[0].name" -o tsv)
+          ACR_SERVER="${ACR_NAME}.azurecr.io"
 
           # Discover infrastructure resources from the resource group
           ENV_NAME=$(az containerapp env list --resource-group "$RESOURCE_GROUP" --query "[0].name" -o tsv)

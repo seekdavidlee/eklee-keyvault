@@ -586,34 +586,6 @@ az containerapp secret set --name ekleekv-dev-app --resource-group eklee-keyvaul
 az containerapp update --name ekleekv-dev-app --resource-group eklee-keyvault-dev-rg --set-env-vars "API_KEY=secretref:secret-name"
 ```
 
-### CI/CD Integration
-
-#### GitHub Actions
-```yaml
-# Example workflow step
-- name: Deploy to Azure Container Apps
-  run: |
-    az containerapp update \
-      --name ekleekv-${{ env.ENVIRONMENT }}-app \
-      --resource-group eklee-keyvault-${{ env.ENVIRONMENT }}-rg \
-      --image ${{ vars.ACR_NAME }}.azurecr.io/eklee-keyvault-api:${{ github.sha }}
-```
-
-#### Azure DevOps
-```yaml
-# Example pipeline task
-- task: AzureCLI@2
-  inputs:
-    azureSubscription: 'Azure-Connection'
-    scriptType: 'bash'
-    scriptLocation: 'inlineScript'
-    inlineScript: |
-      az containerapp update \
-        --name ekleekv-$(environment)-app \
-        --resource-group eklee-keyvault-$(environment)-rg \
-        --image $(acrName).azurecr.io/eklee-keyvault-api:$(Build.BuildId)
-```
-
 ### Useful Queries
 
 #### Find Resource IDs
