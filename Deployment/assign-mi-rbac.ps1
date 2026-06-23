@@ -13,23 +13,17 @@
 .PARAMETER ResourceGroup
     The name of the Azure resource group containing the deployed infrastructure.
 
-.PARAMETER ContainerRegistryResourceGroup
-    The resource group containing the Azure Container Registry.
+.EXAMPLE
+    .\assign-mi-rbac.ps1 -ResourceGroup eklee-keyvault-dev-rg
 
 .EXAMPLE
-    .\assign-rbac.ps1 -ResourceGroup eklee-keyvault-dev-rg -ContainerRegistryResourceGroup acr-rg
-
-.EXAMPLE
-    .\assign-rbac.ps1 -ResourceGroup eklee-keyvault-prod-rg
+    .\assign-mi-rbac.ps1 -ResourceGroup eklee-keyvault-prod-rg
 #>
 
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [string]$ResourceGroup,
-
-    [Parameter(Mandatory = $false)]
-    [string]$ContainerRegistryResourceGroup
+    [string]$ResourceGroup
 )
 
 # ============================================================================
@@ -209,24 +203,18 @@ Write-Information "`nTarget Resources:"
 Write-Information "  Key Vault:    $keyVaultName"
 Write-Information "  Storage:      $storageAccountName"
 
-# Get or prompt for Container Registry resource group
-if (-not $ContainerRegistryResourceGroup) {
-    Write-Information "`nContainer Registry resource group is required for ACR role assignment."
-    $ContainerRegistryResourceGroup = Read-Host "Enter Container Registry resource group name"
-}
-
-# Find the Container Registry
-Write-Step "Looking up Container Registry in resource group '$ContainerRegistryResourceGroup'..."
+# Find the Container Registry in the same resource group
+Write-Step "Looking up Container Registry in resource group '$ResourceGroup'..."
 $registries = az acr list `
-    --resource-group $ContainerRegistryResourceGroup `
+    --resource-group $ResourceGroup `
     --output json | ConvertFrom-Json
 
 if (-not $registries -or $registries.Count -eq 0) {
-    Write-Error "No Container Registry found in resource group '$ContainerRegistryResourceGroup'"
+    Write-Error "No Container Registry found in resource group '$ResourceGroup'"
     exit 1
 }
 if ($registries.Count -gt 1) {
-    Write-Error "Multiple Container Registries found. Expected exactly one in resource group '$ContainerRegistryResourceGroup'"
+    Write-Error "Multiple Container Registries found. Expected exactly one in resource group '$ResourceGroup'"
     exit 1
 }
 
@@ -239,10 +227,9 @@ $subscriptionId = $subscription.id
 
 Write-Information "`nContainer Registry:"
 Write-Information "  Name:         $ContainerRegistryName"
-Write-Information "  Resource Group: $ContainerRegistryResourceGroup"
 
 # Build resource scopes
-$acrScope = "/subscriptions/$subscriptionId/resourceGroups/$ContainerRegistryResourceGroup/providers/Microsoft.ContainerRegistry/registries/$ContainerRegistryName"
+$acrScope = "/subscriptions/$subscriptionId/resourceGroups/$ResourceGroup/providers/Microsoft.ContainerRegistry/registries/$ContainerRegistryName"
 $keyVaultScope = "/subscriptions/$subscriptionId/resourceGroups/$ResourceGroup/providers/Microsoft.KeyVault/vaults/$keyVaultName"
 $storageScope = "/subscriptions/$subscriptionId/resourceGroups/$ResourceGroup/providers/Microsoft.Storage/storageAccounts/$storageAccountName"
 
