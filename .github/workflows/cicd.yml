@@ -574,6 +574,11 @@ jobs:
                 VITE_AZURE_AD_REDIRECT_URI=${{ vars.VITE_AZURE_AD_REDIRECT_URI }}
           else
             echo "Updating container app '$CONTAINER_APP_NAME'..."
+            az containerapp registry set \
+              --name "$CONTAINER_APP_NAME" \
+              --resource-group "$RESOURCE_GROUP" \
+              --server "$ACR_SERVER" \
+              --identity "$IDENTITY_ID"
             az containerapp update \
               --name "$CONTAINER_APP_NAME" \
               --resource-group "$RESOURCE_GROUP" \
