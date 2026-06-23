@@ -152,7 +152,7 @@ Pre-fetched tokens expire after approximately 1 hour. Re-run `.\run-local.ps1` (
 ## Automated Deployment
 
 1. Fork this repo.
-1. Run `Deployment/setup-gh-deploy.ps1` to create the deployment service principal, resource groups, RBAC assignments, and set the deployment-related GitHub environment variables (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `ACR_NAME`, `RESOURCE_GROUP`, `ACR_RESOURCE_GROUP`).
+1. Run `Deployment/setup-gh-deploy.ps1` to create the deployment service principal, resource groups, RBAC assignments, and set the deployment-related GitHub environment variables (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `RESOURCE_GROUP`, `ACR_RESOURCE_GROUP`).
 1. Run `Eklee.KeyVault.Api/setup-app-registration.ps1` with the `-GitHubOrganization`, `-GitHubRepoName`, and `-AzureAdRedirectUriDev` (and optionally `-AzureAdRedirectUriProd`) parameters to create the app registration and set the SPA-related GitHub environment variables (`VITE_AZURE_AD_CLIENT_ID`, `VITE_AZURE_AD_AUTHORITY`, `VITE_AZURE_AD_REDIRECT_URI`).
 1. Deploy infrastructure by running the **Deploy Infrastructure** workflow (`deploy-infra.yml`):
 
@@ -172,7 +172,6 @@ The two setup scripts configure the following GitHub environment variables (per 
 | `AZURE_CLIENT_ID` | `setup-gh-deploy.ps1` |
 | `AZURE_TENANT_ID` | `setup-gh-deploy.ps1` |
 | `AZURE_SUBSCRIPTION_ID` | `setup-gh-deploy.ps1` |
-| `ACR_NAME` | `setup-gh-deploy.ps1` |
 | `ACR_RESOURCE_GROUP` | `setup-gh-deploy.ps1` |
 | `RESOURCE_GROUP` | `setup-gh-deploy.ps1` |
 | `VITE_AZURE_AD_CLIENT_ID` | `setup-app-registration.ps1` |

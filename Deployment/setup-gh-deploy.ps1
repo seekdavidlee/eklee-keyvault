@@ -15,8 +15,7 @@
     to the app registration's service principal on both resource groups.
 
     GitHub Actions environment-scoped variables are set per environment (dev/prod) for
-    RESOURCE_GROUP, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID, AZURE_CLIENT_ID, ACR_NAME,
-    and ACR_RESOURCE_GROUP.
+    RESOURCE_GROUP, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID, and AZURE_CLIENT_ID.
 
 .PARAMETER GitHubOrganization
     The GitHub organization (or username) that owns the repository.
@@ -31,14 +30,8 @@
 .PARAMETER Location
     The Azure region for the resource groups. Defaults to 'eastus2'.
 
-.PARAMETER ContainerRegistryName
-    The name of the Azure Container Registry (without .azurecr.io).
-
-.PARAMETER ContainerRegistryResourceGroup
-    The resource group where the Azure Container Registry is located.
-
 .EXAMPLE
-    .\setup-gh-deploy.ps1 -GitHubOrganization "seekdavidlee" -GitHubRepoName "eklee-keyvault" -ResourceGroupName "rg-eklee-keyvault" -ContainerRegistryName "myacr" -ContainerRegistryResourceGroup "rg-shared"
+    .\setup-gh-deploy.ps1 -GitHubOrganization "seekdavidlee" -GitHubRepoName "eklee-keyvault" -ResourceGroupName "rg-eklee-keyvault"
 
     Creates resource groups 'rg-eklee-keyvault-dev' and 'rg-eklee-keyvault-prod', assigns
     Contributor role on both, and sets GitHub environment variables accordingly.
@@ -56,13 +49,7 @@ param(
     [string]$ResourceGroupName,
 
     [Parameter(Mandatory = $false)]
-    [string]$Location = 'eastus2',
-
-    [Parameter(Mandatory = $true)]
-    [string]$ContainerRegistryName,
-
-    [Parameter(Mandatory = $true)]
-    [string]$ContainerRegistryResourceGroup
+    [string]$Location = 'eastus2'
 )
 
 # ============================================================================
@@ -221,40 +208,6 @@ foreach ($env in $environments) {
 }
 
 # ============================================================================
-# Assign AcrPush Role to App Registration on Container Registry
-# ============================================================================
-
-$acrScope = "/subscriptions/$subscriptionId/resourceGroups/$ContainerRegistryResourceGroup/providers/Microsoft.ContainerRegistry/registries/$ContainerRegistryName"
-
-Write-Step "Checking existing AcrPush role assignment on container registry '$ContainerRegistryName'..."
-$existingAcrAssignment = az role assignment list `
-    --assignee $spObjectId `
-    --role "AcrPush" `
-    --scope $acrScope `
-    --output json | ConvertFrom-Json
-
-if ($existingAcrAssignment -and $existingAcrAssignment.Count -gt 0) {
-    Write-Success "AcrPush role already assigned to service principal on '$ContainerRegistryName'"
-}
-else {
-    Write-Step "Assigning AcrPush role to service principal on container registry '$ContainerRegistryName'..."
-    az role assignment create `
-        --assignee-object-id $spObjectId `
-        --assignee-principal-type ServicePrincipal `
-        --role "AcrPush" `
-        --scope $acrScope `
-        --output none
-
-    if ($LASTEXITCODE -eq 0) {
-        Write-Success "AcrPush role assigned to service principal on '$ContainerRegistryName'"
-    }
-    else {
-        Write-Error "Failed to assign AcrPush role on container registry '$ContainerRegistryName'"
-        exit 1
-    }
-}
-
-# ============================================================================
 # Configure Federated Credentials (branch + environments)
 # ============================================================================
 
@@ -334,8 +287,6 @@ foreach ($env in $environments) {
         AZURE_TENANT_ID       = $tenantId
         AZURE_SUBSCRIPTION_ID = $subscriptionId
         AZURE_CLIENT_ID       = $appId
-        ACR_NAME              = $ContainerRegistryName
-        ACR_RESOURCE_GROUP    = $ContainerRegistryResourceGroup
     }
 
     foreach ($var in $envVariables.GetEnumerator()) {
