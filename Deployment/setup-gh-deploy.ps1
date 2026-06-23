@@ -14,12 +14,8 @@
     ResourceGroupName with '-dev' and '-prod' suffixes. The Contributor role is assigned
     to the app registration's service principal on both resource groups.
 
-    If the Azure Container Registry exists in the environment resource groups (created by
-    Bicep deployment), the AcrPush role is assigned to the service principal.
-
     GitHub Actions environment-scoped variables are set per environment (dev/prod) for
     RESOURCE_GROUP, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID, and AZURE_CLIENT_ID.
-    ACR_NAME and ACR_LOGIN_SERVER are set after discovering the ACR from each environment.
 
 .PARAMETER GitHubOrganization
     The GitHub organization (or username) that owns the repository.
@@ -38,8 +34,7 @@
     .\setup-gh-deploy.ps1 -GitHubOrganization "seekdavidlee" -GitHubRepoName "eklee-keyvault" -ResourceGroupName "rg-eklee-keyvault"
 
     Creates resource groups 'rg-eklee-keyvault-dev' and 'rg-eklee-keyvault-prod', assigns
-    Contributor role on both, discovers ACR from Bicep deployment and assigns AcrPush,
-    and sets GitHub environment variables accordingly.
+    Contributor role on both, and sets GitHub environment variables accordingly.
 #>
 
 [CmdletBinding()]
@@ -213,53 +208,6 @@ foreach ($env in $environments) {
 }
 
 # ============================================================================
-# Assign AcrPush Role to App Registration on Container Registry (per environment)
-# ============================================================================
-
-foreach ($env in $environments) {
-    $rgName = $env.ResourceGroup
-
-    Write-Step "Discovering container registry in '$rgName'..."
-    $registries = az acr list --resource-group $rgName --output json 2>$null | ConvertFrom-Json
-
-    if (-not $registries -or $registries.Count -eq 0) {
-        Write-Host "  [WARN] No container registry found in '$rgName'. Run Bicep deployment first, then re-run this script." -ForegroundColor DarkYellow
-        continue
-    }
-
-    $acrName = $registries[0].name
-    $acrScope = "/subscriptions/$subscriptionId/resourceGroups/$rgName/providers/Microsoft.ContainerRegistry/registries/$acrName"
-
-    Write-Step "Checking existing AcrPush role assignment on container registry '$acrName'..."
-    $existingAcrAssignment = az role assignment list `
-        --assignee $spObjectId `
-        --role "AcrPush" `
-        --scope $acrScope `
-        --output json | ConvertFrom-Json
-
-    if ($existingAcrAssignment -and $existingAcrAssignment.Count -gt 0) {
-        Write-Success "AcrPush role already assigned to service principal on '$acrName'"
-    }
-    else {
-        Write-Step "Assigning AcrPush role to service principal on container registry '$acrName'..."
-        az role assignment create `
-            --assignee-object-id $spObjectId `
-            --assignee-principal-type ServicePrincipal `
-            --role "AcrPush" `
-            --scope $acrScope `
-            --output none
-
-        if ($LASTEXITCODE -eq 0) {
-            Write-Success "AcrPush role assigned to service principal on '$acrName'"
-        }
-        else {
-            Write-Error "Failed to assign AcrPush role on container registry '$acrName'"
-            exit 1
-        }
-    }
-}
-
-# ============================================================================
 # Configure Federated Credentials (branch + environments)
 # ============================================================================
 
@@ -334,28 +282,11 @@ foreach ($env in $environments) {
     $envName = $env.Name
     $rgName = $env.ResourceGroup
 
-    # Discover ACR name from the environment resource group
-    $acrNameForEnv = ''
-    $acrLoginServer = ''
-    $registries = az acr list --resource-group $rgName --output json 2>$null | ConvertFrom-Json
-    if ($registries -and $registries.Count -gt 0) {
-        $acrNameForEnv = $registries[0].name
-        $acrLoginServer = $registries[0].loginServer
-    }
-
     $envVariables = @{
         RESOURCE_GROUP        = $rgName
         AZURE_TENANT_ID       = $tenantId
         AZURE_SUBSCRIPTION_ID = $subscriptionId
         AZURE_CLIENT_ID       = $appId
-    }
-
-    if ($acrNameForEnv) {
-        $envVariables['ACR_NAME'] = $acrNameForEnv
-        $envVariables['ACR_LOGIN_SERVER'] = $acrLoginServer
-    }
-    else {
-        Write-Host "  [WARN] No ACR found in '$rgName'. ACR_NAME and ACR_LOGIN_SERVER will not be set. Run Bicep deployment first, then re-run this script." -ForegroundColor DarkYellow
     }
 
     foreach ($var in $envVariables.GetEnumerator()) {
