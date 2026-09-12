@@ -586,7 +586,7 @@ function Invoke-ReleasePreparation {
         Assert-MutationApproved -Approved $pushBranchApproved -IsWhatIf $WhatIfPreference -Action 'pushing the release branch'
         if ($pushBranchApproved) {
             try {
-                $null = Invoke-Git -Arguments @('push', 'origin', "refs/heads/$releaseBranch")
+                $null = Invoke-Git -Arguments @('push', '--set-upstream', 'origin', $releaseBranch)
                 $branchPushed = $true
             }
             catch {
