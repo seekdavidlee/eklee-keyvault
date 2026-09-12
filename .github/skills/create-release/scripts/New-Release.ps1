@@ -12,15 +12,16 @@
     (major, minor, or patch). Increment requests are calculated from the highest
     existing release branch. The script completes its read-only Git and GitHub
     preflight checks before creating a milestone, a local release/<version>
-    branch at main, and the remote branch on origin. Release publication is
+    branch at main, and the remote branch on origin. After a successful live
+    run, the script checks out the new release branch. Release publication is
     owned by the branch workflow.
 
     The preflight requires local main to be reachable from origin/main, a clean
     working tree unless -Force is supplied, no matching local or remote release
     branch, no matching GitHub milestone, and an authenticated GitHub CLI account
-    with repository write access. A live run creates only the milestone and
-    release branch. It does not check out a branch, create tags, or clean up
-    state after a later mutation fails.
+    with repository write access. A live run creates the milestone and release
+    branch, pushes the branch, and checks out the new release branch. It does
+    not create tags or clean up state after a later mutation fails.
 
     Immediately before pushing, the script checks for local changes again. With
     -Force, it includes those changes in the release branch automatically.
@@ -545,6 +546,7 @@ function Invoke-ReleasePreparation {
         $localChangesIncluded = $false
         $localChangesCommit = $null
         $branchPushed = $false
+        $branchCheckedOut = $false
 
         $createBranchApproved = $PSCmdlet.ShouldProcess(
             "refs/heads/$releaseBranch at $targetCommit",
@@ -592,6 +594,28 @@ function Invoke-ReleasePreparation {
             }
         }
 
+        $checkoutBranchApproved = $PSCmdlet.ShouldProcess(
+            $releaseBranch,
+            'Check out release branch'
+        )
+        Assert-MutationApproved -Approved $checkoutBranchApproved -IsWhatIf $WhatIfPreference -Action 'checking out the release branch'
+        if ($checkoutBranchApproved) {
+            try {
+                $checkoutArguments = if ($localChangesIncluded) {
+                    @('switch', '--force', $releaseBranch)
+                }
+                else {
+                    @('switch', $releaseBranch)
+                }
+
+                $null = Invoke-Git -Arguments $checkoutArguments
+                $branchCheckedOut = $true
+            }
+            catch {
+                throw "Checking out '$releaseBranch' failed after the branch was pushed. Resolve the failure manually; no automatic cleanup was attempted. $($_.Exception.Message)"
+            }
+        }
+
         $milestoneState = if ($matchingMilestones.Count -gt 0) {
             ($matchingMilestones | ForEach-Object { $_.state }) -join ', '
         }
@@ -617,6 +641,7 @@ function Invoke-ReleasePreparation {
             LocalChangesIncluded = $localChangesIncluded
             LocalChangesCommit = $localChangesCommit
             BranchPushed = $branchPushed
+            BranchCheckedOut = $branchCheckedOut
             WhatIf = [bool]$WhatIfPreference
             Force = [bool]$Force
         }

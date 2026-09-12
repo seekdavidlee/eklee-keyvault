@@ -45,7 +45,7 @@ ordering, safeguards, and the structured result.
 
 4. Report the returned structured object. On failure, report the script's
   message and any state it identifies; do not retry automatically after a
-  milestone or branch mutation.
+  milestone, branch, push, or checkout mutation.
 
 ## Script contract
 
@@ -57,9 +57,12 @@ It owns the following behavior:
 * Git and GitHub preflight, including ancestry, branch, milestone, auth, and
   write-access checks
 * Milestone creation, branch creation from local `main`, inclusion of local
-  changes when `-Force` is specified, and pushing only the release branch
+  changes when `-Force` is specified, pushing only the release branch, and
+  checking out the new release branch after a successful push
 * `-WhatIf`, `-Force`, `ShouldProcess`, failure reporting, and structured output
 
-The script does not check out branches, create tags, publish GitHub Releases,
-or modify the current worktree during normal operation. With `-Force`, local
-changes are included in the release branch automatically after preflight.
+The script does not create tags or publish GitHub Releases. A live run leaves
+the current worktree on the new release branch. With `-Force`, local changes
+are included in the release branch automatically after preflight, then the
+worktree is force-aligned to that committed branch so `main` is clean when you
+switch back to it.
