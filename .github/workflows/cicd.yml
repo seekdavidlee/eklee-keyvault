@@ -134,9 +134,9 @@ jobs:
 
       - name: Validate required environment variables
         run: |
+          set -euo pipefail
           missing=()
-          [[ -z "${{ vars.E2E_KEYVAULT_URI }}" ]] && missing+=("E2E_KEYVAULT_URI")
-          [[ -z "${{ vars.E2E_STORAGE_URI }}" ]] && missing+=("E2E_STORAGE_URI")
+          [[ -z "${{ vars.RESOURCE_GROUP }}" ]] && missing+=("RESOURCE_GROUP")
           [[ -z "${{ vars.VITE_AZURE_AD_CLIENT_ID }}" ]] && missing+=("VITE_AZURE_AD_CLIENT_ID")
           [[ -z "${{ vars.AZURE_TENANT_ID }}" ]] && missing+=("AZURE_TENANT_ID")
           if [[ ${#missing[@]} -gt 0 ]]; then
@@ -145,24 +145,15 @@ jobs:
             exit 1
           fi
 
-      - name: Resolve resource names from URIs
+      - name: Resolve E2E resources
         id: resources
+        env:
+          RESOURCE_GROUP: ${{ vars.RESOURCE_GROUP }}
+          DEPLOYMENT_ENVIRONMENT: ${{ needs.setup.outputs.build_env }}
+          KEYVAULT_URI_OVERRIDE: ${{ vars.E2E_KEYVAULT_URI }}
+          STORAGE_URI_OVERRIDE: ${{ vars.E2E_STORAGE_URI }}
         run: |
-          # Extract Key Vault name from URI (e.g. https://myvault.vault.azure.net/)
-          KV_NAME=$(echo "${{ vars.E2E_KEYVAULT_URI }}" | sed -E 's|https://([^.]+)\.vault\.azure\.net/?|\1|')
-          echo "kv_name=$KV_NAME" >> "$GITHUB_OUTPUT"
-
-          # Extract Storage Account name from URI (e.g. https://myaccount.blob.core.windows.net/)
-          SA_NAME=$(echo "${{ vars.E2E_STORAGE_URI }}" | sed -E 's|https://([^.]+)\.blob\.core\.windows\.net/?|\1|')
-          echo "sa_name=$SA_NAME" >> "$GITHUB_OUTPUT"
-
-          # Generate a unique container name for this E2E run to ensure first-user auto-registration works
-          E2E_CONTAINER="e2e-$(date +%s)"
-          echo "e2e_container=$E2E_CONTAINER" >> "$GITHUB_OUTPUT"
-
-          echo "Key Vault name: $KV_NAME"
-          echo "Storage Account name: $SA_NAME"
-          echo "E2E container name: $E2E_CONTAINER"
+          bash .github/scripts/resolve-e2e-resources.sh
 
       - name: Verify RBAC for CI identity
         run: |
@@ -295,8 +286,8 @@ jobs:
           AzureAd__Instance: https://login.microsoftonline.com/
           AzureAd__TenantId: ${{ vars.AZURE_TENANT_ID }}
           AzureAd__ClientId: ${{ vars.VITE_AZURE_AD_CLIENT_ID }}
-          KeyVaultUri: ${{ vars.E2E_KEYVAULT_URI }}
-          StorageUri: ${{ vars.E2E_STORAGE_URI }}
+          KeyVaultUri: ${{ steps.resources.outputs.keyvault_uri }}
+          StorageUri: ${{ steps.resources.outputs.storage_uri }}
           StorageContainerName: ${{ steps.resources.outputs.e2e_container }}
           AuthenticationMode: azcli
           ALLOW_ACL_AUTH: "true"
