@@ -83,6 +83,12 @@ param existingStoragePrivateDnsZoneLinkName string = ''
 @description('Existing Key Vault private DNS zone virtual network link name resolved from its resource-id tag')
 param existingKeyVaultPrivateDnsZoneLinkName string = ''
 
+@description('Skip the Key Vault RBAC assignment when preprovision confirms it already exists')
+param skipKeyVaultRoleAssignment bool = false
+
+@description('Skip the Storage RBAC assignment when preprovision confirms it already exists')
+param skipStorageRoleAssignment bool = false
+
 @description('Tags to apply to all resources')
 param tags object = {
   Application: 'Eklee-KeyVault'
@@ -132,6 +138,8 @@ module resources 'azd-resources.bicep' = {
     existingKeyVaultPrivateDnsZoneName: existingKeyVaultPrivateDnsZoneName
     existingStoragePrivateDnsZoneLinkName: existingStoragePrivateDnsZoneLinkName
     existingKeyVaultPrivateDnsZoneLinkName: existingKeyVaultPrivateDnsZoneLinkName
+    skipKeyVaultRoleAssignment: skipKeyVaultRoleAssignment
+    skipStorageRoleAssignment: skipStorageRoleAssignment
     tags: tags
   }
 }

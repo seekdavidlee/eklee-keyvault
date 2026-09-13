@@ -174,6 +174,114 @@ function Get-ExistingResources {
     return @($resources)
 }
 
+function Get-TaggedResource {
+    [CmdletBinding()]
+    [OutputType([object])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [object[]]$Resources,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$ResourceId,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Type
+    )
+
+    $matches = @($Resources | Where-Object {
+            (Get-ResourceTagValue -Resource $_ -TagKey 'resource-id') -eq $ResourceId -and
+            $_.type -eq $Type
+        })
+
+    if ($matches.Count -ne 1) {
+        return $null
+    }
+
+    return $matches[0]
+}
+
+function Test-RoleAssignmentExists {
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$PrincipalId,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$RoleDefinitionName,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Scope,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$SubscriptionId
+    )
+
+    $assignments = @(Invoke-AzureCliJson -Arguments @(
+            'role', 'assignment', 'list',
+            '--assignee', $PrincipalId,
+            '--role', $RoleDefinitionName,
+            '--scope', $Scope,
+            '--subscription', $SubscriptionId
+        ))
+
+    return @($assignments | Where-Object { $_.scope -eq $Scope }).Count -gt 0
+}
+
+function Set-RbacAssignmentSkipFlags {
+    [CmdletBinding()]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [object[]]$Resources,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$SubscriptionId
+    )
+
+    $skipKeyVault = $false
+    $skipStorage = $false
+    $managedIdentity = Get-TaggedResource -Resources $Resources -ResourceId 'app-managed-identity' -Type 'Microsoft.ManagedIdentity/userAssignedIdentities'
+    $keyVault = Get-TaggedResource -Resources $Resources -ResourceId 'app-key-vault' -Type 'Microsoft.KeyVault/vaults'
+    $storageAccount = Get-TaggedResource -Resources $Resources -ResourceId 'app-storage-account' -Type 'Microsoft.Storage/storageAccounts'
+
+    if ($managedIdentity -and $keyVault -and $storageAccount) {
+        $identity = Invoke-AzureCliJson -Arguments @(
+            'identity', 'show', '--ids', $managedIdentity.id, '--subscription', $SubscriptionId
+        )
+        $principalId = [string]$identity.principalId
+
+        if ([string]::IsNullOrWhiteSpace($principalId)) {
+            throw "Managed identity '$($managedIdentity.name)' does not have a principal ID."
+        }
+
+        $skipKeyVault = Test-RoleAssignmentExists `
+            -PrincipalId $principalId `
+            -RoleDefinitionName 'Key Vault Secrets Officer' `
+            -Scope $keyVault.id `
+            -SubscriptionId $SubscriptionId
+        $skipStorage = Test-RoleAssignmentExists `
+            -PrincipalId $principalId `
+            -RoleDefinitionName 'Storage Blob Data Contributor' `
+            -Scope $storageAccount.id `
+            -SubscriptionId $SubscriptionId
+    }
+
+    $skipKeyVaultValue = $skipKeyVault.ToString().ToLowerInvariant()
+    $skipStorageValue = $skipStorage.ToString().ToLowerInvariant()
+    Set-AzdEnvironmentValue -Name 'SKIP_KEY_VAULT_ROLE_ASSIGNMENT' -Value $skipKeyVaultValue
+    Set-AzdEnvironmentValue -Name 'SKIP_STORAGE_ROLE_ASSIGNMENT' -Value $skipStorageValue
+    Write-Host "Key Vault RBAC assignment will be $(if ($skipKeyVault) { 'skipped because it exists' } else { 'deployed' })." -ForegroundColor $(if ($skipKeyVault) { 'Green' } else { 'Yellow' })
+    Write-Host "Storage RBAC assignment will be $(if ($skipStorage) { 'skipped because it exists' } else { 'deployed' })." -ForegroundColor $(if ($skipStorage) { 'Green' } else { 'Yellow' })
+}
+
 function Get-ResourceTagValue {
     [CmdletBinding()]
     [OutputType([string])]
@@ -266,12 +374,15 @@ function Invoke-ResourceNameResolution {
         foreach ($roleDefinition in Get-RoleDefinitions) {
             Set-AzdEnvironmentValue -Name $roleDefinition.EnvironmentVariable -Value ''
         }
+        Set-AzdEnvironmentValue -Name 'SKIP_KEY_VAULT_ROLE_ASSIGNMENT' -Value 'false'
+        Set-AzdEnvironmentValue -Name 'SKIP_STORAGE_ROLE_ASSIGNMENT' -Value 'false'
         Write-Host "Resource group '$resourceGroupName' does not exist; Bicep will create resources with generated names." -ForegroundColor Yellow
         return
     }
 
     $resources = Get-ExistingResources -ResourceGroupName $resourceGroupName -SubscriptionId $subscriptionId
     Resolve-TaggedResourceNames -Resources $resources
+    Set-RbacAssignmentSkipFlags -Resources $resources -SubscriptionId $subscriptionId
 }
 
 if ($MyInvocation.InvocationName -ne '.') {

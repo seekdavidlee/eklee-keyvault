@@ -73,6 +73,12 @@ param existingStoragePrivateDnsZoneLinkName string = ''
 @description('Existing Key Vault private DNS zone virtual network link name resolved from its resource-id tag')
 param existingKeyVaultPrivateDnsZoneLinkName string = ''
 
+@description('Skip the Key Vault RBAC assignment when preprovision confirms it already exists')
+param skipKeyVaultRoleAssignment bool = false
+
+@description('Skip the Storage RBAC assignment when preprovision confirms it already exists')
+param skipStorageRoleAssignment bool = false
+
 @description('Tags to apply to all resources')
 param tags object
 
@@ -220,7 +226,7 @@ resource managedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-
 // ============================================================================
 
 // Grant the managed identity Key Vault Secrets Officer on the Key Vault
-resource keyVaultRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+resource keyVaultRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!skipKeyVaultRoleAssignment) {
   name: guid(keyVault.id, managedIdentity.id, keyVaultSecretsOfficerRoleId)
   scope: keyVault
   properties: {
@@ -231,7 +237,7 @@ resource keyVaultRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04
 }
 
 // Grant the managed identity Storage Blob Data Contributor on the Storage Account
-resource storageRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+resource storageRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!skipStorageRoleAssignment) {
   name: guid(storageAccount.id, managedIdentity.id, storageBlobDataContributorRoleId)
   scope: storageAccount
   properties: {

@@ -56,6 +56,12 @@
     },
     "existingKeyVaultPrivateDnsZoneLinkName": {
       "value": "${EXISTING_KEY_VAULT_PRIVATE_DNS_ZONE_LINK_NAME}"
+    },
+    "skipKeyVaultRoleAssignment": {
+      "value": "${SKIP_KEY_VAULT_ROLE_ASSIGNMENT}"
+    },
+    "skipStorageRoleAssignment": {
+      "value": "${SKIP_STORAGE_ROLE_ASSIGNMENT}"
     }
   }
 }
