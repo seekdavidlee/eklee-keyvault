@@ -1,6 +1,4 @@
 #!/usr/bin/env bash
-# Copyright (c) Microsoft Corporation. All rights reserved.
-# SPDX-License-Identifier: MIT
 #
 # resolve-e2e-resources.sh
 # Resolve the Key Vault and Storage Account used by GitHub Actions E2E tests.
