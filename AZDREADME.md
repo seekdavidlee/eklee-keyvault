@@ -41,13 +41,39 @@ to add the deployed Container App URL to the app registration SPA redirect URIs.
 
 `azd` prompts for the following parameters during provisioning (unless already stored):
 
-| Parameter   | Description                                            | Example           |
-|-------------|--------------------------------------------------------|-------------------|
-| `location`  | Azure region used for deployment                       | `centralus`       |
-| `prefix`    | Resource naming prefix (3-10 chars)                    | `ekleekv`         |
+| Parameter            | Description                                                                     | Example     |
+|----------------------|---------------------------------------------------------------------------------|-------------|
+| `location`           | Azure region used for deployment                                                | `centralus` |
+| `prefix`             | Resource naming prefix (3-10 chars)                                             | `ekleekv`   |
+
+Private networking is a `Y/N` choice that defaults to `N` and determines whether to deploy private
+endpoints and disable Storage and Key Vault public access.
 
 `tenantId` and `clientId` are no longer prompted. The preprovision hook script populates both
 values in the current azd environment by creating or reusing the app registration.
+
+The app registration defaults to `<prefix>-app`. To use a different display name for a direct
+`azd` deployment, set it in the active environment before running `azd up`:
+
+```bash
+azd env set APP_REGISTRATION_NAME "contoso-keyvault-app"
+```
+
+When `ENABLE_PRIVATE_NETWORKING` is not already set in the selected azd environment, the
+preprovision hook asks `Enable private networking for Storage and Key Vault? (Y/N) [N]` and
+stores the normalized result. `N` keeps the current public-network deployment. `Y` deploys the
+VNet, private endpoints, private DNS links, and Container Apps VNet integration while disabling
+public network access to the Storage Account and Key Vault.
+
+To change an existing environment deliberately, set the value before running `azd up`:
+
+```bash
+azd env set ENABLE_PRIVATE_NETWORKING true
+```
+
+> [!IMPORTANT]
+> Changing this value for an existing environment modifies network resources and access paths.
+> Run a provisioning preview before applying the change.
 
 ## Custom Domain
 
@@ -76,7 +102,7 @@ SPA redirect URIs.
 
 ## Provisioned Resources
 
-The template deploys the following resources (no private networking, no ACR):
+The template deploys the following resources:
 
 - **Log Analytics Workspace**: centralized logging for Container Apps
 - **Storage Account**: with a `configs` blob container for application data
@@ -86,6 +112,8 @@ The template deploys the following resources (no private networking, no ACR):
   - Storage Blob Data Contributor on the Storage Account
 - **Container Apps Environment**: Consumption workload profile
 - **Container App**: running the image resolved from `ghcr.io/seekdavidlee/eklee-keyvault` (pinned by digest)
+- **Private networking when selected**: VNet integration for Container Apps, private endpoints
+   for the Storage Account and Key Vault, and linked private DNS zones
 
 ## Authentication
 
@@ -109,7 +137,8 @@ the default browser login may open in an unintended browser profile.
    ```
 
    Select an environment name when prompted (for example, `dev`), then enter values for `location`
-   and `prefix`.
+   and `prefix`. The first deployment to an environment also asks whether private networking is
+   required and retains that choice in the azd environment.
 
 2. Note the outputs printed after deployment:
 
@@ -117,6 +146,22 @@ the default browser login may open in an unintended browser profile.
    containerAppUrl = https://<prefix>-app.<region>.azurecontainerapps.io
    containerAppFqdn = <prefix>-app.<region>.azurecontainerapps.io
    ```
+
+### Target-Catalog Deployment
+
+Use the migration script when one repository is deployed to multiple tenants or subscriptions:
+
+```powershell
+.\Start-Azd-Migration.ps1
+```
+
+New targets include an `Enable private networking (Y/N)` question. The answer is stored as
+non-secret target metadata and set as `ENABLE_PRIVATE_NETWORKING` before `azd up`. Existing
+targets are prompted once when selected and default to public networking when no answer exists.
+
+Set `appRegistrationName` in a target profile to choose the Microsoft Entra application display
+name. It is set as `APP_REGISTRATION_NAME` before the preprovision hook looks up or creates the
+application. Existing targets without this key are prompted once and default to `<prefix>-app`.
 
 ## Post-Deployment Configuration
 

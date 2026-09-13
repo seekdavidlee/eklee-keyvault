@@ -127,6 +127,38 @@ function Read-RequiredValue {
     }
 }
 
+function Read-YesNoValue {
+    <# .SYNOPSIS Reads a Yes or No value from the console. #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Prompt,
+
+        [Parameter(Mandatory = $false)]
+        [bool]$DefaultValue = $false
+    )
+
+    $defaultText = if ($DefaultValue) { 'Y' } else { 'N' }
+    while ($true) {
+        $value = (Read-Host "$Prompt (Y/N) [$defaultText]").Trim()
+        if (-not $value) {
+            return $DefaultValue
+        }
+
+        if ($value -match '^[Yy](es)?$') {
+            return $true
+        }
+
+        if ($value -match '^[Nn](o)?$') {
+            return $false
+        }
+
+        Write-Warning 'Enter Y or N.'
+    }
+}
+
 function ConvertTo-EnvironmentName {
     <# .SYNOPSIS Converts a display name to a usable azd environment name. #>
     [CmdletBinding()]
@@ -160,6 +192,8 @@ function Read-Target {
     $location = Read-RequiredValue -Prompt 'Azure location' -DefaultValue 'centralus'
     $prefix = Read-RequiredValue -Prompt 'Resource prefix (3-10 lowercase characters)' -DefaultValue $environmentName
     $resourceGroupName = Read-RequiredValue -Prompt 'Azure resource group name' -DefaultValue "$prefix-rg"
+    $enablePrivateNetworking = Read-YesNoValue -Prompt 'Enable private networking' -DefaultValue $false
+    $appRegistrationName = Read-RequiredValue -Prompt 'App registration name' -DefaultValue "$prefix-app"
 
     if ($prefix -notmatch '^[a-z0-9]{3,10}$') {
         throw "Resource prefix '$prefix' must contain 3-10 lowercase letters or numbers."
@@ -181,6 +215,8 @@ function Read-Target {
         location        = $location
         prefix          = $prefix
         resourceGroupName = $resourceGroupName
+        enablePrivateNetworking = $enablePrivateNetworking
+        appRegistrationName = $appRegistrationName
     }
 }
 
@@ -204,7 +240,7 @@ function Save-TargetCatalog {
     }
 
     $catalog = [ordered]@{
-        version = 2
+        version = 5
         targets = @($Targets)
     }
     $temporaryPath = "$Path.$([guid]::NewGuid()).tmp"
@@ -262,8 +298,22 @@ function Select-Target {
             else {
                 "$($target.prefix)-rg"
             }
-            Write-Host ("{0}. {1} | tenant {2} | subscription {3} | azd env {4} | resource group {5}" -f `
-                ($index + 1), $target.displayName, $target.tenantId, $target.subscriptionId, $target.environmentName, $resourceGroupName)
+            $privateNetworkingProperty = $target.PSObject.Properties['enablePrivateNetworking']
+            $networkingMode = if ($privateNetworkingProperty -and $privateNetworkingProperty.Value -is [bool] -and $privateNetworkingProperty.Value) {
+                'private'
+            }
+            else {
+                'public'
+            }
+            $appRegistrationProperty = $target.PSObject.Properties['appRegistrationName']
+            $appRegistrationName = if ($appRegistrationProperty -and -not [string]::IsNullOrWhiteSpace([string]$appRegistrationProperty.Value)) {
+                $appRegistrationProperty.Value
+            }
+            else {
+                "$($target.prefix)-app"
+            }
+            Write-Host ("{0}. {1} | tenant {2} | subscription {3} | azd env {4} | prefix {5} | resource group {6} | networking {7} | app {8}" -f `
+                ($index + 1), $target.displayName, $target.tenantId, $target.subscriptionId, $target.environmentName, $target.prefix, $resourceGroupName, $networkingMode, $appRegistrationName)
         }
         Write-Host 'A. Add another target'
         Write-Host 'Q. Quit'
@@ -361,12 +411,121 @@ function Set-AzdEnvironment {
     Invoke-ExternalCommand -CommandName 'azd' -Arguments @(
         'env', 'set', 'AZURE_LOCATION', $Target.location
     )
+    $privateNetworkingValue = if ($Target.enablePrivateNetworking) { 'true' } else { 'false' }
+    Invoke-ExternalCommand -CommandName 'azd' -Arguments @(
+        'env', 'set', 'ENABLE_PRIVATE_NETWORKING', $privateNetworkingValue
+    )
+    Invoke-ExternalCommand -CommandName 'azd' -Arguments @(
+        'env', 'set', 'APP_REGISTRATION_NAME', $Target.appRegistrationName
+    )
     Invoke-ExternalCommand -CommandName 'azd' -Arguments @(
         'env', 'config', 'set', 'infra.parameters.prefix', $Target.prefix
     )
     Invoke-ExternalCommand -CommandName 'azd' -Arguments @(
         'env', 'config', 'set', 'infra.parameters.resourceGroupName', $Target.resourceGroupName
     )
+}
+
+function Get-AzdEnvironmentConfigValue {
+    <# .SYNOPSIS Gets a named infrastructure parameter from an azd environment. #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$RepositoryPath,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$EnvironmentName,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Name
+    )
+
+    $configPath = Join-Path $RepositoryPath ".azure\$EnvironmentName\config.json"
+    if (-not (Test-Path $configPath)) {
+        return $null
+    }
+
+    try {
+        $config = Get-Content -Path $configPath -Raw | ConvertFrom-Json
+    }
+    catch {
+        throw "Could not read azd environment configuration '$configPath': $($_.Exception.Message)"
+    }
+
+    $infraProperty = $config.PSObject.Properties['infra']
+    $parametersProperty = if ($infraProperty) { $infraProperty.Value.PSObject.Properties['parameters'] } else { $null }
+    $valueProperty = if ($parametersProperty) { $parametersProperty.Value.PSObject.Properties[$Name] } else { $null }
+
+    if ($valueProperty) {
+        return [string]$valueProperty.Value
+    }
+
+    return $null
+}
+
+function Resolve-TargetResourceGroupName {
+    <# .SYNOPSIS Reconciles a target's resource group with its azd environment. #>
+    [CmdletBinding()]
+    [OutputType([object])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Target,
+
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [object[]]$Targets,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$ProfilePath,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$RepositoryPath
+    )
+
+    $environmentResourceGroupName = Get-AzdEnvironmentConfigValue -RepositoryPath $RepositoryPath -EnvironmentName $Target.environmentName -Name 'resourceGroupName'
+    if (-not $environmentResourceGroupName -or $environmentResourceGroupName -eq $Target.resourceGroupName) {
+        return $Target
+    }
+
+    Write-Warning "Target resource group '$($Target.resourceGroupName)' differs from the existing azd environment configuration value '$environmentResourceGroupName'."
+    $resourceGroupName = Read-RequiredValue -Prompt 'Azure resource group name'
+    if ($resourceGroupName -notmatch '^[a-zA-Z0-9._()\-]{1,90}$') {
+        throw "Resource group name '$resourceGroupName' contains unsupported characters or is longer than 90 characters."
+    }
+
+    $Target.resourceGroupName = $resourceGroupName
+    $targetIndex = [Array]::IndexOf($Targets, $Target)
+    if ($targetIndex -ge 0) {
+        $Targets[$targetIndex] = $Target
+        Save-TargetCatalog -Path $ProfilePath -Targets $Targets
+        Write-Host "Target catalog updated at '$ProfilePath'." -ForegroundColor Green
+    }
+
+    return $Target
+}
+
+function Confirm-TargetDeployment {
+    <# .SYNOPSIS Displays the resolved target and confirms deployment. #>
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Target
+    )
+
+    Write-Host ''
+    Write-Host 'Deployment target:' -ForegroundColor Cyan
+    Write-Host "  azd environment : $($Target.environmentName)"
+    Write-Host "  Resource prefix : $($Target.prefix)"
+    Write-Host "  Resource group  : $($Target.resourceGroupName)"
+
+    return Read-YesNoValue -Prompt 'Run azd up for this target?' -DefaultValue $false
 }
 
 function Set-TargetResourceGroupName {
@@ -409,6 +568,89 @@ function Set-TargetResourceGroupName {
     return $Target
 }
 
+function Set-TargetPrivateNetworking {
+    <# .SYNOPSIS Adds a private networking choice to legacy target entries. #>
+    [CmdletBinding()]
+    [OutputType([object])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Target,
+
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [object[]]$Targets,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$ProfilePath
+    )
+
+    $privateNetworkingProperty = $Target.PSObject.Properties['enablePrivateNetworking']
+    if ($privateNetworkingProperty -and $privateNetworkingProperty.Value -is [bool]) {
+        return $Target
+    }
+
+    Write-Host "Target '$($Target.displayName)' has no private networking preference configured." -ForegroundColor Yellow
+    $enablePrivateNetworking = Read-YesNoValue -Prompt 'Enable private networking' -DefaultValue $false
+    if ($privateNetworkingProperty) {
+        $privateNetworkingProperty.Value = $enablePrivateNetworking
+    }
+    else {
+        $Target | Add-Member -MemberType NoteProperty -Name enablePrivateNetworking -Value $enablePrivateNetworking
+    }
+
+    $targetIndex = [Array]::IndexOf($Targets, $Target)
+    if ($targetIndex -ge 0) {
+        $Targets[$targetIndex] = $Target
+        Save-TargetCatalog -Path $ProfilePath -Targets $Targets
+        Write-Host "Target catalog updated at '$ProfilePath'." -ForegroundColor Green
+    }
+
+    return $Target
+}
+
+function Set-TargetAppRegistrationName {
+    <# .SYNOPSIS Adds an app registration name to legacy target entries. #>
+    [CmdletBinding()]
+    [OutputType([object])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Target,
+
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [object[]]$Targets,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$ProfilePath
+    )
+
+    $appRegistrationProperty = $Target.PSObject.Properties['appRegistrationName']
+    if ($appRegistrationProperty -and -not [string]::IsNullOrWhiteSpace([string]$appRegistrationProperty.Value)) {
+        return $Target
+    }
+
+    $defaultAppRegistrationName = "$($Target.prefix)-app"
+    Write-Host "Target '$($Target.displayName)' has no app registration name configured." -ForegroundColor Yellow
+    $appRegistrationName = Read-RequiredValue -Prompt 'App registration name' -DefaultValue $defaultAppRegistrationName
+    if ($appRegistrationProperty) {
+        $appRegistrationProperty.Value = $appRegistrationName
+    }
+    else {
+        $Target | Add-Member -MemberType NoteProperty -Name appRegistrationName -Value $appRegistrationName
+    }
+
+    $targetIndex = [Array]::IndexOf($Targets, $Target)
+    if ($targetIndex -ge 0) {
+        $Targets[$targetIndex] = $Target
+        Save-TargetCatalog -Path $ProfilePath -Targets $Targets
+        Write-Host "Target catalog updated at '$ProfilePath'." -ForegroundColor Green
+    }
+
+    return $Target
+}
+
 #endregion Functions
 
 #region Main Execution
@@ -440,6 +682,9 @@ if ($MyInvocation.InvocationName -ne '.') {
             }
 
             $target = Set-TargetResourceGroupName -Target $target -Targets $targets -ProfilePath $ProfilePath
+            $target = Resolve-TargetResourceGroupName -Target $target -Targets $targets -ProfilePath $ProfilePath -RepositoryPath $repositoryPath
+            $target = Set-TargetPrivateNetworking -Target $target -Targets $targets -ProfilePath $ProfilePath
+            $target = Set-TargetAppRegistrationName -Target $target -Targets $targets -ProfilePath $ProfilePath
 
                 if ($target.displayName -and @($targets | Where-Object {
                         $_.tenantId -eq $target.tenantId -and
@@ -449,6 +694,11 @@ if ($MyInvocation.InvocationName -ne '.') {
                 $targets += $target
                 Save-TargetCatalog -Path $ProfilePath -Targets $targets
                 Write-Host "Target catalog updated at '$ProfilePath'." -ForegroundColor Green
+            }
+
+            if (-not $WhatIfPreference -and -not (Confirm-TargetDeployment -Target $target)) {
+                Write-Host 'Cancelled.'
+                exit 0
             }
 
             Connect-ToTarget -Target $target

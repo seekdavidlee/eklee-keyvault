@@ -35,6 +35,54 @@ param clientId string = ''
 @description('The full container image reference including digest (set by preprovision hook)')
 param containerImage string = 'ghcr.io/seekdavidlee/eklee-keyvault:latest'
 
+@description('Enable private networking with a virtual network and private endpoints')
+param enablePrivateNetworking bool = false
+
+@description('Existing storage account name resolved from its resource-id tag')
+param existingStorageAccountName string = ''
+
+@description('Existing Key Vault name resolved from its resource-id tag')
+param existingKeyVaultName string = ''
+
+@description('Existing Log Analytics workspace name resolved from its resource-id tag')
+param existingLogAnalyticsWorkspaceName string = ''
+
+@description('Existing user-assigned managed identity name resolved from its resource-id tag')
+param existingManagedIdentityName string = ''
+
+@description('Existing Container Apps environment name resolved from its resource-id tag')
+param existingContainerAppEnvironmentName string = ''
+
+@description('Existing Container App name resolved from its resource-id tag')
+param existingContainerAppName string = ''
+
+@description('Existing virtual network name resolved from its resource-id tag')
+param existingVirtualNetworkName string = ''
+
+@description('Existing Container Apps network security group name resolved from its resource-id tag')
+param existingContainerAppNsgName string = ''
+
+@description('Existing private-endpoint network security group name resolved from its resource-id tag')
+param existingResourceNsgName string = ''
+
+@description('Existing storage private endpoint name resolved from its resource-id tag')
+param existingStoragePrivateEndpointName string = ''
+
+@description('Existing Key Vault private endpoint name resolved from its resource-id tag')
+param existingKeyVaultPrivateEndpointName string = ''
+
+@description('Existing storage private DNS zone name resolved from its resource-id tag')
+param existingStoragePrivateDnsZoneName string = ''
+
+@description('Existing Key Vault private DNS zone name resolved from its resource-id tag')
+param existingKeyVaultPrivateDnsZoneName string = ''
+
+@description('Existing storage private DNS zone virtual network link name resolved from its resource-id tag')
+param existingStoragePrivateDnsZoneLinkName string = ''
+
+@description('Existing Key Vault private DNS zone virtual network link name resolved from its resource-id tag')
+param existingKeyVaultPrivateDnsZoneLinkName string = ''
+
 @description('Tags to apply to all resources')
 param tags object = {
   Application: 'Eklee-KeyVault'
@@ -68,6 +116,22 @@ module resources 'azd-resources.bicep' = {
     tenantId: tenantId
     clientId: clientId
     containerImage: containerImage
+    enablePrivateNetworking: enablePrivateNetworking
+    existingStorageAccountName: existingStorageAccountName
+    existingKeyVaultName: existingKeyVaultName
+    existingLogAnalyticsWorkspaceName: existingLogAnalyticsWorkspaceName
+    existingManagedIdentityName: existingManagedIdentityName
+    existingContainerAppEnvironmentName: existingContainerAppEnvironmentName
+    existingContainerAppName: existingContainerAppName
+    existingVirtualNetworkName: existingVirtualNetworkName
+    existingContainerAppNsgName: existingContainerAppNsgName
+    existingResourceNsgName: existingResourceNsgName
+    existingStoragePrivateEndpointName: existingStoragePrivateEndpointName
+    existingKeyVaultPrivateEndpointName: existingKeyVaultPrivateEndpointName
+    existingStoragePrivateDnsZoneName: existingStoragePrivateDnsZoneName
+    existingKeyVaultPrivateDnsZoneName: existingKeyVaultPrivateDnsZoneName
+    existingStoragePrivateDnsZoneLinkName: existingStoragePrivateDnsZoneLinkName
+    existingKeyVaultPrivateDnsZoneLinkName: existingKeyVaultPrivateDnsZoneLinkName
     tags: tags
   }
 }

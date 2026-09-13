@@ -21,6 +21,33 @@ param environment string
 @description('Tags to apply to all resources')
 param tags object
 
+@description('Existing virtual network name resolved from its resource-id tag')
+param existingVirtualNetworkName string = ''
+
+@description('Existing Container Apps network security group name resolved from its resource-id tag')
+param existingContainerAppNsgName string = ''
+
+@description('Existing private-endpoint network security group name resolved from its resource-id tag')
+param existingResourceNsgName string = ''
+
+@description('Existing storage private endpoint name resolved from its resource-id tag')
+param existingStoragePrivateEndpointName string = ''
+
+@description('Existing Key Vault private endpoint name resolved from its resource-id tag')
+param existingKeyVaultPrivateEndpointName string = ''
+
+@description('Existing storage private DNS zone name resolved from its resource-id tag')
+param existingStoragePrivateDnsZoneName string = ''
+
+@description('Existing Key Vault private DNS zone name resolved from its resource-id tag')
+param existingKeyVaultPrivateDnsZoneName string = ''
+
+@description('Existing storage private DNS zone virtual network link name resolved from its resource-id tag')
+param existingStoragePrivateDnsZoneLinkName string = ''
+
+@description('Existing Key Vault private DNS zone virtual network link name resolved from its resource-id tag')
+param existingKeyVaultPrivateDnsZoneLinkName string = ''
+
 @description('Resource ID of the Storage Account for the private endpoint')
 param storageAccountId string
 
@@ -37,11 +64,26 @@ param keyVaultName string
 // VARIABLES
 // ============================================================================
 
-var virtualNetworkName = '${applicationName}-${environment}-vnet'
+var virtualNetworkName = !empty(existingVirtualNetworkName) ? existingVirtualNetworkName : '${applicationName}-${environment}-vnet'
 var containerAppSubnetName = 'containerapp'
 var resourceSubnetName = 'resource'
-var containerAppNsgName = '${applicationName}-${environment}-containerapp-nsg'
-var resourceNsgName = '${applicationName}-${environment}-resource-nsg'
+var containerAppNsgName = !empty(existingContainerAppNsgName) ? existingContainerAppNsgName : '${applicationName}-${environment}-containerapp-nsg'
+var resourceNsgName = !empty(existingResourceNsgName) ? existingResourceNsgName : '${applicationName}-${environment}-resource-nsg'
+var storageDnsZoneName = !empty(existingStoragePrivateDnsZoneName) ? existingStoragePrivateDnsZoneName : 'privatelink.blob.${az.environment().suffixes.storage}'
+var keyVaultDnsZoneName = !empty(existingKeyVaultPrivateDnsZoneName) ? existingKeyVaultPrivateDnsZoneName : 'privatelink.vaultcore.azure.net'
+var storageDnsZoneLinkName = !empty(existingStoragePrivateDnsZoneLinkName) ? existingStoragePrivateDnsZoneLinkName : '${virtualNetworkName}-blob-link'
+var keyVaultDnsZoneLinkName = !empty(existingKeyVaultPrivateDnsZoneLinkName) ? existingKeyVaultPrivateDnsZoneLinkName : '${virtualNetworkName}-vault-link'
+var storagePrivateEndpointName = !empty(existingStoragePrivateEndpointName) ? existingStoragePrivateEndpointName : '${storageAccountName}-blob-pe'
+var keyVaultPrivateEndpointName = !empty(existingKeyVaultPrivateEndpointName) ? existingKeyVaultPrivateEndpointName : '${keyVaultName}-vault-pe'
+var virtualNetworkTags = union(tags, { 'resource-id': 'app-virtual-network' })
+var containerAppNsgTags = union(tags, { 'resource-id': 'app-container-app-network-security-group' })
+var resourceNsgTags = union(tags, { 'resource-id': 'app-resource-network-security-group' })
+var storageDnsZoneTags = union(tags, { 'resource-id': 'app-storage-private-dns-zone' })
+var keyVaultDnsZoneTags = union(tags, { 'resource-id': 'app-key-vault-private-dns-zone' })
+var storageDnsZoneLinkTags = union(tags, { 'resource-id': 'app-storage-private-dns-zone-link' })
+var keyVaultDnsZoneLinkTags = union(tags, { 'resource-id': 'app-key-vault-private-dns-zone-link' })
+var storagePrivateEndpointTags = union(tags, { 'resource-id': 'app-storage-private-endpoint' })
+var keyVaultPrivateEndpointTags = union(tags, { 'resource-id': 'app-key-vault-private-endpoint' })
 
 // ============================================================================
 // NETWORK SECURITY GROUPS
@@ -51,7 +93,7 @@ var resourceNsgName = '${applicationName}-${environment}-resource-nsg'
 resource containerAppNsg 'Microsoft.Network/networkSecurityGroups@2024-05-01' = {
   name: containerAppNsgName
   location: location
-  tags: tags
+  tags: containerAppNsgTags
   properties: {
     securityRules: [
       {
@@ -101,7 +143,7 @@ resource containerAppNsg 'Microsoft.Network/networkSecurityGroups@2024-05-01' = 
 resource resourceNsg 'Microsoft.Network/networkSecurityGroups@2024-05-01' = {
   name: resourceNsgName
   location: location
-  tags: tags
+  tags: resourceNsgTags
   properties: {
     securityRules: [
       {
@@ -141,7 +183,7 @@ resource resourceNsg 'Microsoft.Network/networkSecurityGroups@2024-05-01' = {
 resource virtualNetwork 'Microsoft.Network/virtualNetworks@2024-05-01' = {
   name: virtualNetworkName
   location: location
-  tags: tags
+  tags: virtualNetworkTags
   properties: {
     addressSpace: {
       addressPrefixes: [
@@ -196,24 +238,24 @@ resource resourceSubnet 'Microsoft.Network/virtualNetworks/subnets@2024-05-01' e
 
 // Private DNS zone for Azure Blob Storage
 resource storageDnsZone 'Microsoft.Network/privateDnsZones@2024-06-01' = {
-  name: 'privatelink.blob.${az.environment().suffixes.storage}'
+  name: storageDnsZoneName
   location: 'global'
-  tags: tags
+  tags: storageDnsZoneTags
 }
 
 // Private DNS zone for Azure Key Vault
 resource keyVaultDnsZone 'Microsoft.Network/privateDnsZones@2024-06-01' = {
-  name: 'privatelink.vaultcore.azure.net'
+  name: keyVaultDnsZoneName
   location: 'global'
-  tags: tags
+  tags: keyVaultDnsZoneTags
 }
 
 // Link storage DNS zone to the virtual network
 resource storageDnsZoneLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2024-06-01' = {
   parent: storageDnsZone
-  name: '${virtualNetworkName}-blob-link'
+  name: storageDnsZoneLinkName
   location: 'global'
-  tags: tags
+  tags: storageDnsZoneLinkTags
   properties: {
     registrationEnabled: false
     virtualNetwork: {
@@ -225,9 +267,9 @@ resource storageDnsZoneLink 'Microsoft.Network/privateDnsZones/virtualNetworkLin
 // Link Key Vault DNS zone to the virtual network
 resource keyVaultDnsZoneLink 'Microsoft.Network/privateDnsZones/virtualNetworkLinks@2024-06-01' = {
   parent: keyVaultDnsZone
-  name: '${virtualNetworkName}-vault-link'
+  name: keyVaultDnsZoneLinkName
   location: 'global'
-  tags: tags
+  tags: keyVaultDnsZoneLinkTags
   properties: {
     registrationEnabled: false
     virtualNetwork: {
@@ -242,9 +284,9 @@ resource keyVaultDnsZoneLink 'Microsoft.Network/privateDnsZones/virtualNetworkLi
 
 // Private endpoint for Azure Storage Account (blob)
 resource storagePrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = {
-  name: '${storageAccountName}-blob-pe'
+  name: storagePrivateEndpointName
   location: location
-  tags: tags
+  tags: storagePrivateEndpointTags
   properties: {
     subnet: {
       id: resourceSubnet.id
@@ -281,9 +323,9 @@ resource storagePrivateEndpointDnsGroup 'Microsoft.Network/privateEndpoints/priv
 
 // Private endpoint for Azure Key Vault
 resource keyVaultPrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' = {
-  name: '${keyVaultName}-vault-pe'
+  name: keyVaultPrivateEndpointName
   location: location
-  tags: tags
+  tags: keyVaultPrivateEndpointTags
   properties: {
     subnet: {
       id: resourceSubnet.id

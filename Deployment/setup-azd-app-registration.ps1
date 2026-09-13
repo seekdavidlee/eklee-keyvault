@@ -41,6 +41,41 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 
 # ---------------------------------------------------------------------------
+# Resolve private networking from the current azd environment. The choice is
+# requested only once and is persisted for subsequent azd runs.
+# ---------------------------------------------------------------------------
+$privateNetworkingOutput = azd env get-value ENABLE_PRIVATE_NETWORKING 2>$null
+$privateNetworkingValue = $null
+if ($LASTEXITCODE -eq 0) {
+    $privateNetworkingValue = ($privateNetworkingOutput | Out-String).Trim().ToLowerInvariant()
+}
+
+if ($privateNetworkingValue -notin @('true', 'false')) {
+    while ($true) {
+        $privateNetworkingChoice = (Read-Host 'Enable private networking for Storage and Key Vault? (Y/N) [N]').Trim()
+        if (-not $privateNetworkingChoice -or $privateNetworkingChoice -match '^[Nn](o)?$') {
+            $privateNetworkingValue = 'false'
+            break
+        }
+
+        if ($privateNetworkingChoice -match '^[Yy](es)?$') {
+            $privateNetworkingValue = 'true'
+            break
+        }
+
+        Write-Warning 'Enter Y or N.'
+    }
+
+    azd env set ENABLE_PRIVATE_NETWORKING $privateNetworkingValue
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error 'Failed to set ENABLE_PRIVATE_NETWORKING in the azd environment.'
+        exit 1
+    }
+}
+
+Write-Host "Private networking: $privateNetworkingValue" -ForegroundColor Green
+
+# ---------------------------------------------------------------------------
 # Resolve prefix from azd environment if not provided
 # ---------------------------------------------------------------------------
 if (-not $Prefix) {
@@ -68,7 +103,17 @@ if (-not $currentLocation) {
 }
 Write-Host "AZURE_LOCATION is '$currentLocation'." -ForegroundColor Green
 
-$AppName = "$Prefix-app"
+$appRegistrationNameOutput = azd env get-value APP_REGISTRATION_NAME 2>$null
+$appRegistrationName = $null
+if ($LASTEXITCODE -eq 0) {
+    $appRegistrationName = ($appRegistrationNameOutput | Out-String).Trim()
+}
+
+if ([string]::IsNullOrWhiteSpace($appRegistrationName)) {
+    $appRegistrationName = "$Prefix-app"
+}
+
+$AppName = $appRegistrationName
 Write-Host "App registration name: $AppName" -ForegroundColor Cyan
 
 # ---------------------------------------------------------------------------

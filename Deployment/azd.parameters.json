@@ -8,6 +8,54 @@
     },
     "containerImage": {
       "value": "${CONTAINER_IMAGE}"
+    },
+    "enablePrivateNetworking": {
+      "value": "${ENABLE_PRIVATE_NETWORKING}"
+    },
+    "existingStorageAccountName": {
+      "value": "${EXISTING_STORAGE_ACCOUNT_NAME}"
+    },
+    "existingKeyVaultName": {
+      "value": "${EXISTING_KEY_VAULT_NAME}"
+    },
+    "existingLogAnalyticsWorkspaceName": {
+      "value": "${EXISTING_LOG_ANALYTICS_WORKSPACE_NAME}"
+    },
+    "existingManagedIdentityName": {
+      "value": "${EXISTING_MANAGED_IDENTITY_NAME}"
+    },
+    "existingContainerAppEnvironmentName": {
+      "value": "${EXISTING_CONTAINER_APP_ENVIRONMENT_NAME}"
+    },
+    "existingContainerAppName": {
+      "value": "${EXISTING_CONTAINER_APP_NAME}"
+    },
+    "existingVirtualNetworkName": {
+      "value": "${EXISTING_VIRTUAL_NETWORK_NAME}"
+    },
+    "existingContainerAppNsgName": {
+      "value": "${EXISTING_CONTAINER_APP_NSG_NAME}"
+    },
+    "existingResourceNsgName": {
+      "value": "${EXISTING_RESOURCE_NSG_NAME}"
+    },
+    "existingStoragePrivateEndpointName": {
+      "value": "${EXISTING_STORAGE_PRIVATE_ENDPOINT_NAME}"
+    },
+    "existingKeyVaultPrivateEndpointName": {
+      "value": "${EXISTING_KEY_VAULT_PRIVATE_ENDPOINT_NAME}"
+    },
+    "existingStoragePrivateDnsZoneName": {
+      "value": "${EXISTING_STORAGE_PRIVATE_DNS_ZONE_NAME}"
+    },
+    "existingKeyVaultPrivateDnsZoneName": {
+      "value": "${EXISTING_KEY_VAULT_PRIVATE_DNS_ZONE_NAME}"
+    },
+    "existingStoragePrivateDnsZoneLinkName": {
+      "value": "${EXISTING_STORAGE_PRIVATE_DNS_ZONE_LINK_NAME}"
+    },
+    "existingKeyVaultPrivateDnsZoneLinkName": {
+      "value": "${EXISTING_KEY_VAULT_PRIVATE_DNS_ZONE_LINK_NAME}"
     }
   }
 }
