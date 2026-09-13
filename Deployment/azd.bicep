@@ -13,10 +13,15 @@ targetScope = 'subscription'
 // PARAMETERS
 // ============================================================================
 
-@description('Required prefix used for naming all Azure resources and the resource group')
+@description('Required prefix used for naming Azure resources')
 @minLength(3)
 @maxLength(10)
 param prefix string
+
+@description('Name of the resource group to create or reuse')
+@minLength(1)
+@maxLength(90)
+param resourceGroupName string
 
 @description('The Azure region where resources will be deployed')
 param location string
@@ -39,8 +44,6 @@ param tags object = {
 // ============================================================================
 // VARIABLES
 // ============================================================================
-
-var resourceGroupName = '${prefix}-rg'
 
 // ============================================================================
 // RESOURCE GROUP

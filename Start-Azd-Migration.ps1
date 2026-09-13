@@ -159,9 +159,14 @@ function Read-Target {
     $environmentName = Read-RequiredValue -Prompt 'azd environment name' -DefaultValue $environmentDefault
     $location = Read-RequiredValue -Prompt 'Azure location' -DefaultValue 'centralus'
     $prefix = Read-RequiredValue -Prompt 'Resource prefix (3-10 lowercase characters)' -DefaultValue $environmentName
+    $resourceGroupName = Read-RequiredValue -Prompt 'Azure resource group name' -DefaultValue "$prefix-rg"
 
     if ($prefix -notmatch '^[a-z0-9]{3,10}$') {
         throw "Resource prefix '$prefix' must contain 3-10 lowercase letters or numbers."
+    }
+
+    if ($resourceGroupName -notmatch '^[a-zA-Z0-9._()\-]{1,90}$') {
+        throw "Resource group name '$resourceGroupName' contains unsupported characters or is longer than 90 characters."
     }
 
     if ($environmentName -notmatch '^[a-z0-9][a-z0-9-]{0,31}$') {
@@ -175,6 +180,7 @@ function Read-Target {
         environmentName = $environmentName
         location        = $location
         prefix          = $prefix
+        resourceGroupName = $resourceGroupName
     }
 }
 
@@ -198,7 +204,7 @@ function Save-TargetCatalog {
     }
 
     $catalog = [ordered]@{
-        version = 1
+        version = 2
         targets = @($Targets)
     }
     $temporaryPath = "$Path.$([guid]::NewGuid()).tmp"
@@ -249,8 +255,15 @@ function Select-Target {
         Write-Host 'Choose an Azure target:' -ForegroundColor Cyan
         for ($index = 0; $index -lt $Targets.Count; $index++) {
             $target = $Targets[$index]
-            Write-Host ("{0}. {1} | tenant {2} | subscription {3} | azd env {4}" -f `
-                ($index + 1), $target.displayName, $target.tenantId, $target.subscriptionId, $target.environmentName)
+            $resourceGroupProperty = $target.PSObject.Properties['resourceGroupName']
+            $resourceGroupName = if ($resourceGroupProperty) {
+                $resourceGroupProperty.Value
+            }
+            else {
+                "$($target.prefix)-rg"
+            }
+            Write-Host ("{0}. {1} | tenant {2} | subscription {3} | azd env {4} | resource group {5}" -f `
+                ($index + 1), $target.displayName, $target.tenantId, $target.subscriptionId, $target.environmentName, $resourceGroupName)
         }
         Write-Host 'A. Add another target'
         Write-Host 'Q. Quit'
@@ -310,7 +323,7 @@ function Connect-ToTarget {
     )
 }
 
-function Prepare-AzdEnvironment {
+function Set-AzdEnvironment {
     <# .SYNOPSIS Selects or creates and configures the target azd environment. #>
     [CmdletBinding()]
     [OutputType([void])]
@@ -351,6 +364,49 @@ function Prepare-AzdEnvironment {
     Invoke-ExternalCommand -CommandName 'azd' -Arguments @(
         'env', 'config', 'set', 'infra.parameters.prefix', $Target.prefix
     )
+    Invoke-ExternalCommand -CommandName 'azd' -Arguments @(
+        'env', 'config', 'set', 'infra.parameters.resourceGroupName', $Target.resourceGroupName
+    )
+}
+
+function Set-TargetResourceGroupName {
+    <# .SYNOPSIS Adds a resource group name to legacy target entries. #>
+    [CmdletBinding()]
+    [OutputType([object])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Target,
+
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [object[]]$Targets,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$ProfilePath
+    )
+
+    $resourceGroupProperty = $Target.PSObject.Properties['resourceGroupName']
+    if ($resourceGroupProperty -and -not [string]::IsNullOrWhiteSpace([string]$resourceGroupProperty.Value)) {
+        return $Target
+    }
+
+    $defaultResourceGroupName = "$($Target.prefix)-rg"
+    Write-Host "Target '$($Target.displayName)' has no resource group configured." -ForegroundColor Yellow
+    $resourceGroupName = Read-RequiredValue -Prompt 'Azure resource group name' -DefaultValue $defaultResourceGroupName
+    if ($resourceGroupName -notmatch '^[a-zA-Z0-9._()\-]{1,90}$') {
+        throw "Resource group name '$resourceGroupName' contains unsupported characters or is longer than 90 characters."
+    }
+
+    $Target | Add-Member -MemberType NoteProperty -Name resourceGroupName -Value $resourceGroupName
+    $targetIndex = [Array]::IndexOf($Targets, $Target)
+    if ($targetIndex -ge 0) {
+        $Targets[$targetIndex] = $Target
+        Save-TargetCatalog -Path $ProfilePath -Targets $Targets
+        Write-Host "Target catalog updated at '$ProfilePath'." -ForegroundColor Green
+    }
+
+    return $Target
 }
 
 #endregion Functions
@@ -383,6 +439,8 @@ if ($MyInvocation.InvocationName -ne '.') {
                 exit 0
             }
 
+            $target = Set-TargetResourceGroupName -Target $target -Targets $targets -ProfilePath $ProfilePath
+
                 if ($target.displayName -and @($targets | Where-Object {
                         $_.tenantId -eq $target.tenantId -and
                         $_.subscriptionId -eq $target.subscriptionId -and
@@ -394,7 +452,7 @@ if ($MyInvocation.InvocationName -ne '.') {
             }
 
             Connect-ToTarget -Target $target
-            Prepare-AzdEnvironment -Target $target -RepositoryPath $repositoryPath
+            Set-AzdEnvironment -Target $target -RepositoryPath $repositoryPath
 
             Write-Host ''
             Write-Host "Tenant / subscription selected: $($target.displayName)" -ForegroundColor Green
