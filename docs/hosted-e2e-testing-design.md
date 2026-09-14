@@ -41,13 +41,13 @@ deployment so branch deployments are not tested automatically on every commit.
 
 The Container App's existing managed identity remains dedicated to the
 application. It authenticates the application to Key Vault, Blob Storage, and
-the container registry. It will not be used as the E2E caller identity.
+the public GHCR image. It will not be used as the E2E caller identity.
 
 ## Identity Model
 
 | Identity | Purpose |
 | --- | --- |
-| Container App managed identity | Outbound access to Key Vault, Blob Storage, and ACR |
+| Container App managed identity | Outbound access to Key Vault and Blob Storage |
 | GitHub Actions OIDC service principal | Deploys resources, resolves the app, and acquires the hosted token |
 | E2E application role | Maps the hosted caller to the API's read-only User role |
 

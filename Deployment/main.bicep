@@ -4,12 +4,11 @@
 // This Bicep template deploys:
 // - Azure Container Apps Environment
 // - User-Assigned Managed Identity (for future Container App)
-// - Azure Container Registry (Basic tier)
 // - Azure Storage Account (for application data)
 // - Azure Key Vault (for secrets management)
 // - (Optional) Virtual Network with private endpoints for secure networking
 //
-// NOTE: RBAC role assignments are handled separately via assign-rbac.ps1
+// NOTE: RBAC role assignments are handled separately via assign-mi-rbac.ps1
 // ============================================================================
 
 // ============================================================================
@@ -54,7 +53,6 @@ var keyVaultName = toLower('${applicationName}-${environment}-${take(uniqueSuffi
 var containerAppEnvName = '${applicationName}-${environment}-env'
 var managedIdentityName = '${applicationName}-${environment}-identity'
 var logAnalyticsWorkspaceName = '${applicationName}-${environment}-logs'
-var containerRegistryName = toLower('${applicationName}${environment}${take(uniqueSuffix, 6)}acr')
 
 // ============================================================================
 // LOG ANALYTICS WORKSPACE
@@ -169,23 +167,6 @@ resource managedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-
 }
 
 // ============================================================================
-// AZURE CONTAINER REGISTRY
-// ============================================================================
-
-resource containerRegistry 'Microsoft.ContainerRegistry/registries@2023-07-01' = {
-  name: containerRegistryName
-  location: location
-  tags: tags
-  sku: {
-    name: 'Basic'
-  }
-  properties: {
-    adminUserEnabled: false
-    publicNetworkAccess: 'Enabled'
-  }
-}
-
-// ============================================================================
 // PRIVATE NETWORKING MODULE (conditional on enablePrivateNetworking)
 // ============================================================================
 
@@ -269,8 +250,3 @@ output managedIdentityId string = managedIdentity.id
 @description('The name of the Virtual Network (empty if private networking is disabled)')
 output virtualNetworkName string = enablePrivateNetworking ? networking!.outputs.virtualNetworkName : ''
 
-@description('The name of the Azure Container Registry')
-output containerRegistryName string = containerRegistry.name
-
-@description('The login server URL for the Azure Container Registry')
-output containerRegistryLoginServer string = containerRegistry.properties.loginServer

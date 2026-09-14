@@ -117,8 +117,18 @@ pull request is closed and will continue only when all of these conditions hold:
 The workflow will delete:
 
 * A normal source branch after it is merged into a release branch.
-* A normal source branch after it is merged into `main`.
 * A `release/<version>` branch after it is merged into `main`.
+
+For each accepted merge, the cleanup workflow also deletes the corresponding
+temporary Azure Container App and matching mutable GHCR image version:
+
+* `branch-<normalized-branch>` for a normal source branch.
+* `release-<normalized-version>` for a release branch.
+
+The workflow uses the GitHub package API with `packages: write` and matches the
+exact image tag. It does not select `latest`, commit-SHA tags, or semantic
+release tags for merge cleanup. Missing apps and image tags are treated as
+already-clean.
 
 The cleanup action will use narrowly scoped repository write permission and will not
 delete a branch when the pull request was closed without merging.

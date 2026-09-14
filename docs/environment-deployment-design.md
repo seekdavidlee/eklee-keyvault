@@ -99,11 +99,11 @@ protection rules.
 The deployment workflow does not run hosted Playwright for `main`. Production
 deployment and hosted validation are separate concerns under this design.
 
-The current production ACR image tag is `latest`, with an additional short commit
-SHA tag. A release deployment creates a dedicated release Container App rather
-than updating a branch app. The public-release design proposes moving stable
-GHCR `latest` ownership to the tag-triggered release workflow; that proposal does
-not change the temporary release-app cleanup contract.
+The current production GHCR image tag is `latest`, with an additional short
+commit SHA tag. A release deployment creates a dedicated release Container App
+rather than updating a branch app. The public-release design proposes moving
+stable GHCR `latest` ownership to the tag-triggered release workflow; that
+proposal does not change the temporary release-app cleanup contract.
 
 ## CI Routing And Deployment
 
@@ -115,10 +115,10 @@ and behavior:
 | CI concern | `dev` behavior | `prod` behavior |
 | ----------------------- | --------------------------------------------------- | ----------------------------------------------------------------- |
 | Hosted E2E tests | Separate workflow, manual for branches and automatic after successful `CI/CD` runs for `release/**` | Not run by this workflow |
-| ACR image tag | `branch-<normalized-branch>` or `release-<normalized-version>` | `latest` plus short commit SHA |
-| GHCR image publication | Not published by the current workflow | Current workflow publishes `latest` and short commit SHA |
+| GHCR image tag | `branch-<normalized-branch>` or `release-<normalized-version>` | `latest` plus short commit SHA |
+| GHCR image publication | Current workflow publishes the branch or release tag | Current workflow publishes `latest` and short commit SHA |
 | Container Apps deployment | Creates a dedicated app per branch and reuses the existing `dev` managed identity | Creates a dedicated release or production app using the selected production configuration |
-| Merge cleanup | Deletes the branch app after its branch is merged | Deletes the release app after the release is merged into `main` |
+| Merge cleanup | Deletes the branch app and matching `branch-<normalized-branch>` GHCR image after its branch is merged | Deletes the release app and matching `release-<normalized-version>` GHCR image after the release is merged into `main` |
 
 The deployment job discovers the target resources from the selected environment's
 `RESOURCE_GROUP` and deploys the image to Azure Container Apps. CI derives the
@@ -128,9 +128,9 @@ an environment from the resource group, Bicep template, image tag, or release
 version.
 
 The cleanup action must verify the source identity and resource group before
-deleting anything. It must be idempotent when the app is already absent and must
-not delete the long-lived infrastructure or the production app used by the
-`main` deployment.
+deleting anything. It must be idempotent when the app or matching GHCR image is
+already absent and must not delete the long-lived infrastructure, the production
+app used by the `main` deployment, or production image tags.
 
 ## Infrastructure Provisioning
 
@@ -216,7 +216,7 @@ been verified. A release validation app follows the same lifecycle and is
 removed after the release is merged into `main`.
 
 Use a semantic GHCR version or digest to identify a public release; do not infer
-that identity from the Azure Container Registry `latest` tag.
+that identity from the mutable GHCR `latest` tag.
 
 If the shared `dev` environment becomes disruptive, change CI in a separately
 reviewed decision to restrict deployment-triggering branch patterns or introduce

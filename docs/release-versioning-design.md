@@ -48,8 +48,9 @@ than one supported release line.
 
 The release workflow will own the `latest` GHCR tag. The existing main-branch
 workflow will stop publishing `latest` to GHCR and will publish development images
-as `edge` and commit-derived tags instead. Azure Container Registry publication and
-Azure deployment remain independent from public GitHub Releases.
+as `edge` and commit-derived tags instead. Azure deployment consumes the same
+public GHCR images by tag or digest and remains independent from public GitHub
+Releases.
 
 The first recommended release is `1.0.0`. The application is already distributed
 publicly, and the private UI manifest currently declares version `1.0.0`. If the
@@ -104,7 +105,7 @@ release metadata files, and a visible link between source, image, and digest.
 * Maintaining multiple supported major or minor release lines in the first
   implementation.
 * Guaranteeing bit-for-bit reproducible builds in the first implementation.
-* Replacing the existing Azure Container Registry and Azure deployment workflow.
+* Changing Azure infrastructure independently from the application image workflow.
 
 ## Versioning policy
 
@@ -401,8 +402,8 @@ Three concerns remain separate:
 1. Pull request and branch CI validates changes before merge.
 2. A new release workflow publishes the public, versioned GHCR package and GitHub
    Release from a tag.
-3. The existing Azure workflow publishes to Azure Container Registry and deploys
-   Azure Container Apps according to its current environment rules.
+3. The existing Azure workflow deploys Azure Container Apps from the public GHCR
+  image according to its current environment rules.
 
 The [environment and deployment design](environment-deployment-design.md) defines
 the current CI branch routing and Azure environment boundary. Creating a GitHub
@@ -643,12 +644,11 @@ The [current CI/CD workflow](../.github/workflows/cicd.yml) publishes `latest` t
 on every push to `main`. That behavior conflicts with `latest` meaning the newest
 stable release.
 
-The implementation will change only the GHCR portion of the existing workflow:
+The implementation keeps GHCR as the only container image registry:
 
 * Main-branch builds will publish `edge` and `sha-<commit>`.
 * Release builds will publish semantic tags and `latest`.
-* Azure Container Registry publication and Azure deployment retain their current tags
-  until a separate deployment-versioning decision is made.
+* Azure Container Apps consume the corresponding GHCR tag or digest.
 * The README will replace production examples that use `latest` with a semantic version
   or digest and will document `edge` as unsupported development output.
 

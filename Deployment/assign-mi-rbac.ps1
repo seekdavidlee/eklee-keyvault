@@ -6,7 +6,6 @@
 .DESCRIPTION
     This script assigns the necessary RBAC roles to the user-assigned managed identity
     by discovering resources directly from the specified resource group. It handles:
-    - AcrPull role on Container Registry
     - Key Vault Secrets Officer role on Key Vault
     - Storage Blob Data Contributor role on Storage Account
 
@@ -203,33 +202,11 @@ Write-Information "`nTarget Resources:"
 Write-Information "  Key Vault:    $keyVaultName"
 Write-Information "  Storage:      $storageAccountName"
 
-# Find the Container Registry in the same resource group
-Write-Step "Looking up Container Registry in resource group '$ResourceGroup'..."
-$registries = az acr list `
-    --resource-group $ResourceGroup `
-    --output json | ConvertFrom-Json
-
-if (-not $registries -or $registries.Count -eq 0) {
-    Write-Error "No Container Registry found in resource group '$ResourceGroup'"
-    exit 1
-}
-if ($registries.Count -gt 1) {
-    Write-Error "Multiple Container Registries found. Expected exactly one in resource group '$ResourceGroup'"
-    exit 1
-}
-
-$ContainerRegistryName = $registries[0].name
-Write-Success "Found Container Registry: $ContainerRegistryName"
-
 # Get current subscription
 $subscription = az account show --output json | ConvertFrom-Json
 $subscriptionId = $subscription.id
 
-Write-Information "`nContainer Registry:"
-Write-Information "  Name:         $ContainerRegistryName"
-
 # Build resource scopes
-$acrScope = "/subscriptions/$subscriptionId/resourceGroups/$ResourceGroup/providers/Microsoft.ContainerRegistry/registries/$ContainerRegistryName"
 $keyVaultScope = "/subscriptions/$subscriptionId/resourceGroups/$ResourceGroup/providers/Microsoft.KeyVault/vaults/$keyVaultName"
 $storageScope = "/subscriptions/$subscriptionId/resourceGroups/$ResourceGroup/providers/Microsoft.Storage/storageAccounts/$storageAccountName"
 
@@ -240,20 +217,10 @@ $storageScope = "/subscriptions/$subscriptionId/resourceGroups/$ResourceGroup/pr
 Write-Header "Assigning RBAC Roles"
 
 $successCount = 0
-$totalRoles = 3
+$totalRoles = 2
 
-# 1. AcrPull on Container Registry
-Write-Information "`n[1/3] Container Registry - AcrPull Role"
-if (New-RoleAssignment `
-    -PrincipalId $managedIdentityPrincipalId `
-    -RoleDefinitionName "AcrPull" `
-    -Scope $acrScope `
-    -Description "Pull container images from Azure Container Registry") {
-    $successCount++
-}
-
-# 2. Key Vault Secrets Officer on Key Vault
-Write-Information "`n[2/3] Key Vault - Secrets Officer Role"
+# 1. Key Vault Secrets Officer on Key Vault
+Write-Information "`n[1/2] Key Vault - Secrets Officer Role"
 if (New-RoleAssignment `
     -PrincipalId $managedIdentityPrincipalId `
     -RoleDefinitionName "Key Vault Secrets Officer" `
@@ -262,8 +229,8 @@ if (New-RoleAssignment `
     $successCount++
 }
 
-# 3. Storage Blob Data Contributor on Storage Account
-Write-Information "`n[3/3] Storage Account - Blob Data Contributor Role"
+# 2. Storage Blob Data Contributor on Storage Account
+Write-Information "`n[2/2] Storage Account - Blob Data Contributor Role"
 if (New-RoleAssignment `
     -PrincipalId $managedIdentityPrincipalId `
     -RoleDefinitionName "Storage Blob Data Contributor" `
@@ -294,7 +261,6 @@ if ($successCount -eq $totalRoles) {
     Write-Information "2. Deploy your Container App with this identity:"
     Write-Information "   --user-assigned $managedIdentityId"
     Write-Information "3. The Container App will have access to:"
-    Write-Information "   - Pull images from Container Registry"
     Write-Information "   - Read, write, and delete secrets in Key Vault"
     Write-Information "   - Access blob storage data"
 }

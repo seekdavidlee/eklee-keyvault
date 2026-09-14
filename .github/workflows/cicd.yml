@@ -93,27 +93,12 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v6
 
-      - name: Login to Azure with OIDC
-        uses: azure/login@v3
+      - name: Login to GitHub Container Registry
+        uses: docker/login-action@v4
         with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Discover ACR from resource group
-        id: acr
-        run: |
-          ACR_NAME=$(az acr list --resource-group "${{ vars.RESOURCE_GROUP }}" --query "[0].name" -o tsv)
-          if [[ -z "$ACR_NAME" ]]; then
-            echo "::error::No Azure Container Registry found in resource group '${{ vars.RESOURCE_GROUP }}'."
-            exit 1
-          fi
-          echo "acr_name=$ACR_NAME" >> "$GITHUB_OUTPUT"
-          echo "Discovered ACR: $ACR_NAME"
-
-      - name: Login to Azure Container Registry
-        run: |
-          az acr login --name ${{ steps.acr.outputs.acr_name }}
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
 
       - name: Set image tag
         id: image-tag
@@ -130,7 +115,7 @@ jobs:
             TAG="branch-${BRANCH_SLUG}"
           fi
           echo "tag=$TAG" >> $GITHUB_OUTPUT
-          echo "image=${{ steps.acr.outputs.acr_name }}.azurecr.io/eklee-keyvault:$TAG" >> $GITHUB_OUTPUT
+          echo "image=ghcr.io/${{ github.repository }}:$TAG" >> $GITHUB_OUTPUT
 
       - name: Build Docker image
         run: |
@@ -138,7 +123,7 @@ jobs:
             --target runtime \
             .
 
-      - name: Push Docker image to ACR
+      - name: Push Docker image to GHCR
         run: |
           docker push ${{ steps.image-tag.outputs.image }}
 
@@ -147,49 +132,16 @@ jobs:
         run: |
           # For production, also tag with the commit SHA
           docker tag ${{ steps.image-tag.outputs.image }} \
-            ${{ steps.acr.outputs.acr_name }}.azurecr.io/eklee-keyvault:${GITHUB_SHA::8}
-          docker push ${{ steps.acr.outputs.acr_name }}.azurecr.io/eklee-keyvault:${GITHUB_SHA::8}
+            ghcr.io/${{ github.repository }}:${GITHUB_SHA::8}
+          docker push ghcr.io/${{ github.repository }}:${GITHUB_SHA::8}
 
       - name: Output image details
         run: |
           echo "✅ Successfully built and pushed image:"
           echo "   ${{ steps.image-tag.outputs.image }}"
           if [[ "${{ needs.setup.outputs.build_env }}" == "prod" ]]; then
-            echo "   ${{ steps.acr.outputs.acr_name }}.azurecr.io/eklee-keyvault:${GITHUB_SHA::8}"
+            echo "   ghcr.io/${{ github.repository }}:${GITHUB_SHA::8}"
           fi
-
-  push-ghcr:
-    name: Push to GitHub Container Registry
-    needs: [setup, test-dotnet, test-npm]
-    if: ${{ github.ref == 'refs/heads/main' && !failure() && !cancelled() }}
-    runs-on: ubuntu-latest
-    environment: ${{ needs.setup.outputs.build_env }}
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Login to GitHub Container Registry
-        uses: docker/login-action@v4
-        with:
-          registry: ghcr.io
-          username: ${{ github.actor }}
-          password: ${{ secrets.GITHUB_TOKEN }}
-
-      - name: Build and push to GHCR
-        run: |
-          IMAGE="ghcr.io/${{ github.repository }}:latest"
-          IMAGE_SHA="ghcr.io/${{ github.repository }}:${GITHUB_SHA::8}"
-
-          docker build -t "$IMAGE" -t "$IMAGE_SHA" \
-            --target runtime \
-            .
-
-          docker push "$IMAGE"
-          docker push "$IMAGE_SHA"
-          echo "✅ Pushed public image to GHCR:"
-          echo "   $IMAGE"
-          echo "   $IMAGE_SHA"
 
   deploy:
     name: Deploy to Azure Container Apps
@@ -214,10 +166,6 @@ jobs:
           RESOURCE_GROUP="${{ vars.RESOURCE_GROUP }}"
           IMAGE="${{ needs.build-and-push.outputs.image }}"
           CONTAINER_APP_NAME="${{ needs.setup.outputs.container_app_name }}"
-
-          # Discover ACR from resource group
-          ACR_NAME=$(az acr list --resource-group "$RESOURCE_GROUP" --query "[0].name" -o tsv)
-          ACR_SERVER="${ACR_NAME}.azurecr.io"
 
           # Discover infrastructure resources from the resource group
           ENV_NAME=$(az containerapp env list --resource-group "$RESOURCE_GROUP" --query "[0].name" -o tsv)
@@ -260,8 +208,6 @@ jobs:
               --target-port 8080 \
               --ingress external \
               --user-assigned "$IDENTITY_ID" \
-              --registry-server "$ACR_SERVER" \
-              --registry-identity "$IDENTITY_ID" \
               --cpu 0.5 \
               --memory 1.0Gi \
               --min-replicas 0 \

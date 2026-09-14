@@ -152,7 +152,7 @@ Pre-fetched tokens expire after approximately 1 hour. Re-run `.\run-local.ps1` (
 ## Automated Deployment
 
 1. Fork this repo.
-1. Run `Deployment/setup-gh-deploy.ps1` to create the deployment service principal, resource groups, RBAC assignments, and set the deployment-related GitHub environment variables (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `RESOURCE_GROUP`, `ACR_RESOURCE_GROUP`).
+1. Run `Deployment/setup-gh-deploy.ps1` to create the deployment service principal, resource groups, RBAC assignments, and set the deployment-related GitHub environment variables (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `RESOURCE_GROUP`).
 1. Run `Eklee.KeyVault.Api/setup-app-registration.ps1` with the `-GitHubOrganization`, `-GitHubRepoName`, and `-AzureAdRedirectUriDev` (and optionally `-AzureAdRedirectUriProd`) parameters to create the app registration and set the SPA-related GitHub environment variables (`VITE_AZURE_AD_CLIENT_ID`, `VITE_AZURE_AD_AUTHORITY`, `VITE_AZURE_AD_REDIRECT_URI`).
 1. Deploy infrastructure by running the **Deploy Infrastructure** workflow (`deploy-infra.yml`):
 
@@ -165,6 +165,8 @@ Pre-fetched tokens expire after approximately 1 hour. Re-run `.\run-local.ps1` (
 1. Register the Container App URL as a SPA redirect URI in the Entra ID app registration.
 1. Perform user role assignments per [Post Deployment RBAC](#post-deployment-rbac).
 
+When a same-repository pull request is merged into a `release/*` branch, the cleanup workflow deletes the matching temporary Container App and `branch-<normalized-branch>` GHCR image. When a release branch is merged into `main`, it deletes the release Container App and `release-<normalized-version>` GHCR image. The long-lived `main` Container App and production image tags are not deleted.
+
 The two setup scripts configure the following GitHub environment variables (per `dev`/`prod`):
 
 | Variable | Set by |
@@ -172,7 +174,6 @@ The two setup scripts configure the following GitHub environment variables (per 
 | `AZURE_CLIENT_ID` | `setup-gh-deploy.ps1` |
 | `AZURE_TENANT_ID` | `setup-gh-deploy.ps1` |
 | `AZURE_SUBSCRIPTION_ID` | `setup-gh-deploy.ps1` |
-| `ACR_RESOURCE_GROUP` | `setup-gh-deploy.ps1` |
 | `RESOURCE_GROUP` | `setup-gh-deploy.ps1` |
 | `VITE_AZURE_AD_CLIENT_ID` | `setup-app-registration.ps1` |
 | `VITE_AZURE_AD_AUTHORITY` | `setup-app-registration.ps1` |
@@ -186,7 +187,7 @@ Optionally, you can configure a custom domain for your Azure Container App. Afte
 
 You can create an Azure Container App directly from the public GHCR image without
 building the Docker image yourself. This is useful for quick deployments or
-environments where you do not need a private Azure Container Registry.
+environments without provisioning a separate Azure container registry.
 
 The public image is available at:
 
@@ -281,13 +282,12 @@ There are a few important roles to note:
 
 - **Key Vault Secrets User** — "Read secret contents." Assigned to the managed identity by `assign-mi-rbac.ps1`.
 - **Storage Blob Data Contributor** — Allows the managed identity to read/write user-access config in blob storage.
-- **AcrPull** — Allows the managed identity to pull container images from Azure Container Registry.
 
 The managed identity RBAC is handled by the script in the Deployment folder:
 
 ```powershell
 cd Deployment
-.\assign-mi-rbac.ps1 -ResourceGroup <resource-group-name> -ContainerRegistryResourceGroup <acr-resource-group>
+.\assign-mi-rbac.ps1 -ResourceGroup <resource-group-name>
 ```
 
 See [Deployment/README.md](Deployment/README.md) for detailed instructions.

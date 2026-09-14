@@ -11,7 +11,7 @@ The infrastructure includes:
 - **Azure Storage Account** - For application data and blob storage
 - **Azure Key Vault** - For secure secrets and key management
 - **Log Analytics Workspace** - For application monitoring and logging
-- **RBAC Role Assignments** - Managed via separate PowerShell script (`assign-rbac.ps1`)
+- **RBAC Role Assignments** - Managed via separate PowerShell script (`assign-mi-rbac.ps1`)
 - **(Optional) Virtual Network** - VNET with subnets for Container Apps and private endpoints
 - **(Optional) Private Endpoints** - Secure connectivity to Storage Account and Key Vault
 
@@ -23,9 +23,7 @@ graph TB
     B[User-Assigned Managed Identity] 
     C[Key Vault]
     D[Storage Account]
-    E[Container Registry]
-    G[assign-rbac.ps1] -.Assigns Permissions.-> B
-    G -.AcrPull.-> E
+    G[assign-mi-rbac.ps1] -.Assigns Permissions.-> B
     G -.Secrets User.-> C
     G -.Blob Contributor.-> D
     
@@ -33,11 +31,10 @@ graph TB
     style B fill:#ffb900,stroke:#fff,stroke-width:2px,color:#000
     style C fill:#f25022,stroke:#fff,stroke-width:2px,color:#fff
     style D fill:#7fba00,stroke:#fff,stroke-width:2px,color:#fff
-    style E fill:#00a4ef,stroke:#fff,stroke-width:2px,color:#fff
     style G fill:#e3e3e3,stroke:#333,stroke-width:2px,color:#000
 ```
 
-> **Note:** This deployment prepares the infrastructure foundation. RBAC roles are assigned via the `assign-rbac.ps1` script after deployment. The Container App itself will be deployed separately using the pre-configured managed identity.
+> **Note:** This deployment prepares the infrastructure foundation. Azure RBAC roles are assigned via the `assign-mi-rbac.ps1` script after deployment. The Container App itself will be deployed separately using the pre-configured managed identity and public GHCR image.
 
 ## 📂 Files
 
@@ -45,7 +42,7 @@ graph TB
 |------|-------------|
 | `main.bicep` | Main infrastructure template |
 | `networking.bicep` | Private networking module (VNET, NSGs, DNS zones, private endpoints) |
-| `assign-rbac.ps1` | RBAC role assignment script (run after deployment) |
+| `assign-mi-rbac.ps1` | Managed identity RBAC role assignment script (run after deployment) |
 | `README.md` | This file |
 
 ## 🚀 Prerequisites
@@ -58,9 +55,9 @@ Before deploying, ensure you have:
    az login
    ```
 
-2. **Azure Container Registry** with your container image
-   - ACR name and resource group
-   - Container image pushed to ACR
+2. **Public GHCR package** containing the application image
+  - `ghcr.io/seekdavidlee/eklee-keyvault`
+  - No Azure registry or registry credentials are required
 
 3. **Required permissions** in your Azure subscription
    - Contributor role on the resource group
@@ -129,12 +126,9 @@ az deployment group create `
   --name "eklee-keyvault-deployment-$(Get-Date -Format 'yyyyMMdd-HHmmss')" `
   --parameters enablePrivateNetworking=true
 
-# Assign RBAC roles (required after deployment)
-.\assign-rbac.ps1 `
-  -Environment dev `
-  -ResourceGroup $resourceGroup `
-  -ContainerRegistryName "myacr" `
-  -ContainerRegistryResourceGroup "acr-rg"
+# Assign managed identity RBAC roles (required after deployment)
+.\assign-mi-rbac.ps1 `
+  -ResourceGroup $resourceGroup
 ```
 
 > **Note:** Set `enablePrivateNetworking` to `true` (default in the GitHub Actions workflow) to deploy with a VNET, private endpoints for Storage and Key Vault, and disabled public network access. Set to `false` for public network access.
@@ -155,12 +149,9 @@ az deployment group create `
   --template-file main.bicep `
   --name "eklee-keyvault-deployment-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
 
-# Assign RBAC roles (required after deployment)
-.\assign-rbac.ps1 `
-  -Environment prod `
-  -ResourceGroup $resourceGroup `
-  -ContainerRegistryName "myacr" `
-  -ContainerRegistryResourceGroup "acr-rg"
+# Assign managed identity RBAC roles (required after deployment)
+.\assign-mi-rbac.ps1 `
+  -ResourceGroup $resourceGroup
 ```
 
 ### Deploy with What-If Analysis
@@ -171,17 +162,6 @@ Preview changes before deployment:
 az deployment group what-if `
   --resource-group $resourceGroup `
   --template-file main.bicep
-```
-
-### Deploy with Cross-Subscription ACR
-
-If the ACR is in a different subscription:
-
-```powershell
-az deployment group create `
-  --resource-group $resourceGroup `
-  --template-file main.bicep `
-  --parameters containerRegistryResourceGroup="/subscriptions/{subscription-id}/resourceGroups/{rg-name}"
 ```
 
 ## 🔐 Assign RBAC Roles
@@ -200,16 +180,12 @@ RBAC role assignments are managed outside of Bicep to:
 
 ```powershell
 # Run the RBAC assignment script
-.\assign-rbac.ps1 `
-  -Environment dev `
-  -ResourceGroup eklee-keyvault-dev-rg `
-  -ContainerRegistryName myacr `
-  -ContainerRegistryResourceGroup acr-rg
+.\assign-mi-rbac.ps1 `
+  -ResourceGroup eklee-keyvault-dev-rg
 ```
 
 The script assigns these roles to the managed identity:
-- **AcrPull** - Pull container images from Container Registry
-- **Key Vault Secrets User** - Read secrets from Key Vault
+- **Key Vault Secrets Officer** - Read and manage secrets in Key Vault
 - **Storage Blob Data Contributor** - Access blob storage data
 
 ### Verify Role Assignments
@@ -229,8 +205,7 @@ The deployment implements several security best practices:
 - No credentials in configuration or code
 
 ### ✅ RBAC Assignments (via PowerShell Script)
-- **AcrPull** - Pull container images from Azure Container Registry
-- **Key Vault Secrets User** - Read secrets from Key Vault
+- **Key Vault Secrets Officer** - Read and manage secrets in Key Vault
 - **Storage Blob Data Contributor** - Access blob storage
 - Assigned separately for better control and troubleshooting
 
@@ -308,9 +283,8 @@ az containerapp create `
   --name ekleekv-dev-app `
   --resource-group $resourceGroup `
   --environment $envId `
-  --image myacr.azurecr.io/eklee-keyvault-api:latest `
+  --image ghcr.io/seekdavidlee/eklee-keyvault:latest `
   --user-assigned $identityId `
-  --registry-identity $identityId `
   --ingress external `
   --target-port 8080 `
   --cpu 0.5 `
@@ -324,7 +298,7 @@ az containerapp create `
 az containerapp update `
   --name ekleekv-dev-app `
   --resource-group $resourceGroup `
-  --image myacr.azurecr.io/eklee-keyvault-api:v1.1.0
+  --image ghcr.io/seekdavidlee/eklee-keyvault:latest
 ```
 
 ### View Logs
@@ -405,11 +379,8 @@ Quick commands for common operations with your deployed infrastructure.
 
 #### Assign Roles to Managed Identity
 ```powershell
-# Assign all roles at once
-.\assign-rbac.ps1 -Environment dev -ContainerRegistryName myacr -ContainerRegistryResourceGroup acr-rg
-
-# Use specific deployment name
-.\assign-rbac.ps1 -Environment prod -DeploymentName eklee-keyvault-20250221-143000 -ContainerRegistryName myacr -ContainerRegistryResourceGroup acr-rg
+# Assign all required roles at once
+.\assign-mi-rbac.ps1 -ResourceGroup eklee-keyvault-dev-rg
 ```
 
 #### Verify Role Assignments
@@ -420,15 +391,10 @@ $principalId = az identity show --name ekleekv-dev-identity --resource-group ekl
 # List all role assignments
 az role assignment list --assignee $principalId --output table
 
-# Check specific role
-az role assignment list --assignee $principalId --role "AcrPull" --output table
 ```
 
 #### Remove Role Assignments
 ```powershell
-# Remove specific role assignment
-az role assignment delete --assignee $principalId --role "AcrPull" --scope /subscriptions/{sub-id}/resourceGroups/{rg}/providers/Microsoft.ContainerRegistry/registries/{acr-name}
-
 # Remove all assignments for the identity
 az role assignment list --assignee $principalId --query "[].id" -o tsv | ForEach-Object { az role assignment delete --ids $_ }
 ```
@@ -454,7 +420,7 @@ az monitor log-analytics query --workspace {workspace-id} --analytics-query "Con
 #### Update Container Image
 ```powershell
 # Update to new version
-az containerapp update --name ekleekv-dev-app --resource-group eklee-keyvault-dev-rg --image myacr.azurecr.io/eklee-keyvault-api:v1.1.0
+az containerapp update --name ekleekv-dev-app --resource-group eklee-keyvault-dev-rg --image ghcr.io/seekdavidlee/eklee-keyvault:latest
 
 # Restart container app
 az containerapp revision restart --name ekleekv-dev-app --resource-group eklee-keyvault-dev-rg
@@ -571,6 +537,19 @@ az containerapp show --name ekleekv-dev-app --resource-group eklee-keyvault-dev-
 ```
 
 ### Cleanup Operations
+
+#### Automated Merge Cleanup
+
+The `cleanup-container-app.yml` workflow runs after same-repository pull requests
+are merged. It removes the temporary Container App and matching public GHCR image:
+
+- Merging a normal branch into `release/*` deletes its `ekv-branch-*` Container App
+  and `branch-<normalized-branch>` image tag.
+- Merging `release/<version>` into `main` deletes its `ekv-release-*` Container App
+  and `release-<normalized-version>` image tag.
+
+The cleanup is idempotent when either resource is already absent and never targets
+the long-lived `main` Container App or its production image tags.
 
 #### Delete Individual Resources
 ```powershell

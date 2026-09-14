@@ -1,4 +1,4 @@
-name: Cleanup Merged Container App
+name: Cleanup Merged Container App and GHCR Image
 
 on:
   pull_request:
@@ -7,12 +7,14 @@ on:
 permissions:
   id-token: write
   contents: read
+  packages: write
 
 jobs:
   cleanup:
     name: Delete merged branch or release Container App
     if: >-
       github.event.pull_request.merged == true &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
       (
         startsWith(github.event.pull_request.base.ref, 'release/') ||
         (
@@ -67,3 +69,48 @@ jobs:
           else
             echo "Container App '$container_app_name' is already absent."
           fi
+
+      - name: Delete merged GHCR image
+        if: always()
+        env:
+          BRANCH_NAME: ${{ github.event.pull_request.head.ref }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          package_owner="${GITHUB_REPOSITORY%%/*}"
+          package_name="${GITHUB_REPOSITORY#*/}"
+          package_name=$(printf '%s' "$package_name" | tr '[:upper:]' '[:lower:]')
+
+          if [[ "$BRANCH_NAME" == release/* ]]; then
+            version="${BRANCH_NAME#release/}"
+            version=$(printf '%s' "$version" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9.-]+/-/g')
+            image_tag="release-${version}"
+          else
+            branch_slug=$(printf '%s' "$BRANCH_NAME" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')
+            image_tag="branch-${branch_slug}"
+          fi
+
+          owner_type=$(gh api "/users/${package_owner}" --jq '.type')
+          if [[ "$owner_type" == "Organization" ]]; then
+            versions_endpoint="/orgs/${package_owner}/packages/container/${package_name}/versions"
+            delete_endpoint="$versions_endpoint"
+          else
+            versions_endpoint="/users/${package_owner}/packages/container/${package_name}/versions"
+            delete_endpoint="/user/packages/container/${package_name}/versions"
+          fi
+
+          version_ids=$(IMAGE_TAG="$image_tag" gh api --paginate \
+            "${versions_endpoint}?per_page=100" \
+            --jq '.[] | select((.metadata.container.tags // []) | index(env.IMAGE_TAG)) | .id')
+
+          if [[ -z "$version_ids" ]]; then
+            echo "GHCR image tag '${image_tag}' is already absent."
+            exit 0
+          fi
+
+          while IFS= read -r version_id; do
+            [[ -z "$version_id" ]] && continue
+            gh api --method DELETE --silent "${delete_endpoint}/${version_id}"
+            echo "Deleted GHCR image tag '${image_tag}' (package version ${version_id})."
+          done <<< "$version_ids"
