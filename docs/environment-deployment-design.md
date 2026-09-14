@@ -30,14 +30,12 @@ estimated_reading_time: 8
 
 ## Status
 
-Proposed. This document records the intended per-branch and per-release
+Current. This document records the per-branch and per-release
 Container App lifecycle and the operational safeguards required to rely on it.
 
-The checked-in workflow is not yet evidence that this lifecycle is implemented.
-At the time of this update, `cicd.yml` still uses the fixed Container App name
-`eklee-keyvault`, and this repository does not contain the merge-cleanup action
-described below. Those implementation changes must land before this design is
-treated as current behavior.
+The checked-in workflows implement the per-reference deployment, hosted E2E,
+and cleanup paths. Azure resources and GitHub Environment values remain
+deployment prerequisites that must be verified outside the repository.
 
 ## Decision Summary
 
@@ -48,12 +46,12 @@ and each branch or release deployment receives its own temporary Container App:
 | -------------------------- | -------------------- | ---------------------- |
 | `main` | `prod` | Production deployment path |
 | Any other pushed branch | `dev` | Creates a dedicated branch Container App |
-| Release source | Release workflow configuration | Creates a dedicated release Container App |
+| `release/*` branch | `dev` | Creates a dedicated release Container App |
 | Tag | Not handled by `cicd.yml` | Public release workflow owns tag processing |
 
-The rule is intentionally broader than a naming convention such as `feat/*`,
-`fix/*`, or `release/*`. A branch named `release/1.0.0`, for example, currently
-selects `dev` because it is not `main`.
+The rule is intentionally broader than a naming convention such as `feat/*` or
+`fix/*`. A `release/*` branch still selects `dev`, but receives the release app
+name and release image tag used by the hosted validation lifecycle.
 
 Environment selection is not evidence that an Azure deployment completed. A
 selected environment supplies the configuration context for the downstream jobs;
@@ -65,10 +63,10 @@ update one shared app.
 
 This design defines the relationship among branch pushes, release deployments,
 GitHub Environments, infrastructure provisioning, application-image publication,
-temporary Azure Container Apps, and their merge cleanup.
+temporary Azure Container Apps, hosted Playwright execution, and merge cleanup.
 
-It does not change the existing workflow, configure GitHub or Azure resources, or
-approve a broader branching strategy.
+It does not configure GitHub or Azure resources or approve a broader branching
+strategy.
 
 ## Environment Model
 
@@ -76,17 +74,17 @@ approve a broader branching strategy.
 
 `dev` is the shared non-production environment. CI selects it for every branch
 push other than `main`. Each branch deployment creates a separate Container App
-in the shared `dev` resource group. The E2E job runs only when `dev` is selected
-and reads environment-scoped variables and secrets from the `dev` GitHub
-Environment.
+in the shared `dev` resource group. Hosted Playwright runs in its own workflow,
+manually for a selected branch and automatically after successful `CI/CD` runs
+for `release/**` branches.
 
 Branch Container Apps reuse the existing user-assigned managed identity in the
 `dev` environment. The deployment action discovers that identity and assigns it
 to each new app; it does not create a managed identity for every branch.
 
-The current application image tag in Azure Container Registry is
-`dev-<short-commit-sha>`. This identifies a development build and is not a
-semantic release version.
+Branch images use `branch-<normalized-branch>` and release images use
+`release-<normalized-version>`. The commit SHA remains available from the
+workflow and deployment metadata for immutable traceability.
 
 Because every non-`main` branch selects the same environment and resource group,
 the app name and cleanup logic must be derived from a validated branch identity.
@@ -98,11 +96,8 @@ CI selects `prod` only for a push to `main`. The `prod` GitHub Environment
 provides the environment-scoped deployment variables and may enforce configured
 protection rules.
 
-The workflow currently skips the E2E job when `prod` is selected, while the build
-and deployment jobs declare that job as a dependency. Before documenting an
-automatic completed production deployment, maintainers must verify a successful
-`main` run or adjust the workflow's dependency conditions. The repository source
-alone establishes `prod` selection, not a successful end-to-end deployment.
+The deployment workflow does not run hosted Playwright for `main`. Production
+deployment and hosted validation are separate concerns under this design.
 
 The current production ACR image tag is `latest`, with an additional short commit
 SHA tag. A release deployment creates a dedicated release Container App rather
@@ -119,8 +114,8 @@ and behavior:
 
 | CI concern | `dev` behavior | `prod` behavior |
 | ----------------------- | --------------------------------------------------- | ----------------------------------------------------------------- |
-| E2E tests | Runs against the branch Container App and `dev` configuration | Is conditionally skipped |
-| ACR image tag | `dev-<short-commit-sha>` | `latest` plus short commit SHA |
+| Hosted E2E tests | Separate workflow, manual for branches and automatic after successful `CI/CD` runs for `release/**` | Not run by this workflow |
+| ACR image tag | `branch-<normalized-branch>` or `release-<normalized-version>` | `latest` plus short commit SHA |
 | GHCR image publication | Not published by the current workflow | Current workflow publishes `latest` and short commit SHA |
 | Container Apps deployment | Creates a dedicated app per branch and reuses the existing `dev` managed identity | Creates a dedicated release or production app using the selected production configuration |
 | Merge cleanup | Deletes the branch app after its branch is merged | Deletes the release app after the release is merged into `main` |
@@ -248,6 +243,8 @@ for those changes.
 ## References
 
 * [CI/CD workflow](../.github/workflows/cicd.yml)
+* [Hosted Playwright workflow](../.github/workflows/hosted-e2e.yml)
+* [Container App cleanup workflow](../.github/workflows/cleanup-container-app.yml)
 * [Infrastructure deployment workflow](../.github/workflows/deploy-infra.yml)
 * [Bicep environment parameter](../Deployment/main.bicep)
 * [GitHub deployment setup](../Deployment/setup-gh-deploy.ps1)

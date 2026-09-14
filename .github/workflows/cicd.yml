@@ -22,22 +22,26 @@ jobs:
     name: Choose Secrets Environment
     runs-on: ubuntu-latest
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
       - id: setup
         name: Setup Environment
-        # main branch uses prod; all other branches use dev
         run: |
           if [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
-            echo "build_env=prod" >> $GITHUB_OUTPUT
+            echo "build_env=prod" >> "$GITHUB_OUTPUT"
           else
-            echo "build_env=dev" >> $GITHUB_OUTPUT
+            echo "build_env=dev" >> "$GITHUB_OUTPUT"
           fi
+          container_app_name=$(BRANCH_NAME="${GITHUB_REF_NAME}" bash .github/scripts/resolve-container-app-name.sh)
+          echo "container_app_name=$container_app_name" >> "$GITHUB_OUTPUT"
     outputs:
       build_env: ${{ steps.setup.outputs.build_env }}
+      container_app_name: ${{ steps.setup.outputs.container_app_name }}
 
   test-dotnet:
     name: Test .NET Build
     runs-on: ubuntu-latest
-    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -57,7 +61,6 @@ jobs:
   test-npm:
     name: Test npm Build
     runs-on: ubuntu-latest
-    
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
@@ -77,304 +80,9 @@ jobs:
         working-directory: Eklee.KeyVault.UI
         run: npm run build
 
-  e2e-test:
-    name: Playwright E2E Tests
-    needs: [setup, test-dotnet, test-npm]
-    if: needs.setup.outputs.build_env == 'dev'
-    runs-on: ubuntu-latest
-    environment: dev
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v6
-
-      - name: Setup Node.js
-        uses: actions/setup-node@v5
-        with:
-          node-version: '22'
-          cache: 'npm'
-          cache-dependency-path: Eklee.KeyVault.UI/package-lock.json
-
-      - name: Setup .NET
-        uses: actions/setup-dotnet@v5
-        with:
-          dotnet-version: '10.0.x'
-          dotnet-quality: 'preview'
-
-      - name: Install UI dependencies
-        working-directory: Eklee.KeyVault.UI
-        run: npm ci
-
-      - name: Install Playwright browsers
-        working-directory: Eklee.KeyVault.UI
-        run: npx playwright install --with-deps chromium
-
-      - name: Build UI
-        working-directory: Eklee.KeyVault.UI
-        run: npm run build
-
-      - name: Publish API
-        run: dotnet publish Eklee.KeyVault.Api/Eklee.KeyVault.Api.csproj -c Release -o ./publish
-
-      - name: Copy UI build to API wwwroot
-        run: |
-          mkdir -p ./publish/wwwroot
-          if [ ! -d "Eklee.KeyVault.UI/dist" ]; then
-            echo "UI build output directory 'Eklee.KeyVault.UI/dist' does not exist."
-            exit 1
-          fi
-          cp -r Eklee.KeyVault.UI/dist/. ./publish/wwwroot/
-
-      - name: Login to Azure with OIDC
-        uses: azure/login@v3
-        with:
-          client-id: ${{ vars.AZURE_CLIENT_ID }}
-          tenant-id: ${{ vars.AZURE_TENANT_ID }}
-          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
-
-      - name: Validate required environment variables
-        run: |
-          set -euo pipefail
-          missing=()
-          [[ -z "${{ vars.RESOURCE_GROUP }}" ]] && missing+=("RESOURCE_GROUP")
-          [[ -z "${{ vars.VITE_AZURE_AD_CLIENT_ID }}" ]] && missing+=("VITE_AZURE_AD_CLIENT_ID")
-          [[ -z "${{ vars.AZURE_TENANT_ID }}" ]] && missing+=("AZURE_TENANT_ID")
-          if [[ ${#missing[@]} -gt 0 ]]; then
-            echo "::error::Missing required environment variables: ${missing[*]}"
-            echo "Set these in GitHub Settings → Environments → dev → Variables"
-            exit 1
-          fi
-
-      - name: Resolve E2E resources
-        id: resources
-        env:
-          RESOURCE_GROUP: ${{ vars.RESOURCE_GROUP }}
-          DEPLOYMENT_ENVIRONMENT: ${{ needs.setup.outputs.build_env }}
-          KEYVAULT_URI_OVERRIDE: ${{ vars.E2E_KEYVAULT_URI }}
-          STORAGE_URI_OVERRIDE: ${{ vars.E2E_STORAGE_URI }}
-        run: |
-          bash .github/scripts/resolve-e2e-resources.sh
-
-      - name: Verify RBAC for CI identity
-        run: |
-          set -euo pipefail
-
-          # Resolve the service principal object ID for the federated identity
-          SP_OBJECT_ID=$(az ad sp show --id "${{ vars.AZURE_CLIENT_ID }}" --query id -o tsv)
-          echo "Service Principal Object ID: $SP_OBJECT_ID"
-
-          ERRORS=()
-
-          # --- Key Vault RBAC check ---
-          KV_RESOURCE_ID=$(az keyvault show --name "${{ steps.resources.outputs.kv_name }}" --query id -o tsv)
-          KV_ROLES=$(az role assignment list --assignee "$SP_OBJECT_ID" --scope "$KV_RESOURCE_ID" --output json)
-          REQUIRED_KV_ROLE="Key Vault Secrets Officer"
-          HAS_KV_ROLE=$(echo "$KV_ROLES" | jq -r --arg role "$REQUIRED_KV_ROLE" '[.[] | select(.roleDefinitionName == $role)] | length')
-
-          if [[ "$HAS_KV_ROLE" -gt 0 ]]; then
-            echo "✅ CI identity has '$REQUIRED_KV_ROLE' on Key Vault '${{ steps.resources.outputs.kv_name }}'."
-          else
-            ASSIGNED=$(echo "$KV_ROLES" | jq -r '[.[].roleDefinitionName] | join(", ")')
-            echo "::error::CI identity does NOT have '$REQUIRED_KV_ROLE' on Key Vault '${{ steps.resources.outputs.kv_name }}'. Assigned roles: ${ASSIGNED:-none}"
-            echo "Fix: az role assignment create --assignee $SP_OBJECT_ID --role '$REQUIRED_KV_ROLE' --scope $KV_RESOURCE_ID"
-            ERRORS+=("Missing $REQUIRED_KV_ROLE on Key Vault")
-          fi
-
-          # --- Storage Account RBAC check ---
-          SA_RESOURCE_ID=$(az storage account show --name "${{ steps.resources.outputs.sa_name }}" --query id -o tsv)
-          SA_ROLES=$(az role assignment list --assignee "$SP_OBJECT_ID" --scope "$SA_RESOURCE_ID" --output json)
-          REQUIRED_SA_ROLE="Storage Blob Data Contributor"
-          HAS_SA_ROLE=$(echo "$SA_ROLES" | jq -r --arg role "$REQUIRED_SA_ROLE" '[.[] | select(.roleDefinitionName == $role)] | length')
-
-          if [[ "$HAS_SA_ROLE" -gt 0 ]]; then
-            echo "✅ CI identity has '$REQUIRED_SA_ROLE' on Storage Account '${{ steps.resources.outputs.sa_name }}'."
-          else
-            ASSIGNED=$(echo "$SA_ROLES" | jq -r '[.[].roleDefinitionName] | join(", ")')
-            echo "::error::CI identity does NOT have '$REQUIRED_SA_ROLE' on Storage Account '${{ steps.resources.outputs.sa_name }}'. Assigned roles: ${ASSIGNED:-none}"
-            echo "Fix: az role assignment create --assignee $SP_OBJECT_ID --role '$REQUIRED_SA_ROLE' --scope $SA_RESOURCE_ID"
-            ERRORS+=("Missing $REQUIRED_SA_ROLE on Storage Account")
-          fi
-
-          if [[ ${#ERRORS[@]} -gt 0 ]]; then
-            echo "::error::RBAC check failed. Grant the required roles to the CI service principal (${{ vars.AZURE_CLIENT_ID }})."
-            exit 1
-          fi
-
-      - name: Enable public network access for E2E tests
-        id: enable-public-access
-        run: |
-          set -euo pipefail
-          echo "Temporarily enabling public network access..."
-
-          az keyvault update \
-            --name "${{ steps.resources.outputs.kv_name }}" \
-            --public-network-access Enabled \
-            --default-action Allow \
-            --output none
-          echo "✅ Key Vault '${{ steps.resources.outputs.kv_name }}' public access enabled."
-
-          az storage account update \
-            --name "${{ steps.resources.outputs.sa_name }}" \
-            --public-network-access Enabled \
-            --default-action Allow \
-            --output none
-          echo "✅ Storage Account '${{ steps.resources.outputs.sa_name }}' public access enabled."
-
-          echo "enabled=true" >> "$GITHUB_OUTPUT"
-
-      - name: Wait for network access propagation and create E2E container
-        run: |
-          set -euo pipefail
-          echo "Waiting for public network access to propagate..."
-
-          KV_NAME="${{ steps.resources.outputs.kv_name }}"
-          SA_NAME="${{ steps.resources.outputs.sa_name }}"
-          E2E_CONTAINER="${{ steps.resources.outputs.e2e_container }}"
-          MAX_ATTEMPTS=30
-          INTERVAL=5
-
-          KV_READY=false
-          SA_READY=false
-
-          for i in $(seq 1 $MAX_ATTEMPTS); do
-            if [[ "$KV_READY" == false ]]; then
-              if az keyvault secret list \
-                --vault-name "$KV_NAME" \
-                --maxresults 1 \
-                --output none 2>/dev/null; then
-                echo "✅ Key Vault '$KV_NAME' is accessible (attempt $i)."
-                KV_READY=true
-              fi
-            fi
-
-            if [[ "$SA_READY" == false ]]; then
-              if az storage container create \
-                --account-name "$SA_NAME" \
-                --name "$E2E_CONTAINER" \
-                --auth-mode login \
-                --output none 2>/dev/null; then
-                echo "✅ Storage Account '$SA_NAME' is accessible — container '$E2E_CONTAINER' created (attempt $i)."
-                SA_READY=true
-              fi
-            fi
-
-            if [[ "$KV_READY" == true && "$SA_READY" == true ]]; then
-              echo "✅ All resources accessible."
-              exit 0
-            fi
-
-            echo "Attempt $i/$MAX_ATTEMPTS: Waiting... (KV=$KV_READY, SA=$SA_READY)"
-            sleep $INTERVAL
-          done
-
-          echo "::error::Resources not accessible after $((MAX_ATTEMPTS * INTERVAL))s (KV=$KV_READY, SA=$SA_READY)."
-          exit 1
-
-      - name: Get access token for E2E tests
-        id: token
-        run: |
-          TOKEN=$(az account get-access-token \
-            --resource "${{ vars.VITE_AZURE_AD_CLIENT_ID }}" \
-            --query accessToken -o tsv)
-          echo "::add-mask::$TOKEN"
-          echo "access_token=$TOKEN" >> "$GITHUB_OUTPUT"
-
-      - name: Start application
-        env:
-          ASPNETCORE_ENVIRONMENT: Development
-          ASPNETCORE_URLS: http://localhost:8080
-          AzureAd__Instance: https://login.microsoftonline.com/
-          AzureAd__TenantId: ${{ vars.AZURE_TENANT_ID }}
-          AzureAd__ClientId: ${{ vars.VITE_AZURE_AD_CLIENT_ID }}
-          KeyVaultUri: ${{ steps.resources.outputs.keyvault_uri }}
-          StorageUri: ${{ steps.resources.outputs.storage_uri }}
-          StorageContainerName: ${{ steps.resources.outputs.e2e_container }}
-          AuthenticationMode: azcli
-          ALLOW_ACL_AUTH: "true"
-          AllowedOrigins__0: http://localhost:8080
-        run: |
-          cd publish
-          # Generate runtime config for the SPA
-          cat > wwwroot/config.js <<EOF
-          window.__RUNTIME_CONFIG__ = {
-            AZURE_AD_CLIENT_ID: "${{ vars.VITE_AZURE_AD_CLIENT_ID }}",
-            AZURE_AD_AUTHORITY: "${{ vars.VITE_AZURE_AD_AUTHORITY }}",
-            AZURE_AD_REDIRECT_URI: "http://localhost:8080",
-            API_BASE_URL: ""
-          };
-          EOF
-          nohup dotnet Eklee.KeyVault.Api.dll > /tmp/app.log 2>&1 &
-          echo "APP_PID=$!" >> "$GITHUB_ENV"
-
-      - name: Wait for application to be ready
-        run: |
-          echo "Waiting for app on http://localhost:8080/healthz..."
-          for i in $(seq 1 30); do
-            if curl -sf http://localhost:8080/healthz > /dev/null 2>&1; then
-              echo "App is ready!"
-              exit 0
-            fi
-            sleep 2
-          done
-          echo "App failed to start. Logs:"
-          cat /tmp/app.log
-          exit 1
-
-      - name: Run Playwright tests
-        working-directory: Eklee.KeyVault.UI
-        env:
-          E2E_BASE_URL: http://localhost:8080
-          E2E_CLIENT_ID: ${{ vars.VITE_AZURE_AD_CLIENT_ID }}
-          E2E_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
-          E2E_ACCESS_TOKEN: ${{ steps.token.outputs.access_token }}
-        run: npx playwright test
-
-      - name: Upload Playwright results and server logs
-        uses: actions/upload-artifact@v6
-        if: always()
-        with:
-          name: playwright-results
-          path: |
-            Eklee.KeyVault.UI/playwright-report/
-            Eklee.KeyVault.UI/test-results/
-            /tmp/app.log
-          retention-days: 7
-
-      - name: Delete E2E blob container
-        if: always() && steps.resources.outputs.e2e_container
-        run: |
-          set -euo pipefail
-          echo "Deleting container '${{ steps.resources.outputs.e2e_container }}'..."
-          az storage container delete \
-            --account-name "${{ steps.resources.outputs.sa_name }}" \
-            --name "${{ steps.resources.outputs.e2e_container }}" \
-            --auth-mode login \
-            --output none 2>/dev/null || true
-          echo "✅ Container '${{ steps.resources.outputs.e2e_container }}' deleted."
-
-      - name: Disable public network access
-        if: always() && steps.enable-public-access.outputs.enabled == 'true'
-        run: |
-          set -euo pipefail
-          echo "Restoring private network access..."
-
-          az keyvault update \
-            --name "${{ steps.resources.outputs.kv_name }}" \
-            --default-action Deny \
-            --public-network-access Disabled \
-            --output none
-          echo "✅ Key Vault '${{ steps.resources.outputs.kv_name }}' public access disabled."
-
-          az storage account update \
-            --name "${{ steps.resources.outputs.sa_name }}" \
-            --default-action Deny \
-            --public-network-access Disabled \
-            --output none
-          echo "✅ Storage Account '${{ steps.resources.outputs.sa_name }}' public access disabled."
-
   build-and-push:
     name: Build and Push Docker Image
-    needs: [setup, test-dotnet, test-npm, e2e-test]
+    needs: [setup, test-dotnet, test-npm]
     if: ${{ !failure() && !cancelled() }}
     runs-on: ubuntu-latest
     environment: ${{ needs.setup.outputs.build_env }}
@@ -410,11 +118,16 @@ jobs:
       - name: Set image tag
         id: image-tag
         run: |
-          # Use short SHA for dev, release tag for main
+          REF_NAME="${GITHUB_REF_NAME}"
           if [[ "${{ needs.setup.outputs.build_env }}" == "prod" ]]; then
             TAG="latest"
+          elif [[ "$REF_NAME" == release/* ]]; then
+            VERSION="${REF_NAME#release/}"
+            VERSION=$(printf '%s' "$VERSION" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9.-]+/-/g')
+            TAG="release-${VERSION}"
           else
-            TAG="dev-${GITHUB_SHA::8}"
+            BRANCH_SLUG=$(printf '%s' "$REF_NAME" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')
+            TAG="branch-${BRANCH_SLUG}"
           fi
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "image=${{ steps.acr.outputs.acr_name }}.azurecr.io/eklee-keyvault:$TAG" >> $GITHUB_OUTPUT
@@ -447,7 +160,7 @@ jobs:
 
   push-ghcr:
     name: Push to GitHub Container Registry
-    needs: [setup, test-dotnet, test-npm, e2e-test]
+    needs: [setup, test-dotnet, test-npm]
     if: ${{ github.ref == 'refs/heads/main' && !failure() && !cancelled() }}
     runs-on: ubuntu-latest
     environment: ${{ needs.setup.outputs.build_env }}
@@ -484,6 +197,8 @@ jobs:
     if: ${{ !failure() && !cancelled() }}
     runs-on: ubuntu-latest
     environment: ${{ needs.setup.outputs.build_env }}
+    outputs:
+      fqdn: ${{ steps.deploy-app.outputs.fqdn }}
 
     steps:
       - name: Login to Azure with OIDC
@@ -494,10 +209,11 @@ jobs:
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
       - name: Deploy Container App
+        id: deploy-app
         run: |
           RESOURCE_GROUP="${{ vars.RESOURCE_GROUP }}"
           IMAGE="${{ needs.build-and-push.outputs.image }}"
-          CONTAINER_APP_NAME="eklee-keyvault"
+          CONTAINER_APP_NAME="${{ needs.setup.outputs.container_app_name }}"
 
           # Discover ACR from resource group
           ACR_NAME=$(az acr list --resource-group "$RESOURCE_GROUP" --query "[0].name" -o tsv)
@@ -592,3 +308,5 @@ jobs:
             --resource-group "$RESOURCE_GROUP" \
             --query "properties.configuration.ingress.fqdn" -o tsv)
           echo "✅ Container app deployed successfully: https://$FQDN"
+          echo "fqdn=$FQDN" >> "$GITHUB_OUTPUT"
+

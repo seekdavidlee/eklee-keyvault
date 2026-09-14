@@ -6,15 +6,23 @@
     Exposes and assigns the E2E application role to a user-assigned identity.
 .DESCRIPTION
     Ensures that the API app registration exposes an application-only E2E.Tester
-    role, then assigns that role to the service principal for a user-assigned
-    managed identity. This is an Entra application-role assignment, not Azure
-    RBAC on Key Vault, Storage, or Container Registry.
+    role, then assigns that role to a caller service principal. The caller can
+    be a user-assigned managed identity or the GitHub Actions OIDC app. This is
+    an Entra application-role assignment, not Azure RBAC on Key Vault, Storage,
+    or Container Registry.
 .PARAMETER ApiClientId
     The client ID (application ID) of the API app registration.
 .PARAMETER ManagedIdentityName
     The name of the user-assigned managed identity used by hosted E2E tests.
 .PARAMETER ResourceGroup
-    The resource group containing the E2E managed identity.
+    The resource group containing the E2E managed identity. Required when
+    ManagedIdentityName is used.
+.PARAMETER CallerServicePrincipalObjectId
+    The object ID of an existing caller service principal, such as the GitHub
+    Actions OIDC app's service principal.
+.PARAMETER CallerAppId
+    The client ID of an existing caller app registration. Its service principal
+    object ID is resolved by the script.
 .PARAMETER RoleValue
     The application role value. Defaults to E2E.Tester.
 .PARAMETER RoleDisplayName
@@ -26,6 +34,10 @@
         -ApiClientId 00000000-0000-0000-0000-000000000000 `
         -ManagedIdentityName eklee-keyvault-dev-e2e `
         -ResourceGroup eklee-keyvault-dev
+
+    .\assign-e2e-app-role.ps1 `
+        -ApiClientId 00000000-0000-0000-0000-000000000000 `
+        -CallerAppId 11111111-1111-1111-1111-111111111111
 .NOTES
     Requires Azure CLI and an account with permission to update app roles and
     app role assignments in Microsoft Entra ID.
@@ -37,13 +49,17 @@ param(
     [ValidateNotNullOrEmpty()]
     [string]$ApiClientId,
 
-    [Parameter(Mandatory = $true)]
-    [ValidateNotNullOrEmpty()]
+    [Parameter(Mandatory = $false)]
     [string]$ManagedIdentityName,
 
-    [Parameter(Mandatory = $true)]
-    [ValidateNotNullOrEmpty()]
+    [Parameter(Mandatory = $false)]
     [string]$ResourceGroup,
+
+    [Parameter(Mandatory = $false)]
+    [string]$CallerServicePrincipalObjectId,
+
+    [Parameter(Mandatory = $false)]
+    [string]$CallerAppId,
 
     [Parameter(Mandatory = $false)]
     [ValidateNotNullOrEmpty()]
@@ -198,8 +214,10 @@ function Invoke-E2EAppRoleAssignment {
     [CmdletBinding()]
     param(
         [Parameter(Mandatory = $true)][string]$ApiClientId,
-        [Parameter(Mandatory = $true)][string]$ManagedIdentityName,
-        [Parameter(Mandatory = $true)][string]$ResourceGroup,
+        [Parameter(Mandatory = $false)][string]$ManagedIdentityName,
+        [Parameter(Mandatory = $false)][string]$ResourceGroup,
+        [Parameter(Mandatory = $false)][string]$CallerServicePrincipalObjectId,
+        [Parameter(Mandatory = $false)][string]$CallerAppId,
         [Parameter(Mandatory = $true)][string]$RoleValue,
         [Parameter(Mandatory = $true)][string]$RoleDisplayName,
         [Parameter(Mandatory = $true)][string]$RoleDescription
@@ -211,17 +229,51 @@ function Invoke-E2EAppRoleAssignment {
     $account = Invoke-AzJson @('account', 'show')
     Write-Success "Authenticated to tenant $($account.tenantId)"
 
-    Write-Step "Looking up managed identity '$ManagedIdentityName'..."
-    $managedIdentity = Invoke-AzJson @(
-        'identity', 'show',
-        '--name', $ManagedIdentityName,
-        '--resource-group', $ResourceGroup
-    )
-    $managedIdentityPrincipalId = [string]$managedIdentity.principalId
-    if ([string]::IsNullOrWhiteSpace($managedIdentityPrincipalId)) {
-        throw "Managed identity '$ManagedIdentityName' does not have a service principal yet."
+    $callerPrincipalId = $null
+    $callerDescription = $null
+    if (-not [string]::IsNullOrWhiteSpace($CallerServicePrincipalObjectId)) {
+        if (-not [string]::IsNullOrWhiteSpace($CallerAppId) -or
+            -not [string]::IsNullOrWhiteSpace($ManagedIdentityName)) {
+            throw 'Specify only one caller: CallerServicePrincipalObjectId, CallerAppId, or ManagedIdentityName.'
+        }
+
+        Write-Step "Looking up caller service principal '$CallerServicePrincipalObjectId'..."
+        $callerServicePrincipal = Invoke-AzJson @('ad', 'sp', 'show', '--id', $CallerServicePrincipalObjectId)
+        $callerPrincipalId = [string]$callerServicePrincipal.id
+        $callerDescription = [string]$callerServicePrincipal.displayName
     }
-    Write-Success "Found E2E managed identity with principal ID $managedIdentityPrincipalId"
+    elseif (-not [string]::IsNullOrWhiteSpace($CallerAppId)) {
+        if (-not [string]::IsNullOrWhiteSpace($ManagedIdentityName)) {
+            throw 'Specify only one caller: CallerAppId or ManagedIdentityName.'
+        }
+
+        Write-Step "Looking up caller app service principal '$CallerAppId'..."
+        $callerServicePrincipal = Invoke-AzJson @('ad', 'sp', 'show', '--id', $CallerAppId)
+        $callerPrincipalId = [string]$callerServicePrincipal.id
+        $callerDescription = [string]$callerServicePrincipal.displayName
+    }
+    elseif (-not [string]::IsNullOrWhiteSpace($ManagedIdentityName)) {
+        if ([string]::IsNullOrWhiteSpace($ResourceGroup)) {
+            throw 'ResourceGroup is required when ManagedIdentityName is specified.'
+        }
+
+        Write-Step "Looking up managed identity '$ManagedIdentityName'..."
+        $managedIdentity = Invoke-AzJson @(
+            'identity', 'show',
+            '--name', $ManagedIdentityName,
+            '--resource-group', $ResourceGroup
+        )
+        $callerPrincipalId = [string]$managedIdentity.principalId
+        $callerDescription = $ManagedIdentityName
+    }
+    else {
+        throw 'Specify one caller: CallerServicePrincipalObjectId, CallerAppId, or ManagedIdentityName.'
+    }
+
+    if ([string]::IsNullOrWhiteSpace($callerPrincipalId)) {
+        throw "Could not resolve a service principal for '$callerDescription'."
+    }
+    Write-Success "Found caller '$callerDescription' with principal ID $callerPrincipalId"
 
     Write-Step "Looking up API app registration '$ApiClientId'..."
     $apiApp = Invoke-AzJson @('ad', 'app', 'show', '--id', $ApiClientId)
@@ -289,33 +341,33 @@ function Invoke-E2EAppRoleAssignment {
     }
 
     $appRoleId = [string]$appRole.id
-    $assignmentUrl = "https://graph.microsoft.com/v1.0/servicePrincipals/$managedIdentityPrincipalId/appRoleAssignments"
-    Write-Step 'Checking the managed identity application-role assignment...'
+    $assignmentUrl = "https://graph.microsoft.com/v1.0/servicePrincipals/$callerPrincipalId/appRoleAssignments"
+    Write-Step "Checking the '$callerDescription' application-role assignment..."
     $assignments = Invoke-AzJson @('rest', '--method', 'GET', '--url', $assignmentUrl)
     $existingAssignment = @($assignments.value) | Where-Object {
         $_.resourceId -eq $apiServicePrincipalObjectId -and $_.appRoleId -eq $appRoleId
     } | Select-Object -First 1
 
     if ($existingAssignment) {
-        Write-Success "Managed identity already has '$RoleValue'"
+        Write-Success "Caller already has '$RoleValue'"
     }
     else {
-        Write-Step "Assigning '$RoleValue' to the managed identity..."
+        Write-Step "Assigning '$RoleValue' to '$callerDescription'..."
         Invoke-GraphPost `
             -Url $assignmentUrl `
             -Body ([ordered]@{
-                principalId = $managedIdentityPrincipalId
+                principalId = $callerPrincipalId
                 resourceId  = $apiServicePrincipalObjectId
                 appRoleId   = $appRoleId
             })
-        Write-Success "Assigned '$RoleValue' to '$ManagedIdentityName'"
+        Write-Success "Assigned '$RoleValue' to '$callerDescription'"
     }
 
     Write-Header 'Setup Complete'
     Write-Information "API client ID:                 $ApiClientId"
     Write-Information "API app role:                  $RoleValue ($appRoleId)"
-    Write-Information "E2E managed identity:          $ManagedIdentityName"
-    Write-Information "E2E managed identity principal: $managedIdentityPrincipalId"
+    Write-Information "E2E caller:                    $callerDescription"
+    Write-Information "E2E caller principal:           $callerPrincipalId"
     Write-Information "`nVerify the assignment with:"
     Write-Information "  az rest --method GET --url '$assignmentUrl'"
     Write-Information "`nThe hosted E2E job must acquire a token for:"
@@ -328,6 +380,8 @@ if ($MyInvocation.InvocationName -ne '.') {
             -ApiClientId $ApiClientId `
             -ManagedIdentityName $ManagedIdentityName `
             -ResourceGroup $ResourceGroup `
+            -CallerServicePrincipalObjectId $CallerServicePrincipalObjectId `
+            -CallerAppId $CallerAppId `
             -RoleValue $RoleValue `
             -RoleDisplayName $RoleDisplayName `
             -RoleDescription $RoleDescription

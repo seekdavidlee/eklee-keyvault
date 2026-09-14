@@ -26,12 +26,19 @@ The script also resolves Azure location for provisioning. It first checks `AZURE
 `infra.parameters.location`, then process environment `AZURE_LOCATION`. If none are set, it prompts
 for a location and stores it in the azd environment for future runs.
 
-If the app registration already exists, the script skips configuration and stores the existing
-values. You can also run it manually:
+If the app registration already exists, the script preserves its existing API configuration,
+ensures the application-only `E2E.Tester` role exists, and stores the existing values. You can
+also run it manually:
 
 ```powershell
 .\Deployment\setup-azd-app-registration.ps1 -Prefix "foobarkv1"
 ```
+
+When using [Start-Azd-Migration.ps1](Start-Azd-Migration.ps1), each target profile entry stores
+the GitHub deployment app registration name in `githubDeployAppRegistrationName`. After a
+successful `azd up`, the script assigns `E2E.Tester` to that existing app registration. Create it first with
+[setup-gh-deploy.ps1](Deployment/setup-gh-deploy.ps1). The migration script does not create
+or modify the GitHub app registration.
 
 At the end of `azd up`, the `postdeploy` hook runs
 [update-app-registration-redirect-uri.ps1](Deployment/update-app-registration-redirect-uri.ps1)

@@ -1,0 +1,69 @@
+name: Cleanup Merged Container App
+
+on:
+  pull_request:
+    types: [closed]
+
+permissions:
+  id-token: write
+  contents: read
+
+jobs:
+  cleanup:
+    name: Delete merged branch or release Container App
+    if: >-
+      github.event.pull_request.merged == true &&
+      (
+        startsWith(github.event.pull_request.base.ref, 'release/') ||
+        (
+          github.event.pull_request.base.ref == 'main' &&
+          startsWith(github.event.pull_request.head.ref, 'release/')
+        )
+      )
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Login to Azure with OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Delete merged Container App
+        env:
+          BRANCH_NAME: ${{ github.event.pull_request.head.ref }}
+          RESOURCE_GROUP: ${{ vars.RESOURCE_GROUP }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$BRANCH_NAME" == "main" ]]; then
+            echo "::error::Refusing to delete the main Container App."
+            exit 1
+          fi
+
+          container_app_name=$(bash .github/scripts/resolve-container-app-name.sh)
+          case "$container_app_name" in
+            ekv-branch-*|ekv-release-*) ;;
+            *)
+              echo "::error::Unexpected derived Container App name: $container_app_name"
+              exit 1
+              ;;
+          esac
+
+          if az containerapp show \
+            --name "$container_app_name" \
+            --resource-group "$RESOURCE_GROUP" \
+            --output none 2>/dev/null; then
+            az containerapp delete \
+              --name "$container_app_name" \
+              --resource-group "$RESOURCE_GROUP" \
+              --yes \
+              --output none
+            echo "Deleted Container App '$container_app_name'."
+          else
+            echo "Container App '$container_app_name' is already absent."
+          fi

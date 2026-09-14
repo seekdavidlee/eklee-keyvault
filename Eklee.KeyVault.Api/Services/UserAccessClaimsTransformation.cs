@@ -20,6 +20,25 @@ public class UserAccessClaimsTransformation(UserAccessService userAccessService,
     /// <returns>The enriched <see cref="ClaimsPrincipal"/>.</returns>
     public async Task<ClaimsPrincipal> TransformAsync(ClaimsPrincipal principal)
     {
+        // The application role is intentionally read-only. It authorizes hosted
+        // E2E callers without adding a service principal to user_access.json.
+        var hasE2eApplicationRole = principal.Claims.Any(claim =>
+            claim.Value == "E2E.Tester" &&
+            claim.Type is ClaimTypes.Role or "roles");
+
+        if (hasE2eApplicationRole)
+        {
+            var applicationIdentity = principal.Identity as ClaimsIdentity;
+            if (applicationIdentity is not null &&
+                !principal.Claims.Any(claim =>
+                    claim.Value == UserRole.User.ToString() && claim.Type == ClaimTypes.Role))
+            {
+                applicationIdentity.AddClaim(new Claim(ClaimTypes.Role, UserRole.User.ToString()));
+            }
+
+            return principal;
+        }
+
         var objectId = principal.FindFirst("http://schemas.microsoft.com/identity/claims/objectidentifier")?.Value
                     ?? principal.FindFirst("oid")?.Value;
 

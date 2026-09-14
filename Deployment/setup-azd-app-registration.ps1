@@ -9,7 +9,7 @@
     3. If none exists, creates one with an Application ID URI, an
        'access_as_user' scope, pre-authorizes the Azure CLI, and configures
        the SPA redirect URI for localhost development.
-    4. If the app registration already exists, skips all configuration.
+    4. Ensures the application-only 'E2E.Tester' role exists on the API.
     5. Stores clientId and tenantId in the azd environment so 'azd up' does
        not prompt for them.
 
@@ -246,6 +246,57 @@ else {
         Remove-Item $tempFile3 -ErrorAction SilentlyContinue
     }
     Write-Host "SPA redirect URI configured." -ForegroundColor Green
+}
+
+# ---------------------------------------------------------------------------
+# Ensure the API exposes the application-only role used by hosted E2E tests.
+# ---------------------------------------------------------------------------
+Write-Host "Ensuring API application role 'E2E.Tester' is configured..." -ForegroundColor Cyan
+$application = az ad app show --id $clientId --output json | ConvertFrom-Json
+$applicationObjectId = $application.id
+$appRoles = @($application.appRoles | Where-Object { $_ } | ForEach-Object {
+    [ordered]@{
+        allowedMemberTypes = @($_.allowedMemberTypes)
+        description        = $_.description
+        displayName        = $_.displayName
+        id                 = $_.id
+        isEnabled          = $_.isEnabled
+        value              = $_.value
+    }
+})
+$e2eAppRole = $appRoles | Where-Object { $_.value -eq 'E2E.Tester' } | Select-Object -First 1
+
+if ($e2eAppRole) {
+    if (-not $e2eAppRole.isEnabled -or @($e2eAppRole.allowedMemberTypes) -notcontains 'Application') {
+        throw "Existing API application role 'E2E.Tester' is disabled or does not allow Application members. Resolve it manually before continuing."
+    }
+
+    Write-Host "API application role 'E2E.Tester' already exists." -ForegroundColor Green
+}
+else {
+    $e2eAppRole = [ordered]@{
+        allowedMemberTypes = @('Application')
+        description        = 'Allows hosted end-to-end tests to call the API as an application.'
+        displayName        = 'E2E Tester'
+        id                 = [guid]::NewGuid().ToString()
+        isEnabled          = $true
+        value              = 'E2E.Tester'
+    }
+
+    $appRoleBody = @{ appRoles = @($appRoles + $e2eAppRole) } | ConvertTo-Json -Depth 10
+    $tempFileRole = Join-Path $env:TEMP "app-role-$([guid]::NewGuid()).json"
+    try {
+        $appRoleBody | Out-File -FilePath $tempFileRole -Encoding utf8
+        az rest --method PATCH `
+            --url "https://graph.microsoft.com/v1.0/applications/$applicationObjectId" `
+            --body "@$tempFileRole" `
+            --headers "Content-Type=application/json" `
+            --output none
+    }
+    finally {
+        Remove-Item $tempFileRole -ErrorAction SilentlyContinue
+    }
+    Write-Host "API application role 'E2E.Tester' added." -ForegroundColor Green
 }
 
 # ---------------------------------------------------------------------------

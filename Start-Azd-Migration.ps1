@@ -194,6 +194,7 @@ function Read-Target {
     $resourceGroupName = Read-RequiredValue -Prompt 'Azure resource group name' -DefaultValue "$prefix-rg"
     $enablePrivateNetworking = Read-YesNoValue -Prompt 'Enable private networking' -DefaultValue $false
     $appRegistrationName = Read-RequiredValue -Prompt 'App registration name' -DefaultValue "$prefix-app"
+    $githubDeployAppRegistrationName = Read-RequiredValue -Prompt 'GitHub deployment app registration name'
 
     if ($prefix -notmatch '^[a-z0-9]{3,10}$') {
         throw "Resource prefix '$prefix' must contain 3-10 lowercase letters or numbers."
@@ -217,6 +218,7 @@ function Read-Target {
         resourceGroupName = $resourceGroupName
         enablePrivateNetworking = $enablePrivateNetworking
         appRegistrationName = $appRegistrationName
+        githubDeployAppRegistrationName = $githubDeployAppRegistrationName
     }
 }
 
@@ -424,6 +426,67 @@ function Set-AzdEnvironment {
     Invoke-ExternalCommand -CommandName 'azd' -Arguments @(
         'env', 'config', 'set', 'infra.parameters.resourceGroupName', $Target.resourceGroupName
     )
+}
+
+function Invoke-GitHubE2eRoleAssignment {
+    <# .SYNOPSIS Assigns the hosted E2E role to the existing GitHub app. #>
+    [CmdletBinding()]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Target
+    )
+
+    $githubAppNameProperty = $Target.PSObject.Properties['githubDeployAppRegistrationName']
+    $githubDeploymentAppRegistrationName = if ($githubAppNameProperty) {
+        [string]$githubAppNameProperty.Value
+    }
+    else {
+        $null
+    }
+    if ([string]::IsNullOrWhiteSpace($githubDeploymentAppRegistrationName)) {
+        throw "Target '$($Target.displayName)' has no GitHub deployment app registration name. Add githubDeployAppRegistrationName to the target profile entry."
+    }
+
+    Write-Host 'Reading the API client ID from the azd environment...' -ForegroundColor Cyan
+    $apiClientOutput = azd env get-value APP_CLIENT_ID 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not read APP_CLIENT_ID from the azd environment: $($apiClientOutput -join ' ')"
+    }
+
+    $apiClientId = ($apiClientOutput | Out-String).Trim().Trim('"')
+    $parsedApiClientId = [guid]::Empty
+    if (-not [guid]::TryParse($apiClientId, [ref]$parsedApiClientId)) {
+        throw "The azd environment contains an invalid APP_CLIENT_ID value: '$apiClientId'."
+    }
+
+    Write-Host "Looking up GitHub deployment app registration '$githubDeploymentAppRegistrationName'..." -ForegroundColor Cyan
+    $githubAppOutput = az ad app list --display-name $githubDeploymentAppRegistrationName --output json 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "Could not look up the GitHub deployment app registration: $($githubAppOutput -join ' ')"
+    }
+
+    $githubApps = @($githubAppOutput | ConvertFrom-Json | Where-Object {
+            $_.displayName -eq $githubDeploymentAppRegistrationName
+        })
+    if ($githubApps.Count -eq 0) {
+        throw "GitHub deployment app registration '$githubDeploymentAppRegistrationName' was not found. Run Deployment/setup-gh-deploy.ps1 first."
+    }
+    if ($githubApps.Count -gt 1) {
+        throw "Multiple GitHub deployment app registrations named '$githubDeploymentAppRegistrationName' were found. Resolve the duplicate registrations before continuing."
+    }
+
+    $assignmentScript = Join-Path $PSScriptRoot 'Deployment\assign-e2e-app-role.ps1'
+    Write-Host "Assigning E2E.Tester to '$githubDeploymentAppRegistrationName'..." -ForegroundColor Cyan
+    & pwsh -NoProfile -File $assignmentScript `
+        -ApiClientId $apiClientId `
+        -CallerAppId ([string]$githubApps[0].appId)
+
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to assign E2E.Tester to '$githubDeploymentAppRegistrationName'."
+    }
+
+    Write-Host 'E2E.Tester assignment completed.' -ForegroundColor Green
 }
 
 function Get-AzdEnvironmentConfigValue {
@@ -651,6 +714,53 @@ function Set-TargetAppRegistrationName {
     return $Target
 }
 
+function Set-TargetGitHubDeployAppRegistrationName {
+    <# .SYNOPSIS Adds a GitHub deployment app registration name to legacy target entries. #>
+    [CmdletBinding()]
+    [OutputType([object])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Target,
+
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [object[]]$Targets,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$ProfilePath
+    )
+
+    $githubAppNameProperty = $Target.PSObject.Properties['githubDeployAppRegistrationName']
+    if ($githubAppNameProperty -and -not [string]::IsNullOrWhiteSpace([string]$githubAppNameProperty.Value)) {
+        return $Target
+    }
+
+    Write-Host "Target '$($Target.displayName)' has no GitHub deployment app registration name configured." -ForegroundColor Yellow
+    $defaultAppRegistrationName = if ($Target.PSObject.Properties['appRegistrationName']) {
+        "$($Target.appRegistrationName)-gh-deploy"
+    }
+    else {
+        "$($Target.prefix)-app-gh-deploy"
+    }
+    $githubDeployAppRegistrationName = Read-RequiredValue -Prompt 'GitHub deployment app registration name' -DefaultValue $defaultAppRegistrationName
+    if ($githubAppNameProperty) {
+        $githubAppNameProperty.Value = $githubDeployAppRegistrationName
+    }
+    else {
+        $Target | Add-Member -MemberType NoteProperty -Name githubDeployAppRegistrationName -Value $githubDeployAppRegistrationName
+    }
+
+    $targetIndex = [Array]::IndexOf($Targets, $Target)
+    if ($targetIndex -ge 0) {
+        $Targets[$targetIndex] = $Target
+        Save-TargetCatalog -Path $ProfilePath -Targets $Targets
+        Write-Host "Target catalog updated at '$ProfilePath'." -ForegroundColor Green
+    }
+
+    return $Target
+}
+
 #endregion Functions
 
 #region Main Execution
@@ -685,6 +795,7 @@ if ($MyInvocation.InvocationName -ne '.') {
             $target = Resolve-TargetResourceGroupName -Target $target -Targets $targets -ProfilePath $ProfilePath -RepositoryPath $repositoryPath
             $target = Set-TargetPrivateNetworking -Target $target -Targets $targets -ProfilePath $ProfilePath
             $target = Set-TargetAppRegistrationName -Target $target -Targets $targets -ProfilePath $ProfilePath
+            $target = Set-TargetGitHubDeployAppRegistrationName -Target $target -Targets $targets -ProfilePath $ProfilePath
 
                 if ($target.displayName -and @($targets | Where-Object {
                         $_.tenantId -eq $target.tenantId -and
@@ -709,6 +820,12 @@ if ($MyInvocation.InvocationName -ne '.') {
             Write-Host "Running azd up..." -ForegroundColor Cyan
             if ($PSCmdlet.ShouldProcess("azd environment '$($target.environmentName)'", 'Run azd up')) {
                 Invoke-ExternalCommand -CommandName 'azd' -Arguments @('up')
+
+                if ($PSCmdlet.ShouldProcess(
+                        $target.githubDeployAppRegistrationName,
+                        'Assign E2E.Tester application role')) {
+                    Invoke-GitHubE2eRoleAssignment -Target $target
+                }
             }
         }
         finally {

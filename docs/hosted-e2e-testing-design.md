@@ -11,7 +11,7 @@ tags:
   - playwright
   - github-actions
   - azure-container-apps
-  - managed-identity
+  - entra-id
 ai_note: Created with AI assistance and requires maintainer review
 summary: Defines the identity and workflow needed to run Playwright tests against a hosted development Container App.
 post_date: 2026-09-13
@@ -28,14 +28,16 @@ estimated_reading_time: 4
 
 ## Status
 
-Proposed. This design covers hosted E2E testing for the development
-environment. Local E2E testing remains supported.
+Implemented as a separate hosted Playwright workflow. Successful `CI/CD` runs
+for `release/**` branches run it automatically, and maintainers can run it
+manually for any branch or release reference with a deployed Container App.
 
 ## Decision Summary
 
-Playwright tests will run against the deployed development Container App rather
-than a locally started copy of the API. The tests will use a dedicated
-user-assigned managed identity to call the API.
+GitHub-hosted automation authenticates to Azure with the GitHub Actions OIDC
+service principal, resolves the per-ref Container App, and runs the existing
+Playwright suite against its HTTPS URL. The hosted workflow is separate from
+deployment so branch deployments are not tested automatically on every commit.
 
 The Container App's existing managed identity remains dedicated to the
 application. It authenticates the application to Key Vault, Blob Storage, and
@@ -46,55 +48,47 @@ the container registry. It will not be used as the E2E caller identity.
 | Identity | Purpose |
 | --- | --- |
 | Container App managed identity | Outbound access to Key Vault, Blob Storage, and ACR |
-| E2E managed identity | Acquires an app-only token and calls the hosted API |
-| GitHub Actions OIDC identity | Deploys resources and starts the E2E job |
+| GitHub Actions OIDC service principal | Deploys resources, resolves the app, and acquires the hosted token |
+| E2E application role | Maps the hosted caller to the API's read-only User role |
 
-The E2E managed identity must run on Azure-hosted compute, such as an Azure
-Container Apps Job, virtual machine, or self-hosted GitHub runner. A
-GitHub-hosted runner cannot directly use an Azure managed identity.
+The Container App's managed identity is not the caller identity for the GitHub
+runner. It remains responsible for outbound access to Key Vault and Blob
+Storage.
 
 ## Required Setup
 
-The API application registration must expose an application role such as
-`E2E.Tester`. The E2E managed identity's service principal must be assigned
-that role with admin consent.
+The API application registration must expose the application-only `E2E.Tester`
+role. The GitHub OIDC service principal must be assigned that role.
 
-Use [`assign-e2e-app-role.ps1`](../Deployment/assign-e2e-app-role.ps1) to assign
-the `E2E.Tester` application role to the E2E managed identity:
+Use [`setup-gh-deploy.ps1`](../Deployment/setup-gh-deploy.ps1) with
+`-ApiClientId` to configure the GitHub client and assign the role:
 
 ```powershell
 az login
 
-az identity create `
-  --name eklee-keyvault-dev-e2e `
-  --resource-group eklee-keyvault-dev `
-  --location eastus2
+$apiClientId = '<api-client-id>'
 
-$apiClientId = (az ad app show `
-  --id <api-client-id> `
-  --query appId `
-  --output tsv).Trim()
-
-.\Deployment\assign-e2e-app-role.ps1 `
-  -ApiClientId $apiClientId `
-  -ManagedIdentityName eklee-keyvault-dev-e2e `
-  -ResourceGroup eklee-keyvault-dev
+\.\Deployment\setup-gh-deploy.ps1 `
+  -GitHubOrganization 'seekdavidlee' `
+  -GitHubRepoName 'eklee-keyvault' `
+  -ResourceGroupName 'rg-eklee-keyvault' `
+  -ApiClientId $apiClientId
 ```
 
 Run the script with an Entra identity that can update application roles and
 application-role assignments. The assignment is the admin consent for this
-application permission. Allow time for managed-identity token caches to expire
-before validating a newly assigned role.
+application permission. The API service principal is created automatically when
+it does not exist.
 
-The E2E job acquires a token for:
+The hosted workflow acquires a token for:
 
 ```text
 api://<api-client-id>/.default
 ```
 
-The API must authorize that role for the operations covered by the tests. The
-hosted environment must not depend on `ALLOW_ACL_AUTH=true`, and the E2E role
-should not grant unrelated administrative operations.
+The API maps `E2E.Tester` to its existing read-only `User` authorization role.
+The hosted suite therefore runs the authenticated application test. The Admin-
+only CRUD test remains available for local runs with a delegated Admin user.
 
 The hosted Container App already uses external HTTPS ingress. If its ingress is
 restricted to a private network later, the E2E compute resource must have
@@ -102,21 +96,23 @@ network access to that environment.
 
 ## Test Workflow
 
-1. Build and deploy the branch image to the development Container App.
-2. Capture the deployed app URL.
-3. Start the Azure-hosted E2E job with the dedicated E2E managed identity.
-4. Acquire an app-only API token and set `E2E_BASE_URL` to the deployed URL.
-5. Run the Playwright suite against the hosted app.
-6. Remove test data and allow the normal branch cleanup to remove the temporary
-   Container App.
+1. Build and deploy a branch or release image to its dedicated Container App.
+2. Start the hosted workflow manually with the branch name, or let a successful
+  `CI/CD` run for a `release/**` branch trigger it.
+3. Log in to Azure from the GitHub runner with OIDC.
+4. Resolve the same deterministic Container App name used by deployment.
+5. Wait for `/healthz` to respond successfully.
+6. Acquire an application token for `api://<api-client-id>/.default`.
+7. Run the authenticated Playwright browser test against the resolved HTTPS URL
+  and upload its report.
 
-## Current Gap
+## Browser Test Boundary
 
-The current [`cicd.yml`](../.github/workflows/cicd.yml) E2E job starts the API
-locally on `localhost:8080`. It uses the GitHub Actions OIDC identity for Azure
-resource checks and does not test the deployed Container App. Implementing this
-design requires a hosted E2E runner, API application-role configuration, and a
-workflow dependency from deployment to hosted E2E.
+The hosted token is an application token, not a delegated user session. The
+API's `E2E.Tester` application role maps it to the read-only `User` role, which
+is sufficient for the authenticated application test. The Admin-only CRUD test
+must use a delegated Admin account and remains a local test until a dedicated
+hosted Admin identity is provisioned.
 
 The application continues to use its existing ASP.NET JWT validation. This
 design does not require enabling Container Apps Easy Auth.
@@ -124,5 +120,7 @@ design does not require enabling Container Apps Easy Auth.
 ## References
 
 * [Environment and Deployment Design](environment-deployment-design.md)
+* [Hosted Playwright workflow](../.github/workflows/hosted-e2e.yml)
+* [Container App cleanup workflow](../.github/workflows/cleanup-container-app.yml)
 * [Azure Container Apps managed identities](https://learn.microsoft.com/azure/container-apps/managed-identity)
 * [Container Apps application-to-application authentication](https://learn.microsoft.com/azure/container-apps/authentication-entra#configure-client-apps-to-access-your-container-app)
