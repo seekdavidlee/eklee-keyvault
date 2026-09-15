@@ -154,6 +154,7 @@ Pre-fetched tokens expire after approximately 1 hour. Re-run `.\run-local.ps1` (
 1. Fork this repo.
 1. Run `Deployment/setup-gh-deploy.ps1` to create the deployment service principal, resource groups, RBAC assignments, and set the deployment-related GitHub environment variables (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `RESOURCE_GROUP`).
 1. Run `Eklee.KeyVault.Api/setup-app-registration.ps1` with the `-GitHubOrganization`, `-GitHubRepoName`, and `-AzureAdRedirectUriDev` (and optionally `-AzureAdRedirectUriProd`) parameters to create the app registration and set the SPA-related GitHub environment variables (`VITE_AZURE_AD_CLIENT_ID`, `VITE_AZURE_AD_AUTHORITY`, `VITE_AZURE_AD_REDIRECT_URI`).
+
 1. Deploy infrastructure by running the **Deploy Infrastructure** workflow (`deploy-infra.yml`):
 
    ```sh
@@ -162,7 +163,18 @@ Pre-fetched tokens expire after approximately 1 hour. Re-run `.\run-local.ps1` (
 
 1. Run `Deployment/assign-mi-rbac.ps1` to assign RBAC roles to the managed identity.
 1. Push to any branch to trigger the **CI/CD** workflow (`cicd.yml`), which builds and deploys the container.
-1. Register the Container App URL as a SPA redirect URI in the Entra ID app registration.
+1. After CI deploys a branch Container App, run
+  `./Scripts/Update-BranchRedirectUri.ps1` as a user who can update the
+  resource group and the SPA app registration.
+
+  The script prompts for an azd environment, reads its resource group and SPA
+  client ID, and derives the branch Container App name from the checked-out
+  Git branch. It discovers the deployed FQDN, adds its URL to the SPA redirect
+  URI list without removing existing entries, and configures the Container App
+  to use that URL at runtime. Pass `-EnvironmentName <name>` to avoid the
+  prompt, or pass `-ResourceGroupName`, `-ContainerAppName`, and
+  `-SpaAppClientId` explicitly for recovery scenarios.
+
 1. Perform user role assignments per [Post Deployment RBAC](#post-deployment-rbac).
 
 When a same-repository pull request is merged into a `release/*` branch, the cleanup workflow deletes the matching temporary Container App and `branch-<normalized-branch>` GHCR image. When a release branch is merged into `main`, it deletes the release Container App and `release-<normalized-version>` GHCR image. The long-lived `main` Container App and production image tags are not deleted.
