@@ -19,6 +19,7 @@ folder, which contains infrastructure-as-code and CI/CD deployment helpers.
 | Script | Purpose |
 | --- | --- |
 | [`Update-BranchRedirectUri.ps1`](Update-BranchRedirectUri.ps1) | Registers a deployed branch Container App URL in the Microsoft Entra SPA app registration and configures the Container App runtime redirect URI. |
+| [`Invoke-HostedE2E.ps1`](Invoke-HostedE2E.ps1) | Runs local Playwright tests against a deployed Container App using the signed-in Azure CLI identity. |
 
 ## Update Branch Redirect URI
 
@@ -44,3 +45,20 @@ Before running it:
 The script uses the signed-in Azure CLI user identity. It does not require GitHub
 Actions to have Microsoft Graph application-management permissions and does not
 store or print access tokens.
+
+## Hosted E2E Tests
+
+Run the local Playwright authentication test against a deployed environment:
+
+```powershell
+./Scripts/Invoke-HostedE2E.ps1 -EnvironmentName dev
+```
+
+The script reads the resource group, Container App name, API client ID, tenant,
+and subscription from the selected azd environment. It resolves the live HTTPS
+ingress URL, waits for `/healthz`, acquires an API token through the signed-in
+Azure CLI identity, and runs `login.spec.ts`.
+
+Use `-Filter secrets-crud` for the Admin CRUD test or `-Headed` to show the
+browser. Use `-NoDeps` when the UI dependencies and Chromium are already
+installed.
