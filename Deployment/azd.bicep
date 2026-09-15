@@ -4,7 +4,7 @@
 // Subscription-scoped entry point that creates a resource group based on the
 // prefix and deploys all resources into it via the azd-resources module.
 //
-// No private networking. No Azure Container Registry.
+// No private networking. Container images are supplied from public GHCR.
 // ============================================================================
 
 targetScope = 'subscription'

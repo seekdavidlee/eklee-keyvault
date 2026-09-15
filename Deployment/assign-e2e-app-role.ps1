@@ -8,8 +8,7 @@
     Ensures that the API app registration exposes an application-only E2E.Tester
     role, then assigns that role to a caller service principal. The caller can
     be a user-assigned managed identity or the GitHub Actions OIDC app. This is
-    an Entra application-role assignment, not Azure RBAC on Key Vault, Storage,
-    or Container Registry.
+    an Entra application-role assignment, not Azure RBAC on Key Vault or Storage.
 .PARAMETER ApiClientId
     The client ID (application ID) of the API app registration.
 .PARAMETER ManagedIdentityName

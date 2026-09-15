@@ -140,7 +140,7 @@ Optionally, you can configure a custom domain for your Azure Container App. Afte
 
 You can create an Azure Container App directly from the public GHCR image without
 building the Docker image yourself. This is useful for quick deployments or
-environments without provisioning a separate Azure container registry.
+deployments that use the public GHCR release image.
 
 The public image is available at:
 
