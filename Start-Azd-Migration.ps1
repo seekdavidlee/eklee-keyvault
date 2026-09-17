@@ -470,13 +470,13 @@ function Invoke-GitHubE2eRoleAssignment {
             $_.displayName -eq $githubDeploymentAppRegistrationName
         })
     if ($githubApps.Count -eq 0) {
-        throw "GitHub deployment app registration '$githubDeploymentAppRegistrationName' was not found. Run Deployment/setup-gh-deploy.ps1 first."
+        throw "GitHub deployment app registration '$githubDeploymentAppRegistrationName' was not found. Run Scripts/setup-gh-deploy.ps1 first."
     }
     if ($githubApps.Count -gt 1) {
         throw "Multiple GitHub deployment app registrations named '$githubDeploymentAppRegistrationName' were found. Resolve the duplicate registrations before continuing."
     }
 
-    $assignmentScript = Join-Path $PSScriptRoot 'Deployment\assign-e2e-app-role.ps1'
+    $assignmentScript = Join-Path $PSScriptRoot 'Scripts\assign-e2e-app-role.ps1'
     Write-Host "Assigning E2E.Tester to '$githubDeploymentAppRegistrationName'..." -ForegroundColor Cyan
     & pwsh -NoProfile -File $assignmentScript `
         -ApiClientId $apiClientId `

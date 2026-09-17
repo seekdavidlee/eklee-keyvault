@@ -11,7 +11,7 @@ The infrastructure includes:
 - **Azure Storage Account** - For application data and blob storage
 - **Azure Key Vault** - For secure secrets and key management
 - **Log Analytics Workspace** - For application monitoring and logging
-- **RBAC Role Assignments** - Managed via separate PowerShell script (`assign-mi-rbac.ps1`)
+- **RBAC Role Assignments** - Managed via the [direct-user script](../Scripts/assign-mi-rbac.ps1)
 - **(Optional) Virtual Network** - VNET with subnets for Container Apps and private endpoints
 - **(Optional) Private Endpoints** - Secure connectivity to Storage Account and Key Vault
 
@@ -23,7 +23,7 @@ graph TB
     B[User-Assigned Managed Identity] 
     C[Key Vault]
     D[Storage Account]
-    G[assign-mi-rbac.ps1] -.Assigns Permissions.-> B
+    G[Scripts/assign-mi-rbac.ps1] -.Assigns Permissions.-> B
     G -.Secrets User.-> C
     G -.Blob Contributor.-> D
     
@@ -34,7 +34,7 @@ graph TB
     style G fill:#e3e3e3,stroke:#333,stroke-width:2px,color:#000
 ```
 
-> **Note:** This deployment prepares the infrastructure foundation. Azure RBAC roles are assigned via the `assign-mi-rbac.ps1` script after deployment. The Container App itself will be deployed separately using the pre-configured managed identity and public GHCR image.
+> **Note:** This deployment prepares the infrastructure foundation. Azure RBAC roles are assigned via the [Scripts/assign-mi-rbac.ps1](../Scripts/assign-mi-rbac.ps1) script after deployment. The Container App itself will be deployed separately using the pre-configured managed identity and public GHCR image.
 
 ## 📂 Files
 
@@ -42,7 +42,6 @@ graph TB
 |------|-------------|
 | `main.bicep` | Main infrastructure template |
 | `networking.bicep` | Private networking module (VNET, NSGs, DNS zones, private endpoints) |
-| `assign-mi-rbac.ps1` | Managed identity RBAC role assignment script (run after deployment) |
 | `README.md` | This file |
 
 ## 🚀 Prerequisites
@@ -127,7 +126,7 @@ az deployment group create `
   --parameters enablePrivateNetworking=true
 
 # Assign managed identity RBAC roles (required after deployment)
-.\assign-mi-rbac.ps1 `
+..\Scripts\assign-mi-rbac.ps1 `
   -ResourceGroup $resourceGroup
 ```
 
@@ -150,7 +149,7 @@ az deployment group create `
   --name "eklee-keyvault-deployment-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
 
 # Assign managed identity RBAC roles (required after deployment)
-.\assign-mi-rbac.ps1 `
+..\Scripts\assign-mi-rbac.ps1 `
   -ResourceGroup $resourceGroup
 ```
 
@@ -180,7 +179,7 @@ RBAC role assignments are managed outside of Bicep to:
 
 ```powershell
 # Run the RBAC assignment script
-.\assign-mi-rbac.ps1 `
+..\Scripts\assign-mi-rbac.ps1 `
   -ResourceGroup eklee-keyvault-dev-rg
 ```
 
@@ -380,7 +379,7 @@ Quick commands for common operations with your deployed infrastructure.
 #### Assign Roles to Managed Identity
 ```powershell
 # Assign all required roles at once
-.\assign-mi-rbac.ps1 -ResourceGroup eklee-keyvault-dev-rg
+..\Scripts\assign-mi-rbac.ps1 -ResourceGroup eklee-keyvault-dev-rg
 ```
 
 #### Verify Role Assignments

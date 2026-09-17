@@ -18,8 +18,13 @@ folder, which contains infrastructure-as-code and CI/CD deployment helpers.
 
 | Script | Purpose |
 | --- | --- |
+| [`assign-e2e-app-role.ps1`](assign-e2e-app-role.ps1) | Exposes the API `E2E.Tester` application role and assigns it to a managed identity or GitHub Actions service principal. |
+| [`assign-mi-rbac.ps1`](assign-mi-rbac.ps1) | Assigns the deployed managed identity its Key Vault and Storage RBAC roles. |
+| [`copy-keyvault-secrets.ps1`](copy-keyvault-secrets.ps1) | Copies enabled secrets from an Azure Key Vault into the Eklee KeyVault API without overwriting existing secrets. |
 | [`Update-BranchRedirectUri.ps1`](Update-BranchRedirectUri.ps1) | Registers a deployed branch Container App URL in the Microsoft Entra SPA app registration and configures the Container App runtime redirect URI. |
 | [`Invoke-HostedE2E.ps1`](Invoke-HostedE2E.ps1) | Runs local Playwright tests against a deployed Container App using the signed-in Azure CLI identity. |
+| [`setup-gh-deploy.ps1`](setup-gh-deploy.ps1) | Creates the GitHub Actions OIDC deployment identity, resource groups, role assignments, and environment variables. |
+| [`Tag-ExistingStackResources.ps1`](Tag-ExistingStackResources.ps1) | Reports or applies stable `resource-id` tags to an existing Eklee KeyVault stack. |
 
 ## Update Branch Redirect URI
 

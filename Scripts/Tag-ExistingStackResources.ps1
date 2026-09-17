@@ -20,11 +20,11 @@
     Replaces a conflicting resource-id tag only after the full role map has
     passed preflight and the resource is the unique expected candidate.
 .EXAMPLE
-    ./Deployment/Tag-ExistingStackResources.ps1 -ResourceGroupName eklee-keyvault-viewer-dev
+    ./Scripts/Tag-ExistingStackResources.ps1 -ResourceGroupName eklee-keyvault-viewer-dev
 
     Reports the tags that would adopt the existing development stack.
 .EXAMPLE
-    ./Deployment/Tag-ExistingStackResources.ps1 -ResourceGroupName eklee-keyvault-viewer-dev -Apply
+    ./Scripts/Tag-ExistingStackResources.ps1 -ResourceGroupName eklee-keyvault-viewer-dev -Apply
 
     Adds missing resource-id tags after preflight succeeds.
 #>

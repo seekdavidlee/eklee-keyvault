@@ -37,7 +37,7 @@ also run it manually:
 When using [Start-Azd-Migration.ps1](Start-Azd-Migration.ps1), each target profile entry stores
 the GitHub deployment app registration name in `githubDeployAppRegistrationName`. After a
 successful `azd up`, the script assigns `E2E.Tester` to that existing app registration. Create it first with
-[setup-gh-deploy.ps1](Deployment/setup-gh-deploy.ps1). The migration script does not create
+[setup-gh-deploy.ps1](Scripts/setup-gh-deploy.ps1). The migration script does not create
 or modify the GitHub app registration.
 
 At the end of `azd up`, the `postdeploy` hook runs

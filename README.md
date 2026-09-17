@@ -93,7 +93,7 @@ To target a different project file:
 ## Automated Deployment
 
 1. Fork this repo.
-1. Run `Deployment/setup-gh-deploy.ps1` to create the deployment service principal, resource groups, RBAC assignments, and set the deployment-related GitHub environment variables (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `RESOURCE_GROUP`).
+1. Run `Scripts/setup-gh-deploy.ps1` to create the deployment service principal, resource groups, RBAC assignments, and set the deployment-related GitHub environment variables (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `RESOURCE_GROUP`).
 1. Run `Eklee.KeyVault.Api/setup-app-registration.ps1` with the `-GitHubOrganization`, `-GitHubRepoName`, and `-AzureAdRedirectUriDev` (and optionally `-AzureAdRedirectUriProd`) parameters to create the app registration and set the SPA-related GitHub environment variables (`VITE_AZURE_AD_CLIENT_ID`, `VITE_AZURE_AD_AUTHORITY`, `VITE_AZURE_AD_REDIRECT_URI`).
 
 1. Deploy infrastructure by running the **Deploy Infrastructure** workflow (`deploy-infra.yml`):
@@ -102,7 +102,7 @@ To target a different project file:
    gh workflow run deploy-infra.yml -f branch=main -f environment=dev
    ```
 
-1. Run `Deployment/assign-mi-rbac.ps1` to assign RBAC roles to the managed identity.
+1. Run `Scripts/assign-mi-rbac.ps1` to assign RBAC roles to the managed identity.
 1. Push to any branch to trigger the **CI/CD** workflow (`cicd.yml`), which builds and deploys the container.
 1. After CI deploys a branch Container App, run
   `./Scripts/Update-BranchRedirectUri.ps1` as a user who can update the
@@ -240,7 +240,7 @@ The managed identity RBAC is handled by the script in the Deployment folder:
 
 ```powershell
 cd Deployment
-.\assign-mi-rbac.ps1 -ResourceGroup <resource-group-name>
+.\Scripts\assign-mi-rbac.ps1 -ResourceGroup <resource-group-name>
 ```
 
 See [Deployment/README.md](Deployment/README.md) for detailed instructions.

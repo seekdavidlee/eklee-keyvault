@@ -60,7 +60,7 @@ Storage.
 The API application registration must expose the application-only `E2E.Tester`
 role. The GitHub OIDC service principal must be assigned that role.
 
-Use [`setup-gh-deploy.ps1`](../Deployment/setup-gh-deploy.ps1) with
+Use [`setup-gh-deploy.ps1`](../Scripts/setup-gh-deploy.ps1) with
 `-ApiClientId` to configure the GitHub client and assign the role:
 
 ```powershell
@@ -68,7 +68,7 @@ az login
 
 $apiClientId = '<api-client-id>'
 
-\.\Deployment\setup-gh-deploy.ps1 `
+\.\Scripts\setup-gh-deploy.ps1 `
   -GitHubOrganization 'seekdavidlee' `
   -GitHubRepoName 'eklee-keyvault' `
   -ResourceGroupName 'rg-eklee-keyvault' `

@@ -161,7 +161,7 @@ themselves remain separate resources. The cleanup action must remove only the
 Container App associated with the merged branch or release and must leave the
 managed identity in place for future deployments.
 
-[`setup-gh-deploy.ps1`](../Deployment/setup-gh-deploy.ps1) defines intended OIDC
+[`setup-gh-deploy.ps1`](../Scripts/setup-gh-deploy.ps1) defines intended OIDC
 federated-credential subjects for the `main` branch and for the `dev` and `prod`
 GitHub Environments. Environment-scoped jobs normally rely on the corresponding
 environment subject, but the script is not evidence that the identity exists or
@@ -247,5 +247,5 @@ for those changes.
 * [Container App cleanup workflow](../.github/workflows/cleanup-container-app.yml)
 * [Infrastructure deployment workflow](../.github/workflows/deploy-infra.yml)
 * [Bicep environment parameter](../Deployment/main.bicep)
-* [GitHub deployment setup](../Deployment/setup-gh-deploy.ps1)
+* [GitHub deployment setup](../Scripts/setup-gh-deploy.ps1)
 * [GitHub Release and Container Versioning Design](release-versioning-design.md)
