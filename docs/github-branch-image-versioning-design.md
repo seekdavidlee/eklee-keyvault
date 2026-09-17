@@ -119,6 +119,13 @@ The workflow will delete:
 * A normal source branch after it is merged into a release branch.
 * A `release/<version>` branch after it is merged into `main`.
 
+The repository must enforce this promotion flow with a required pull request
+check: only a same-repository `release/*` branch may target `main`. The check
+prevents direct development-branch merges from deploying to the production
+environment and from bypassing the documented cleanup lifecycle. Branch rules
+remain a GitHub repository configuration concern, so the validation workflow
+must be configured as a required status check for `main`.
+
 For each accepted merge, the cleanup workflow also deletes the corresponding
 temporary Azure Container App and matching mutable GHCR image version:
 

@@ -30,9 +30,10 @@ estimated_reading_time: 4
 
 Implemented as a separate hosted Playwright workflow. Successful `CI/CD` runs
 for `release/**` branches run it automatically, and merged same-repository
-pull requests targeting `main` run it against the merged PR's deployed source
-branch Container App. Ordinary branch CI completions do not trigger hosted
-E2E.
+`release/**` pull requests targeting `main` run it against the release branch's
+deployed Container App. Direct development-branch merges into `main` are
+rejected by the release-promotion check and do not trigger hosted E2E. Ordinary
+branch CI completions do not trigger hosted E2E.
 
 ## Decision Summary
 
@@ -101,7 +102,8 @@ network access to that environment.
 1. Build and deploy a release image or a PR source-branch image to its
   dedicated Container App.
 2. Let a successful `CI/CD` run for a `release/**` branch, or a merged
-  same-repository pull request targeting `main`, trigger hosted E2E.
+  same-repository `release/**` pull request targeting `main`, trigger hosted
+  E2E.
 3. Log in to Azure from the GitHub runner with OIDC.
 4. Resolve the same deterministic Container App name used by deployment.
 5. Wait for `/healthz` to respond successfully.
