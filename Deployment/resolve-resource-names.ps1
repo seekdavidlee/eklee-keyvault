@@ -171,7 +171,19 @@ function Get-ExistingResources {
         }
     }
 
-    return @($resources)
+    $uniqueResources = [System.Collections.Generic.List[object]]::new()
+    $resourceIds = [System.Collections.Generic.HashSet[string]]::new(
+        [System.StringComparer]::OrdinalIgnoreCase
+    )
+
+    foreach ($resource in $resources) {
+        $resourceId = [string]$resource.id
+        if ([string]::IsNullOrWhiteSpace($resourceId) -or $resourceIds.Add($resourceId)) {
+            $uniqueResources.Add($resource)
+        }
+    }
+
+    return @($uniqueResources)
 }
 
 function Get-TaggedResource {
@@ -364,7 +376,13 @@ function Invoke-ResourceNameResolution {
 
     $resourceGroupName = Get-AzdInfrastructureParameter -Name 'resourceGroupName'
     if ([string]::IsNullOrWhiteSpace($resourceGroupName)) {
-        throw 'infra.parameters.resourceGroupName is required before resolving existing resources.'
+        $prefix = Get-AzdInfrastructureParameter -Name 'prefix'
+        if ([string]::IsNullOrWhiteSpace($prefix)) {
+            throw 'infra.parameters.prefix is required before resolving existing resources when resourceGroupName is not configured.'
+        }
+
+        $resourceGroupName = "$prefix-rg"
+        Write-Host "infra.parameters.resourceGroupName is not configured; checking the default resource group '$resourceGroupName'." -ForegroundColor Yellow
     }
 
     $resourceGroupExists = Invoke-AzureCliJson -Arguments @(

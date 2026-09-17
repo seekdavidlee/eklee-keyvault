@@ -15,9 +15,10 @@
     owned by the branch workflow.
 
     The preflight requires local main to be reachable from origin/main, a clean
-    working tree unless -Force is supplied, no matching local or remote release
-    branch, no matching GitHub milestone, and an authenticated GitHub CLI account
-    with repository write access. A live run creates the milestone and release
+    working tree unless -Force is supplied, and a local main checkout whenever
+    -Force is used. It also requires no matching local or remote release branch,
+    no matching GitHub milestone, and an authenticated GitHub CLI account with
+    repository write access. A live run creates the milestone and release
     branch, pushes the branch, and checks out the new release branch. It does
     not create tags or clean up state after a later mutation fails.
 
@@ -29,8 +30,9 @@
     patch segment to increment from the highest existing release branch.
 
 .PARAMETER Force
-    Allows release preparation to continue with uncommitted changes and include
-    them in the release branch. All other preflight safeguards still apply.
+    Allows release preparation to continue with uncommitted changes checked out
+    on local main and include them in the release branch. All other preflight
+    safeguards still apply.
 
 .PARAMETER RepoRoot
     The repository root. Defaults to the repository root inferred from this
@@ -468,6 +470,13 @@ function Invoke-ReleasePreparation {
         }
 
         $workingTree = (Invoke-Git -Arguments @('status', '--porcelain')).Output
+        if ($Force) {
+            $currentBranch = ((Invoke-Git -Arguments @('branch', '--show-current')).Output -join '').Trim()
+            if ($currentBranch -cne 'main') {
+                throw "The -Force option requires local branch 'main' to be checked out; current branch is '$currentBranch'."
+            }
+        }
+
         if ($workingTree.Count -gt 0) {
             if (-not $Force) {
                 throw 'The working tree must be clean before preparing a release. Use -Force to continue with uncommitted changes.'

@@ -57,9 +57,9 @@ It owns the following behavior:
 * Git and GitHub preflight, including ancestry, branch, milestone, auth, and
   write-access checks
 * Milestone creation, branch creation from local `main`, inclusion of local
-  changes when `-Force` is specified, pushing only the release branch with its
-  `origin` upstream configured, and checking out the new release branch after
-  a successful push
+  changes when `-Force` is specified from a local `main` checkout, pushing only
+  the release branch with its `origin` upstream configured, and checking out
+  the new release branch after a successful push
 * `-WhatIf`, `-Force`, `ShouldProcess`, failure reporting, and structured output
 
 The script does not create tags or publish GitHub Releases. A live run leaves
