@@ -249,4 +249,3 @@ output managedIdentityId string = managedIdentity.id
 
 @description('The name of the Virtual Network (empty if private networking is disabled)')
 output virtualNetworkName string = enablePrivateNetworking ? networking!.outputs.virtualNetworkName : ''
-

@@ -255,4 +255,3 @@ jobs:
             --query "properties.configuration.ingress.fqdn" -o tsv)
           echo "✅ Container app deployed successfully: https://$FQDN"
           echo "fqdn=$FQDN" >> "$GITHUB_OUTPUT"
-
