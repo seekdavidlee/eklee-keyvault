@@ -79,7 +79,7 @@ The template generates unique names for resources using the pattern:
 
 ## GitHub Actions E2E Resource Discovery
 
-The `dev` E2E job discovers the Key Vault and Storage Account after Azure OIDC
+The hosted E2E job discovers the Key Vault and Storage Account after Azure OIDC
 login. It scopes discovery to the environment's `RESOURCE_GROUP` variable and
 matches the tags applied by `main.bicep`:
 
@@ -95,8 +95,9 @@ the Key Vault URI from `properties.vaultUri` and the Storage Account URI from
 `E2E_KEYVAULT_URI` and `E2E_STORAGE_URI` remain optional environment variables.
 When provided, each value is an explicit override. The workflow validates the
 URI format and confirms that the named resource exists in `RESOURCE_GROUP`
-before continuing with the existing RBAC, network access, readiness, and
-cleanup checks.
+before waiting for the Container App, obtaining an application token, and
+running the complete Playwright suite. The hosted workflow does not perform
+separate RBAC, network access, or cleanup checks.
 
 The GitHub Actions identity must be able to list resource metadata and read the
 selected Key Vault and Storage Account. The current deployment setup grants

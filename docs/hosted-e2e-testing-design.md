@@ -29,8 +29,10 @@ estimated_reading_time: 4
 ## Status
 
 Implemented as a separate hosted Playwright workflow. Successful `CI/CD` runs
-for `release/**` branches run it automatically, and maintainers can run it
-manually for any branch or release reference with a deployed Container App.
+for `release/**` branches run it automatically, and merged same-repository
+pull requests targeting `main` run it against the merged PR's deployed source
+branch Container App. Ordinary branch CI completions do not trigger hosted
+E2E.
 
 ## Decision Summary
 
@@ -68,7 +70,7 @@ az login
 
 $apiClientId = '<api-client-id>'
 
-\.\Scripts\setup-gh-deploy.ps1 `
+./Scripts/setup-gh-deploy.ps1 `
   -GitHubOrganization 'seekdavidlee' `
   -GitHubRepoName 'eklee-keyvault' `
   -ResourceGroupName 'rg-eklee-keyvault' `
@@ -96,9 +98,10 @@ network access to that environment.
 
 ## Test Workflow
 
-1. Build and deploy a branch or release image to its dedicated Container App.
-2. Start the hosted workflow manually with the branch name, or let a successful
-  `CI/CD` run for a `release/**` branch trigger it.
+1. Build and deploy a release image or a PR source-branch image to its
+  dedicated Container App.
+2. Let a successful `CI/CD` run for a `release/**` branch, or a merged
+  same-repository pull request targeting `main`, trigger hosted E2E.
 3. Log in to Azure from the GitHub runner with OIDC.
 4. Resolve the same deterministic Container App name used by deployment.
 5. Wait for `/healthz` to respond successfully.

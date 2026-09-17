@@ -240,7 +240,7 @@ The managed identity RBAC is handled by the script in the Deployment folder:
 
 ```powershell
 cd Deployment
-.\Scripts\assign-mi-rbac.ps1 -ResourceGroup <resource-group-name>
+..\Scripts\assign-mi-rbac.ps1 -ResourceGroup <resource-group-name>
 ```
 
 See [Deployment/README.md](Deployment/README.md) for detailed instructions.

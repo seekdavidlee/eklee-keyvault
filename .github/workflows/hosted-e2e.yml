@@ -6,34 +6,35 @@ on:
     types: [completed]
     branches:
       - 'release/**'
-  workflow_dispatch:
-    inputs:
-      branch_name:
-        description: Branch or release reference whose Container App should be tested
-        required: true
-        type: string
+  pull_request:
+    branches:
+      - main
+    types: [closed]
 
 permissions:
   id-token: write
   contents: read
 
 concurrency:
-  group: hosted-e2e-${{ github.event.workflow_run.head_branch || github.event.inputs.branch_name || github.ref_name }}
+  group: hosted-e2e-${{ github.event.workflow_run.head_branch || github.event.pull_request.head.ref }}
   cancel-in-progress: true
 
 jobs:
   playwright:
     name: Run hosted Playwright tests
     if: >-
-      github.event_name != 'workflow_run' ||
-      github.event.workflow_run.conclusion == 'success'
+      (github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success') ||
+      (github.event_name == 'pull_request' &&
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.head.repo.full_name == github.repository)
     runs-on: ubuntu-latest
     environment: dev
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
         with:
-          ref: ${{ github.event.workflow_run.head_sha || github.event.inputs.branch_name || github.ref_name }}
+          ref: ${{ github.event.workflow_run.head_sha || github.event.pull_request.head.sha }}
 
       - name: Login to Azure with OIDC
         uses: azure/login@v3
@@ -42,10 +43,18 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
+      - name: Resolve E2E Key Vault and Storage resources
+        env:
+          RESOURCE_GROUP: ${{ vars.RESOURCE_GROUP }}
+          DEPLOYMENT_ENVIRONMENT: dev
+          KEYVAULT_URI_OVERRIDE: ${{ vars.E2E_KEYVAULT_URI }}
+          STORAGE_URI_OVERRIDE: ${{ vars.E2E_STORAGE_URI }}
+        run: bash .github/scripts/resolve-e2e-resources.sh
+
       - name: Resolve target Container App
         id: target
         env:
-          BRANCH_NAME: ${{ github.event.workflow_run.head_branch || github.event.inputs.branch_name || github.ref_name }}
+          BRANCH_NAME: ${{ github.event.workflow_run.head_branch || github.event.pull_request.head.ref }}
           RESOURCE_GROUP: ${{ vars.RESOURCE_GROUP }}
         run: |
           set -euo pipefail
@@ -117,7 +126,7 @@ jobs:
           E2E_CLIENT_ID: ${{ vars.VITE_AZURE_AD_CLIENT_ID }}
           E2E_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
           E2E_ACCESS_TOKEN: ${{ steps.token.outputs.access_token }}
-        run: npx playwright test login.spec.ts
+        run: npx playwright test
 
       - name: Upload Playwright results
         if: always()

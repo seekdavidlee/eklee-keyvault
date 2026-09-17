@@ -82,14 +82,7 @@ jobs:
           package_name="${GITHUB_REPOSITORY#*/}"
           package_name=$(printf '%s' "$package_name" | tr '[:upper:]' '[:lower:]')
 
-          if [[ "$BRANCH_NAME" == release/* ]]; then
-            version="${BRANCH_NAME#release/}"
-            version=$(printf '%s' "$version" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9.-]+/-/g')
-            image_tag="release-${version}"
-          else
-            branch_slug=$(printf '%s' "$BRANCH_NAME" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')
-            image_tag="branch-${branch_slug}"
-          fi
+          image_tag=$(REF_NAME="$BRANCH_NAME" bash .github/scripts/resolve-image-tag.sh)
 
           owner_type=$(gh api "/users/${package_owner}" --jq '.type')
           if [[ "$owner_type" == "Organization" ]]; then

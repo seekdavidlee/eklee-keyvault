@@ -104,16 +104,7 @@ jobs:
         id: image-tag
         run: |
           REF_NAME="${GITHUB_REF_NAME}"
-          if [[ "${{ needs.setup.outputs.build_env }}" == "prod" ]]; then
-            TAG="latest"
-          elif [[ "$REF_NAME" == release/* ]]; then
-            VERSION="${REF_NAME#release/}"
-            VERSION=$(printf '%s' "$VERSION" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9.-]+/-/g')
-            TAG="release-${VERSION}"
-          else
-            BRANCH_SLUG=$(printf '%s' "$REF_NAME" | tr '[:upper:]' '[:lower:]' | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')
-            TAG="branch-${BRANCH_SLUG}"
-          fi
+          TAG=$(REF_NAME="$REF_NAME" bash .github/scripts/resolve-image-tag.sh)
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "image=ghcr.io/${{ github.repository }}:$TAG" >> $GITHUB_OUTPUT
 

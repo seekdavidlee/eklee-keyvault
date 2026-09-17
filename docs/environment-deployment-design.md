@@ -74,9 +74,11 @@ strategy.
 
 `dev` is the shared non-production environment. CI selects it for every branch
 push other than `main`. Each branch deployment creates a separate Container App
-in the shared `dev` resource group. Hosted Playwright runs in its own workflow,
-manually for a selected branch and automatically after successful `CI/CD` runs
-for `release/**` branches.
+in the shared `dev` resource group. Hosted Playwright runs in its own workflow
+only after a successful `CI/CD` run for a `release/**` branch or after a
+same-repository pull request is merged into `main`. In the merged-PR case, it
+tests the deployed source-branch Container App. Ordinary branch CI completions
+do not trigger hosted E2E.
 
 Branch Container Apps reuse the existing user-assigned managed identity in the
 `dev` environment. The deployment action discovers that identity and assigns it
@@ -114,7 +116,7 @@ and behavior:
 
 | CI concern | `dev` behavior | `prod` behavior |
 | ----------------------- | --------------------------------------------------- | ----------------------------------------------------------------- |
-| Hosted E2E tests | Separate workflow, manual for branches and automatic after successful `CI/CD` runs for `release/**` | Not run by this workflow |
+| Hosted E2E tests | Separate workflow, automatic after successful `CI/CD` runs for `release/**` or same-repository PR merges into `main` | Not run by this workflow |
 | GHCR image tag | `branch-<normalized-branch>` or `release-<normalized-version>` | `latest` plus short commit SHA |
 | GHCR image publication | Current workflow publishes the branch or release tag | Current workflow publishes `latest` and short commit SHA |
 | Container Apps deployment | Creates a dedicated app per branch and reuses the existing `dev` managed identity | Creates a dedicated release or production app using the selected production configuration |
@@ -208,12 +210,13 @@ flowchart LR
 
 ## Operational Guidance
 
-Use a branch push to validate a dedicated development Container App. The app
-reuses the existing `dev` managed identity and remains available until the
-branch is merged, after which the cleanup action removes it. Use a merged
-`main` commit only after its production protections and workflow behavior have
-been verified. A release validation app follows the same lifecycle and is
-removed after the release is merged into `main`.
+Any non-`main` branch push creates a dedicated development Container App, but
+does not trigger hosted E2E unless the branch is `release/**`. The app reuses
+the existing `dev` managed identity and remains available until the branch is
+merged, after which the cleanup action removes it. A same-repository pull
+request merged into `main` triggers hosted E2E against its deployed source
+branch app. A release validation app follows the same lifecycle and is removed
+after the release is merged into `main`.
 
 Use a semantic GHCR version or digest to identify a public release; do not infer
 that identity from the mutable GHCR `latest` tag.
