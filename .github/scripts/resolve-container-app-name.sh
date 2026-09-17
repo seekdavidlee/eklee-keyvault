@@ -17,6 +17,7 @@ fi
 normalized=$(printf '%s' "$BRANCH_NAME" \
   | tr '[:upper:]' '[:lower:]' \
   | sed -E 's/[^a-z0-9]+/-/g; s/^-+//; s/-+$//')
+normalized=${normalized:-ref}
 hash=$(printf '%s' "$BRANCH_NAME" | sha256sum | cut -c1-7)
 
 # Container App names are limited to 32 characters. Keep the hash so that
