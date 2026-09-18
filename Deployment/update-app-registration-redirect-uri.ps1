@@ -12,11 +12,12 @@ function Extract-AzdValue {
         return $null
     }
 
-    $lines = ($CommandOutput | Out-String) -split "`r?`n"
+    $output = (($CommandOutput | Out-String) -split 'Update available:', 2)[0]
+    $lines = $output -split "`r?`n"
     $candidateLines = @(
         $lines |
             ForEach-Object { $_.Trim() } |
-            Where-Object { $_ -and $_ -notmatch '^(WARNING:|Update available:|To update(?: to the latest version)?, run `?choco upgrade azd`?$|choco upgrade azd$)' }
+            Where-Object { $_ -and $_ -notmatch '^WARNING:' }
     )
 
     if ($candidateLines.Count -eq 0) {
