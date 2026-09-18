@@ -4,7 +4,6 @@ description: Index of Eklee KeyVault design documents
 post_title: Design Documents
 author1: David Lee
 post_slug: design-documents
-microsoft_alias: leedavid
 featured_image: https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png
 categories:
   - engineering
