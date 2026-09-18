@@ -516,9 +516,9 @@ The `cleanup-container-app.yml` workflow runs after same-repository pull request
 are merged. It removes the temporary Container App and matching public GHCR image:
 
 - Merging a normal branch into `release/*` deletes its `ekv-branch-*` Container App
-  and `branch-<normalized-branch>` image tag.
+  and `branch-<normalized-branch>-<12-char-ref-hash>` image tag.
 - Merging `release/<version>` into `main` deletes its `ekv-release-*` Container App
-  and `release-<normalized-version>` image tag.
+  and `release-<normalized-version>-<12-char-ref-hash>` image tag.
 
 The cleanup is idempotent when either resource is already absent and never targets
 the long-lived `main` Container App or its production image tags.

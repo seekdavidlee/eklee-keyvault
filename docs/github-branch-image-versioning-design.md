@@ -77,13 +77,15 @@ Git branch names and container image tags use related but distinct formats.
 
 | Source | Example branch or tag | GHCR image tag | Behavior |
 | --- | --- | --- | --- |
-| Development branch | `feat/24-self-discover-storage` | `branch-feat-24-self-discover-storage` | Mutable |
-| Release branch | `release/1.2.3` | `release-1.2.3` | Mutable |
+| Development branch | `feat/24-self-discover-storage` | `branch-feat-24-self-discover-storage-2205fb2a74c5` | Mutable |
+| Release branch | `release/1.2.3` | `release-1.2.3-88ded65193eb` | Mutable |
 | Completed release | Git tag `1.2.3` | `1.2.3` | Immutable |
 
 Branch names are normalized by converting them to lowercase, replacing `/` and
 other unsupported characters with `-`, and limiting the result to a safe image-tag
-length. The normalized tag is an alias for the branch's latest successful build.
+length. A 12-character SHA-256 prefix of the original branch name is appended to
+the normalized tag. The resulting tag is an alias for the branch's latest
+successful build.
 
 The commit SHA remains available as a separate image tag or digest for precise
 identification. Consumers that need reproducibility should use the digest rather
@@ -129,8 +131,8 @@ concern, so this check must be required by the `main` ruleset.
 For each accepted merge, the cleanup workflow also deletes the corresponding
 temporary Azure Container App and matching mutable GHCR image version:
 
-* `branch-<normalized-branch>` for a normal source branch.
-* `release-<normalized-version>` for a release branch.
+* `branch-<normalized-branch>-<12-char-ref-hash>` for a normal source branch.
+* `release-<normalized-version>-<12-char-ref-hash>` for a release branch.
 
 The workflow uses the GitHub package API with `packages: write` and matches the
 exact image tag. It does not select `latest`, commit-SHA tags, or semantic

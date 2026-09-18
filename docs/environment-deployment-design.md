@@ -85,9 +85,10 @@ Branch Container Apps reuse the existing user-assigned managed identity in the
 `dev` environment. The deployment action discovers that identity and assigns it
 to each new app; it does not create a managed identity for every branch.
 
-Branch images use `branch-<normalized-branch>` and release images use
-`release-<normalized-version>`. The commit SHA remains available from the
-workflow and deployment metadata for immutable traceability.
+Branch images use `branch-<normalized-branch>-<12-char-ref-hash>` and release
+images use `release-<normalized-version>-<12-char-ref-hash>`. The commit SHA
+remains available from the workflow and deployment metadata for immutable
+traceability.
 
 Because every non-`main` branch selects the same environment and resource group,
 the app name and cleanup logic must be derived from a validated branch identity.
@@ -118,10 +119,10 @@ and behavior:
 | CI concern | `dev` behavior | `prod` behavior |
 | ----------------------- | --------------------------------------------------- | ----------------------------------------------------------------- |
 | Hosted E2E tests | Separate workflow, automatic after successful `CI/CD` runs for `release/**` or same-repository `release/**` PR merges into `main` | Not run by this workflow |
-| GHCR image tag | `branch-<normalized-branch>` or `release-<normalized-version>` | `latest` plus short commit SHA |
+| GHCR image tag | `branch-<normalized-branch>-<12-char-ref-hash>` or `release-<normalized-version>-<12-char-ref-hash>` | `latest` plus short commit SHA |
 | GHCR image publication | Current workflow publishes the branch or release tag | Current workflow publishes `latest` and short commit SHA |
 | Container Apps deployment | Creates a dedicated app per branch and reuses the existing `dev` managed identity | Creates a dedicated release or production app using the selected production configuration |
-| Merge cleanup | Deletes the branch app and matching `branch-<normalized-branch>` GHCR image after its branch is merged | Deletes the release app and matching `release-<normalized-version>` GHCR image after the release is merged into `main` |
+| Merge cleanup | Deletes the branch app and matching `branch-<normalized-branch>-<12-char-ref-hash>` GHCR image after its branch is merged | Deletes the release app and matching `release-<normalized-version>-<12-char-ref-hash>` GHCR image after the release is merged into `main` |
 
 The deployment job discovers the target resources from the selected environment's
 `RESOURCE_GROUP` and deploys the image to Azure Container Apps. CI derives the
