@@ -11,7 +11,7 @@ permissions:
 
 jobs:
   release-promotion:
-    name: Require release branch for main
+    name: release/promotion-policy
     runs-on: ubuntu-latest
     steps:
       - name: Validate pull request source
