@@ -33,7 +33,13 @@ param tenantId string = tenant().tenantId
 param clientId string = ''
 
 @description('The full container image reference including digest (set by preprovision hook)')
-param containerImage string = 'ghcr.io/seekdavidlee/eklee-keyvault:latest'
+param containerImage string
+
+@description('The full immutable Microsoft Entra ID Auth SDK sidecar image reference')
+param miseSidecarImage string = ''
+
+@description('Enable the Microsoft Entra ID Auth SDK sidecar for API token validation')
+param enableMiseSidecar bool = false
 
 @description('Enable private networking with a virtual network and private endpoints')
 param enablePrivateNetworking bool = false
@@ -122,6 +128,8 @@ module resources 'azd-resources.bicep' = {
     tenantId: tenantId
     clientId: clientId
     containerImage: containerImage
+    miseSidecarImage: miseSidecarImage
+    enableMiseSidecar: enableMiseSidecar
     enablePrivateNetworking: enablePrivateNetworking
     existingStorageAccountName: existingStorageAccountName
     existingKeyVaultName: existingKeyVaultName
