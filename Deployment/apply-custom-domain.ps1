@@ -142,12 +142,14 @@ if ($LASTEXITCODE -ne 0) {
 # ---------------------------------------------------------------------------
 
 $customDomainUrl = "https://$customDomain"
+$applicationContainerName = "eklee-keyvault"
 
 Write-Host "Updating Container App environment variables to use '$customDomainUrl'..." -ForegroundColor Cyan
 az containerapp update `
     --name $containerAppName `
     --resource-group $resourceGroupName `
     --subscription $subscriptionId `
+    --container-name $applicationContainerName `
     --set-env-vars `
         "VITE_AZURE_AD_REDIRECT_URI=$customDomainUrl" `
         "VITE_API_BASE_URL=$customDomainUrl" `

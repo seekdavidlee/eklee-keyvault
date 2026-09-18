@@ -127,6 +127,54 @@ function Read-RequiredValue {
     }
 }
 
+function ConvertTo-CustomDomainName {
+    <# .SYNOPSIS Normalizes and validates an optional custom DNS hostname. #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory = $false)]
+        [AllowNull()]
+        [string]$Value
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Value)) {
+        return $null
+    }
+
+    $customDomainName = $Value.Trim()
+    if ($customDomainName.EndsWith('.')) {
+        $customDomainName = $customDomainName.Substring(0, $customDomainName.Length - 1)
+    }
+    $customDomainName = $customDomainName.ToLowerInvariant()
+    if ($customDomainName.Length -gt 253 -or
+        $customDomainName -match '^(?:\d+\.){3}\d+$' -or
+        $customDomainName -notmatch '^[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?(?:\.[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?)+$') {
+        throw "Custom domain '$Value' must be a fully qualified DNS hostname."
+    }
+
+    return $customDomainName
+}
+
+function Read-OptionalCustomDomainName {
+    <# .SYNOPSIS Reads, normalizes, and validates an optional custom DNS hostname. #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Prompt
+    )
+
+    while ($true) {
+        try {
+            return ConvertTo-CustomDomainName -Value (Read-Host $Prompt)
+        }
+        catch {
+            Write-Warning $_.Exception.Message
+        }
+    }
+}
+
 function Read-YesNoValue {
     <# .SYNOPSIS Reads a Yes or No value from the console. #>
     [CmdletBinding()]
@@ -192,6 +240,7 @@ function Read-Target {
     $location = Read-RequiredValue -Prompt 'Azure location' -DefaultValue 'centralus'
     $prefix = Read-RequiredValue -Prompt 'Resource prefix (3-10 lowercase characters)' -DefaultValue $environmentName
     $resourceGroupName = Read-RequiredValue -Prompt 'Azure resource group name' -DefaultValue "$prefix-rg"
+    $customDomainName = Read-OptionalCustomDomainName -Prompt 'Custom domain name (optional; e.g. app.example.com)'
     $enablePrivateNetworking = Read-YesNoValue -Prompt 'Enable private networking' -DefaultValue $false
     $enableMiseSidecar = Read-YesNoValue -Prompt 'Enable the MISE authentication sidecar' -DefaultValue $false
     $miseSidecarImage = if ($enableMiseSidecar) {
@@ -223,6 +272,7 @@ function Read-Target {
         location        = $location
         prefix          = $prefix
         resourceGroupName = $resourceGroupName
+        customDomainName = $customDomainName
         enablePrivateNetworking = $enablePrivateNetworking
         enableMiseSidecar = $enableMiseSidecar
         miseSidecarImage = $miseSidecarImage
@@ -429,6 +479,13 @@ function Set-AzdEnvironment {
     Invoke-ExternalCommand -CommandName 'azd' -Arguments @(
         'env', 'set', 'AZURE_LOCATION', $Target.location
     )
+    $customDomainNameProperty = $Target.PSObject.Properties['customDomainName']
+    if ($customDomainNameProperty -and -not [string]::IsNullOrWhiteSpace([string]$customDomainNameProperty.Value)) {
+        $customDomainName = ConvertTo-CustomDomainName -Value ([string]$customDomainNameProperty.Value)
+        Invoke-ExternalCommand -CommandName 'azd' -Arguments @(
+            'env', 'set', 'CUSTOM_DOMAIN_NAME', $customDomainName
+        )
+    }
     $privateNetworkingValue = if ($Target.enablePrivateNetworking) { 'true' } else { 'false' }
     Invoke-ExternalCommand -CommandName 'azd' -Arguments @(
         'env', 'set', 'ENABLE_PRIVATE_NETWORKING', $privateNetworkingValue
@@ -803,6 +860,46 @@ function Set-TargetAppRegistrationName {
     return $Target
 }
 
+function Set-TargetCustomDomainName {
+    <# .SYNOPSIS Adds an optional custom domain setting to legacy target entries. #>
+    [CmdletBinding()]
+    [OutputType([object])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Target,
+
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [object[]]$Targets,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$ProfilePath
+    )
+
+    $customDomainNameProperty = $Target.PSObject.Properties['customDomainName']
+    if ($customDomainNameProperty) {
+        if (-not [string]::IsNullOrWhiteSpace([string]$customDomainNameProperty.Value)) {
+            $customDomainNameProperty.Value = ConvertTo-CustomDomainName -Value ([string]$customDomainNameProperty.Value)
+        }
+
+        return $Target
+    }
+
+    Write-Host "Target '$($Target.displayName)' has no custom domain configured." -ForegroundColor Yellow
+    $customDomainName = Read-OptionalCustomDomainName -Prompt 'Custom domain name (optional; e.g. app.example.com)'
+    $Target | Add-Member -MemberType NoteProperty -Name customDomainName -Value $customDomainName
+
+    $targetIndex = [Array]::IndexOf($Targets, $Target)
+    if ($targetIndex -ge 0) {
+        $Targets[$targetIndex] = $Target
+        Save-TargetCatalog -Path $ProfilePath -Targets $Targets
+        Write-Host "Target catalog updated at '$ProfilePath'." -ForegroundColor Green
+    }
+
+    return $Target
+}
+
 function Set-TargetGitHubDeployAppRegistrationName {
     <# .SYNOPSIS Adds a GitHub deployment app registration name to legacy target entries. #>
     [CmdletBinding()]
@@ -884,6 +981,7 @@ if ($MyInvocation.InvocationName -ne '.') {
             $target = Resolve-TargetResourceGroupName -Target $target -Targets $targets -ProfilePath $ProfilePath -RepositoryPath $repositoryPath
             $target = Set-TargetPrivateNetworking -Target $target -Targets $targets -ProfilePath $ProfilePath
             $target = Set-TargetMiseSidecar -Target $target -Targets $targets -ProfilePath $ProfilePath
+            $target = Set-TargetCustomDomainName -Target $target -Targets $targets -ProfilePath $ProfilePath
             $target = Set-TargetAppRegistrationName -Target $target -Targets $targets -ProfilePath $ProfilePath
             $target = Set-TargetGitHubDeployAppRegistrationName -Target $target -Targets $targets -ProfilePath $ProfilePath
 
