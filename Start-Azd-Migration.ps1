@@ -703,6 +703,64 @@ function Set-TargetPrivateNetworking {
     return $Target
 }
 
+function Set-TargetMiseSidecar {
+    <# .SYNOPSIS Adds MISE sidecar settings to legacy target entries. #>
+    [CmdletBinding()]
+    [OutputType([object])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Target,
+
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [object[]]$Targets,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$ProfilePath
+    )
+
+    $targetChanged = $false
+    $miseSidecarProperty = $Target.PSObject.Properties['enableMiseSidecar']
+    $enableMiseSidecar = $miseSidecarProperty -and $miseSidecarProperty.Value -is [bool] -and $miseSidecarProperty.Value
+    if (-not ($miseSidecarProperty -and $miseSidecarProperty.Value -is [bool])) {
+        Write-Host "Target '$($Target.displayName)' has no MISE sidecar preference configured." -ForegroundColor Yellow
+        $enableMiseSidecar = Read-YesNoValue -Prompt 'Enable the MISE authentication sidecar' -DefaultValue $false
+        if ($miseSidecarProperty) {
+            $miseSidecarProperty.Value = $enableMiseSidecar
+        }
+        else {
+            $Target | Add-Member -MemberType NoteProperty -Name enableMiseSidecar -Value $enableMiseSidecar
+        }
+        $targetChanged = $true
+    }
+
+    if ($enableMiseSidecar) {
+        $miseSidecarImageProperty = $Target.PSObject.Properties['miseSidecarImage']
+        if (-not $miseSidecarImageProperty -or [string]::IsNullOrWhiteSpace([string]$miseSidecarImageProperty.Value)) {
+            $miseSidecarImage = Read-RequiredValue -Prompt 'MISE sidecar image with immutable sha256 digest'
+            if ($miseSidecarImageProperty) {
+                $miseSidecarImageProperty.Value = $miseSidecarImage
+            }
+            else {
+                $Target | Add-Member -MemberType NoteProperty -Name miseSidecarImage -Value $miseSidecarImage
+            }
+            $targetChanged = $true
+        }
+    }
+
+    if ($targetChanged) {
+        $targetIndex = [Array]::IndexOf($Targets, $Target)
+        if ($targetIndex -ge 0) {
+            $Targets[$targetIndex] = $Target
+            Save-TargetCatalog -Path $ProfilePath -Targets $Targets
+            Write-Host "Target catalog updated at '$ProfilePath'." -ForegroundColor Green
+        }
+    }
+
+    return $Target
+}
+
 function Set-TargetAppRegistrationName {
     <# .SYNOPSIS Adds an app registration name to legacy target entries. #>
     [CmdletBinding()]
@@ -825,6 +883,7 @@ if ($MyInvocation.InvocationName -ne '.') {
             $target = Set-TargetResourceGroupName -Target $target -Targets $targets -ProfilePath $ProfilePath
             $target = Resolve-TargetResourceGroupName -Target $target -Targets $targets -ProfilePath $ProfilePath -RepositoryPath $repositoryPath
             $target = Set-TargetPrivateNetworking -Target $target -Targets $targets -ProfilePath $ProfilePath
+            $target = Set-TargetMiseSidecar -Target $target -Targets $targets -ProfilePath $ProfilePath
             $target = Set-TargetAppRegistrationName -Target $target -Targets $targets -ProfilePath $ProfilePath
             $target = Set-TargetGitHubDeployAppRegistrationName -Target $target -Targets $targets -ProfilePath $ProfilePath
 
