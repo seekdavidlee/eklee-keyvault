@@ -193,6 +193,13 @@ function Read-Target {
     $prefix = Read-RequiredValue -Prompt 'Resource prefix (3-10 lowercase characters)' -DefaultValue $environmentName
     $resourceGroupName = Read-RequiredValue -Prompt 'Azure resource group name' -DefaultValue "$prefix-rg"
     $enablePrivateNetworking = Read-YesNoValue -Prompt 'Enable private networking' -DefaultValue $false
+    $enableMiseSidecar = Read-YesNoValue -Prompt 'Enable the MISE authentication sidecar' -DefaultValue $false
+    $miseSidecarImage = if ($enableMiseSidecar) {
+        Read-RequiredValue -Prompt 'MISE sidecar image with immutable sha256 digest'
+    }
+    else {
+        $null
+    }
     $appRegistrationName = Read-RequiredValue -Prompt 'App registration name' -DefaultValue "$prefix-app"
     $githubDeployAppRegistrationName = Read-RequiredValue -Prompt 'GitHub deployment app registration name'
 
@@ -217,6 +224,8 @@ function Read-Target {
         prefix          = $prefix
         resourceGroupName = $resourceGroupName
         enablePrivateNetworking = $enablePrivateNetworking
+        enableMiseSidecar = $enableMiseSidecar
+        miseSidecarImage = $miseSidecarImage
         appRegistrationName = $appRegistrationName
         githubDeployAppRegistrationName = $githubDeployAppRegistrationName
     }
@@ -307,6 +316,13 @@ function Select-Target {
             else {
                 'public'
             }
+            $miseSidecarProperty = $target.PSObject.Properties['enableMiseSidecar']
+            $miseSidecarMode = if ($miseSidecarProperty -and $miseSidecarProperty.Value -is [bool] -and $miseSidecarProperty.Value) {
+                'enabled'
+            }
+            else {
+                'disabled'
+            }
             $appRegistrationProperty = $target.PSObject.Properties['appRegistrationName']
             $appRegistrationName = if ($appRegistrationProperty -and -not [string]::IsNullOrWhiteSpace([string]$appRegistrationProperty.Value)) {
                 $appRegistrationProperty.Value
@@ -314,8 +330,8 @@ function Select-Target {
             else {
                 "$($target.prefix)-app"
             }
-            Write-Host ("{0}. {1} | tenant {2} | subscription {3} | azd env {4} | prefix {5} | resource group {6} | networking {7} | app {8}" -f `
-                ($index + 1), $target.displayName, $target.tenantId, $target.subscriptionId, $target.environmentName, $target.prefix, $resourceGroupName, $networkingMode, $appRegistrationName)
+            Write-Host ("{0}. {1} | tenant {2} | subscription {3} | azd env {4} | prefix {5} | resource group {6} | networking {7} | MISE {8} | app {9}" -f `
+                ($index + 1), $target.displayName, $target.tenantId, $target.subscriptionId, $target.environmentName, $target.prefix, $resourceGroupName, $networkingMode, $miseSidecarMode, $appRegistrationName)
         }
         Write-Host 'A. Add another target'
         Write-Host 'Q. Quit'
@@ -417,6 +433,21 @@ function Set-AzdEnvironment {
     Invoke-ExternalCommand -CommandName 'azd' -Arguments @(
         'env', 'set', 'ENABLE_PRIVATE_NETWORKING', $privateNetworkingValue
     )
+    $miseSidecarProperty = $Target.PSObject.Properties['enableMiseSidecar']
+    $miseSidecarValue = if ($miseSidecarProperty -and $miseSidecarProperty.Value -is [bool] -and $miseSidecarProperty.Value) { 'true' } else { 'false' }
+    Invoke-ExternalCommand -CommandName 'azd' -Arguments @(
+        'env', 'set', 'ENABLE_MISE_SIDECAR', $miseSidecarValue
+    )
+    if ($miseSidecarValue -eq 'true') {
+        $miseSidecarImageProperty = $Target.PSObject.Properties['miseSidecarImage']
+        if (-not $miseSidecarImageProperty -or [string]::IsNullOrWhiteSpace([string]$miseSidecarImageProperty.Value)) {
+            throw "Target '$($Target.displayName)' enables the MISE sidecar but has no miseSidecarImage. Add an immutable image digest to the target profile entry."
+        }
+
+        Invoke-ExternalCommand -CommandName 'azd' -Arguments @(
+            'env', 'set', 'MISE_SIDECAR_IMAGE', ([string]$miseSidecarImageProperty.Value)
+        )
+    }
     Invoke-ExternalCommand -CommandName 'azd' -Arguments @(
         'env', 'set', 'APP_REGISTRATION_NAME', $Target.appRegistrationName
     )

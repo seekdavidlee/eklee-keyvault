@@ -76,6 +76,48 @@ if ($privateNetworkingValue -notin @('true', 'false')) {
 Write-Host "Private networking: $privateNetworkingValue" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
+# Default MISE sidecar authentication to disabled unless an operator opts in.
+# This ensures the public GHCR application image can be deployed without a
+# separate MISE sidecar image reference.
+# ---------------------------------------------------------------------------
+$miseSidecarOutput = azd env get-value ENABLE_MISE_SIDECAR 2>$null
+$miseSidecarValue = $null
+if ($LASTEXITCODE -eq 0) {
+    $miseSidecarValue = ($miseSidecarOutput | Out-String).Trim().ToLowerInvariant()
+}
+
+if ([string]::IsNullOrWhiteSpace($miseSidecarValue)) {
+    $miseSidecarValue = 'false'
+    azd env set ENABLE_MISE_SIDECAR $miseSidecarValue
+    if ($LASTEXITCODE -ne 0) {
+        Write-Error 'Failed to set ENABLE_MISE_SIDECAR in the azd environment.'
+        exit 1
+    }
+}
+elseif ($miseSidecarValue -notin @('true', 'false')) {
+    Write-Error 'ENABLE_MISE_SIDECAR must be true or false.'
+    exit 1
+}
+
+Write-Host "MISE sidecar enabled: $miseSidecarValue" -ForegroundColor Green
+
+if ($miseSidecarValue -eq 'false') {
+    $miseSidecarImageOutput = azd env get-value MISE_SIDECAR_IMAGE 2>$null
+    $miseSidecarImageValue = $null
+    if ($LASTEXITCODE -eq 0) {
+        $miseSidecarImageValue = ($miseSidecarImageOutput | Out-String).Trim()
+    }
+
+    if ([string]::IsNullOrWhiteSpace($miseSidecarImageValue)) {
+        azd env set MISE_SIDECAR_IMAGE disabled
+        if ($LASTEXITCODE -ne 0) {
+            Write-Error 'Failed to set the disabled MISE_SIDECAR_IMAGE placeholder in the azd environment.'
+            exit 1
+        }
+    }
+}
+
+# ---------------------------------------------------------------------------
 # Resolve prefix from azd environment if not provided
 # ---------------------------------------------------------------------------
 if (-not $Prefix) {
@@ -247,6 +289,131 @@ else {
     }
     Write-Host "SPA redirect URI configured." -ForegroundColor Green
 }
+
+# ---------------------------------------------------------------------------
+# Reconcile required API policy for both new and existing registrations.
+# ---------------------------------------------------------------------------
+Write-Host "Reconciling API registration policy..." -ForegroundColor Cyan
+$application = az ad app show --id $clientId --output json | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0) {
+    throw "Failed to read app registration '$clientId' for reconciliation."
+}
+
+$requiredIdentifierUri = "api://$clientId"
+$identifierUris = @($application.identifierUris | Where-Object { $_ })
+if ($identifierUris -contains $clientId) {
+    throw "App registration '$clientId' contains the incompatible bare client ID identifier URI. Remove it before continuing."
+}
+if ($identifierUris -notcontains $requiredIdentifierUri) {
+    $identifierUris += $requiredIdentifierUri
+}
+
+$apiPatch = [ordered]@{}
+foreach ($property in $application.api.PSObject.Properties) {
+    $apiPatch[$property.Name] = $property.Value
+}
+
+$requestedAccessTokenVersion = $apiPatch['requestedAccessTokenVersion']
+if ($requestedAccessTokenVersion -eq 1) {
+    throw "App registration '$clientId' requires v1 access tokens. Update it to v2 before continuing."
+}
+$apiPatch['requestedAccessTokenVersion'] = 2
+
+$scopes = @($apiPatch['oauth2PermissionScopes'] | Where-Object { $_ })
+$scope = $scopes | Where-Object { $_.value -eq 'access_as_user' } | Select-Object -First 1
+if ($scope) {
+    if (-not $scope.isEnabled -or $scope.type -ne 'User') {
+        throw "Existing API scope 'access_as_user' is disabled or incompatible. Resolve it manually before continuing."
+    }
+}
+else {
+    $scope = [ordered]@{
+        adminConsentDescription = "Allow the application to access $AppName on behalf of the signed-in user."
+        adminConsentDisplayName = "Access $AppName"
+        id                      = [guid]::NewGuid().ToString()
+        isEnabled               = $true
+        type                    = 'User'
+        userConsentDescription  = "Allow the application to access $AppName on your behalf."
+        userConsentDisplayName  = "Access $AppName"
+        value                   = 'access_as_user'
+    }
+    $scopes += $scope
+}
+$apiPatch['oauth2PermissionScopes'] = @($scopes)
+
+$azureCliAppId = '04b07795-8ddb-461a-bbee-02f9e1bf7b46'
+$preAuthorizedApplications = @($apiPatch['preAuthorizedApplications'] | Where-Object { $_ })
+$azureCliPreAuthorization = $preAuthorizedApplications |
+    Where-Object { $_.appId -eq $azureCliAppId } |
+    Select-Object -First 1
+
+if ($azureCliPreAuthorization) {
+    $delegatedPermissionIds = @($azureCliPreAuthorization.delegatedPermissionIds | Where-Object { $_ })
+    if ($delegatedPermissionIds -notcontains $scope.id) {
+        $azureCliPreAuthorization.delegatedPermissionIds = @($delegatedPermissionIds + $scope.id)
+    }
+}
+else {
+    $preAuthorizedApplications += [ordered]@{
+        appId                  = $azureCliAppId
+        delegatedPermissionIds = @($scope.id)
+    }
+}
+$apiPatch['preAuthorizedApplications'] = @($preAuthorizedApplications)
+
+$spaPatch = [ordered]@{}
+foreach ($property in $application.spa.PSObject.Properties) {
+    $spaPatch[$property.Name] = $property.Value
+}
+$redirectUris = @($spaPatch['redirectUris'] | Where-Object { $_ })
+if ($redirectUris -notcontains 'http://localhost:5173') {
+    $redirectUris += 'http://localhost:5173'
+}
+$spaPatch['redirectUris'] = @($redirectUris)
+
+$reconciliationBody = [ordered]@{
+    identifierUris = @($identifierUris)
+    api            = $apiPatch
+    spa            = $spaPatch
+} | ConvertTo-Json -Depth 20
+
+$reconciliationFile = Join-Path $env:TEMP "app-reconcile-$([guid]::NewGuid()).json"
+try {
+    $reconciliationBody | Out-File -FilePath $reconciliationFile -Encoding utf8
+    az rest --method PATCH `
+        --url "https://graph.microsoft.com/v1.0/applications/$($application.id)" `
+        --body "@$reconciliationFile" `
+        --headers "Content-Type=application/json" `
+        --output none
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to reconcile app registration '$clientId'."
+    }
+}
+finally {
+    Remove-Item $reconciliationFile -ErrorAction SilentlyContinue
+}
+
+$verifiedApplication = az ad app show --id $clientId --output json | ConvertFrom-Json
+if ($LASTEXITCODE -ne 0) {
+    throw "Failed to verify app registration '$clientId' after reconciliation."
+}
+
+$verifiedScope = @($verifiedApplication.api.oauth2PermissionScopes) |
+    Where-Object { $_.value -eq 'access_as_user' -and $_.isEnabled -and $_.type -eq 'User' } |
+    Select-Object -First 1
+$verifiedAzureCliPreAuthorization = @($verifiedApplication.api.preAuthorizedApplications) |
+    Where-Object { $_.appId -eq $azureCliAppId -and $_.delegatedPermissionIds -contains $verifiedScope.id } |
+    Select-Object -First 1
+
+if ($verifiedApplication.identifierUris -notcontains $requiredIdentifierUri -or
+    $verifiedApplication.identifierUris -contains $clientId -or
+    $verifiedApplication.api.requestedAccessTokenVersion -ne 2 -or
+    -not $verifiedScope -or
+    -not $verifiedAzureCliPreAuthorization) {
+    throw "App registration '$clientId' did not meet the required MISE API policy after reconciliation."
+}
+
+Write-Host 'API registration policy reconciled and verified.' -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
 # Ensure the API exposes the application-only role used by hosted E2E tests.

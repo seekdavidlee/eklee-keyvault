@@ -26,9 +26,12 @@ The script also resolves Azure location for provisioning. It first checks `AZURE
 `infra.parameters.location`, then process environment `AZURE_LOCATION`. If none are set, it prompts
 for a location and stores it in the azd environment for future runs.
 
-If the app registration already exists, the script preserves its existing API configuration,
-ensures the application-only `E2E.Tester` role exists, and stores the existing values. You can
-also run it manually:
+If the app registration already exists, the script read-merges and verifies the required
+`api://<clientId>` identifier URI, enabled `access_as_user` scope, Azure CLI preauthorization,
+v2 access-token setting, localhost SPA redirect URI, and application-only `E2E.Tester` role. It
+preserves unrelated identifier URIs, API scopes, preauthorizations, SPA redirects, and roles. A
+bare client-ID identifier URI or v1 access-token policy is rejected for manual remediation. You
+can also run it manually:
 
 ```powershell
 .\Deployment\setup-azd-app-registration.ps1 -Prefix "foobarkv1"
@@ -119,6 +122,7 @@ The template deploys the following resources:
   - Storage Blob Data Contributor on the Storage Account
 - **Container Apps Environment**: Consumption workload profile
 - **Container App**: running the image resolved from `ghcr.io/seekdavidlee/eklee-keyvault` (pinned by digest)
+- **Optional MISE sidecar**: a private token-validation container when explicitly enabled
 - **Private networking when selected**: VNet integration for Container Apps, private endpoints
    for the Storage Account and Key Vault, and linked private DNS zones
 
@@ -134,6 +138,51 @@ azd auth login --use-device-code
 The device code flow displays a URL and a code. Open the URL in your preferred browser or profile,
 then enter the code to complete authentication. This is recommended over `azd auth login` because
 the default browser login may open in an unintended browser profile.
+
+## Optional MISE Sidecar
+
+The default deployment does not use a Microsoft Entra ID Auth SDK (MISE) sidecar. It deploys the
+public GHCR application image and uses the API's built-in Microsoft.Identity.Web JWT validation.
+The preprovision hook persists `ENABLE_MISE_SIDECAR=false` when the setting is absent.
+
+To opt in, set both of the following values before provisioning. The MISE container validates
+bearer tokens on `http://localhost:5000/Validate`; it has no external ingress, while the application
+continues to expose port 8080. The sidecar image is deliberately not embedded in source.
+
+```bash
+azd env set ENABLE_MISE_SIDECAR true
+azd env set MISE_SIDECAR_IMAGE "<approved-registry>/<approved-image>@sha256:<digest>"
+```
+
+To return to the default path, set the flag to `false`; the image value is then ignored and no
+sidecar container is deployed. The preprovision hook supplies a non-image placeholder when the
+sidecar image value is absent, so azd can resolve its parameter file:
+
+```bash
+azd env set ENABLE_MISE_SIDECAR false
+```
+
+Before a separately authorized production deployment, complete the following preflight. When MISE
+is enabled, the Bicep template rejects sidecar image values without `@sha256:`.
+
+```bash
+dotnet build Eklee.KeyVault.sln
+dotnet test Eklee.KeyVault.sln
+az bicep build --file Deployment/azd.bicep
+azd provision --preview
+```
+
+After an authorized MISE-enabled deployment, verify that each revision contains both
+`eklee-keyvault` and `mise-sidecar`, then collect sidecar telemetry from the Container Apps Log
+Analytics workspace:
+
+```bash
+az containerapp revision list --name <container-app> --resource-group <resource-group> --query "[].properties.template.containers[].{name:name,image:image}" --output table
+az monitor log-analytics query --workspace <workspace-id> --analytics-query "ContainerAppConsoleLogs_CL | where TimeGenerated > ago(30m) | where ContainerName_s == 'mise-sidecar' | project TimeGenerated, Log_s | order by TimeGenerated desc" --output table
+```
+
+Do not treat a successful provisioning operation as authentication evidence. Record the revision
+container output and corresponding MISE telemetry with the production change approval.
 
 ## Deployment Steps
 

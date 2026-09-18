@@ -9,6 +9,12 @@
     "containerImage": {
       "value": "${CONTAINER_IMAGE}"
     },
+    "miseSidecarImage": {
+      "value": "${MISE_SIDECAR_IMAGE}"
+    },
+    "enableMiseSidecar": {
+      "value": "${ENABLE_MISE_SIDECAR}"
+    },
     "enablePrivateNetworking": {
       "value": "${ENABLE_PRIVATE_NETWORKING}"
     },

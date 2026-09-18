@@ -8,42 +8,56 @@ var builder = WebApplication.CreateBuilder(args);
 // Authentication — JWT Bearer validation via Microsoft Entra ID
 // Accept both "api://<clientId>" and the bare "<clientId>" as valid audiences,
 // because Azure AD may stamp tokens with either form.
-var azureAdSection = builder.Configuration.GetSection("AzureAd");
-var clientId = azureAdSection["ClientId"]!;
-builder.Services.AddMicrosoftIdentityWebApiAuthentication(builder.Configuration, "AzureAd")
-    .EnableTokenAcquisitionToCallDownstreamApi()
-    .AddInMemoryTokenCaches();
-
-builder.Services.Configure<Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerOptions>(
-    Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme,
-    options =>
+var useMiseAuthentication = builder.Configuration.GetValue<bool>("Mise:Enabled");
+if (useMiseAuthentication)
+{
+    builder.Services.AddHttpClient<MiseTokenValidator>(client =>
     {
-        options.TokenValidationParameters.ValidAudiences =
-        [
-            $"api://{clientId}",
-            clientId
-        ];
-
-        // Allow tokens without scp/roles claims to pass JWT validation.
-        // Role-based authorization is handled by UserAccessClaimsTransformation
-        // which enriches the principal from the user_access.json blob.
-        options.TokenValidationParameters.RoleClaimType = System.Security.Claims.ClaimTypes.Role;
+        client.BaseAddress = new Uri("http://localhost:5000/");
+        client.Timeout = TimeSpan.FromSeconds(5);
     });
 
-// In CI/CD the service principal token has no scp/roles claim.
-// Set ALLOW_ACL_AUTH=true in the E2E pipeline to bypass the IDW10201 check.
-// Production keeps the stricter default that requires scp or roles in the token.
-var allowAclAuth = string.Equals(
-    builder.Configuration["ALLOW_ACL_AUTH"], "true", StringComparison.OrdinalIgnoreCase);
-
-if (allowAclAuth)
+    builder.Services.AddAuthentication(options =>
+    {
+        options.DefaultAuthenticateScheme = MiseTokenValidator.SchemeName;
+        options.DefaultChallengeScheme = MiseTokenValidator.SchemeName;
+    })
+    .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, MiseAuthenticationHandler>(
+        MiseTokenValidator.SchemeName,
+        _ => { });
+}
+else
 {
-    builder.Services.Configure<MicrosoftIdentityOptions>(
+    var azureAdSection = builder.Configuration.GetSection("AzureAd");
+    var clientId = azureAdSection["ClientId"]!;
+    builder.Services.AddMicrosoftIdentityWebApiAuthentication(builder.Configuration, "AzureAd")
+        .EnableTokenAcquisitionToCallDownstreamApi()
+        .AddInMemoryTokenCaches();
+
+    builder.Services.Configure<Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerOptions>(
         Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme,
         options =>
         {
-            options.AllowWebApiToBeAuthorizedByACL = true;
+            options.TokenValidationParameters.ValidAudiences =
+            [
+                $"api://{clientId}",
+                clientId
+            ];
+            options.TokenValidationParameters.RoleClaimType = System.Security.Claims.ClaimTypes.Role;
         });
+
+    var allowAclAuth = string.Equals(
+        builder.Configuration["ALLOW_ACL_AUTH"], "true", StringComparison.OrdinalIgnoreCase);
+
+    if (allowAclAuth)
+    {
+        builder.Services.Configure<MicrosoftIdentityOptions>(
+            Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme,
+            options =>
+            {
+                options.AllowWebApiToBeAuthorizedByACL = true;
+            });
+    }
 }
 
 builder.Services.AddAuthorization();

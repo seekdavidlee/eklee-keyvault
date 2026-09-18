@@ -16,7 +16,7 @@ function Extract-AzdValue {
     $candidateLines = @(
         $lines |
             ForEach-Object { $_.Trim() } |
-            Where-Object { $_ -and $_ -notmatch '^(WARNING:|To update to the latest version, run:|choco upgrade azd$)' }
+            Where-Object { $_ -and $_ -notmatch '^(WARNING:|Update available:|To update(?: to the latest version)?, run `?choco upgrade azd`?$|choco upgrade azd$)' }
     )
 
     if ($candidateLines.Count -eq 0) {

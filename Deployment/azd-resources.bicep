@@ -23,7 +23,13 @@ param tenantId string
 param clientId string
 
 @description('The full container image reference including digest (set by preprovision hook)')
-param containerImage string = 'ghcr.io/seekdavidlee/eklee-keyvault:latest'
+param containerImage string
+
+@description('The full immutable Microsoft Entra ID Auth SDK sidecar image reference')
+param miseSidecarImage string = ''
+
+@description('Enable the Microsoft Entra ID Auth SDK sidecar for API token validation')
+param enableMiseSidecar bool = false
 
 @description('Enable private networking with a virtual network and private endpoints')
 param enablePrivateNetworking bool = false
@@ -99,6 +105,14 @@ var keyVaultTags = union(tags, { 'resource-id': 'app-key-vault' })
 var managedIdentityTags = union(tags, { 'resource-id': 'app-managed-identity' })
 var containerAppEnvironmentTags = union(tags, { 'resource-id': 'app-container-app-environment' })
 var containerAppTags = union(tags, { 'resource-id': 'app-container-app' })
+var resolvedContainerImage = contains(containerImage, '@sha256:')
+  ? containerImage
+  : fail('containerImage must use an immutable sha256 digest.')
+var resolvedMiseSidecarImage = enableMiseSidecar
+  ? (contains(miseSidecarImage, '@sha256:')
+      ? miseSidecarImage
+      : fail('miseSidecarImage must use an immutable sha256 digest when enableMiseSidecar is true.'))
+  : ''
 
 // Well-known RBAC role definition IDs
 var keyVaultSecretsOfficerRoleId = subscriptionResourceId(
@@ -333,10 +347,10 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
       }
     }
     template: {
-      containers: [
+      containers: concat([
         {
           name: 'eklee-keyvault'
-          image: containerImage
+          image: resolvedContainerImage
           resources: {
             cpu: json('0.5')
             memory: '1Gi'
@@ -380,6 +394,10 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
               name: 'AzureAd__Audience'
               value: 'api://${clientId}'
             }
+            {
+              name: 'Mise__Enabled'
+              value: enableMiseSidecar ? 'true' : 'false'
+            }
             // React frontend runtime configuration (injected by docker-entrypoint.sh)
             {
               name: 'VITE_AZURE_AD_CLIENT_ID'
@@ -419,7 +437,65 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
             }
           ]
         }
-      ]
+      ], enableMiseSidecar ? [
+        {
+          name: 'mise-sidecar'
+          image: resolvedMiseSidecarImage
+          resources: {
+            cpu: json('0.25')
+            memory: '0.5Gi'
+          }
+          env: [
+            {
+              name: 'ASPNETCORE_URLS'
+              value: 'http://+:5000'
+            }
+            {
+              name: 'AzureAd__Instance'
+              value: environment().authentication.loginEndpoint
+            }
+            {
+              name: 'AzureAd__TenantId'
+              value: tenantId
+            }
+            {
+              name: 'AzureAd__ClientId'
+              value: clientId
+            }
+            {
+              name: 'AzureAd__Audience'
+              value: 'api://${clientId}'
+            }
+          ]
+          probes: [
+            {
+              type: 'Startup'
+              tcpSocket: {
+                port: 5000
+              }
+              initialDelaySeconds: 5
+              periodSeconds: 10
+              failureThreshold: 30
+            }
+            {
+              type: 'Liveness'
+              tcpSocket: {
+                port: 5000
+              }
+              initialDelaySeconds: 10
+              periodSeconds: 30
+            }
+            {
+              type: 'Readiness'
+              tcpSocket: {
+                port: 5000
+              }
+              initialDelaySeconds: 5
+              periodSeconds: 10
+            }
+          ]
+        }
+      ] : [])
       scale: {
         minReplicas: 0
         maxReplicas: 1
