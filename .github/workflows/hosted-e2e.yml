@@ -44,14 +44,6 @@ jobs:
           tenant-id: ${{ vars.AZURE_TENANT_ID }}
           subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
 
-      - name: Resolve E2E Key Vault and Storage resources
-        env:
-          RESOURCE_GROUP: ${{ vars.RESOURCE_GROUP }}
-          DEPLOYMENT_ENVIRONMENT: dev
-          KEYVAULT_URI_OVERRIDE: ${{ vars.E2E_KEYVAULT_URI }}
-          STORAGE_URI_OVERRIDE: ${{ vars.E2E_STORAGE_URI }}
-        run: bash .github/scripts/resolve-e2e-resources.sh
-
       - name: Resolve target Container App
         id: target
         env:

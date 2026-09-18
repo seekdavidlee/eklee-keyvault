@@ -77,34 +77,6 @@ The template generates unique names for resources using the pattern:
 - Key Vault: `{applicationName}-{environment}-{hash}` (e.g., `ekleekv-dev-a7b9c2`)
 - Container App: `{applicationName}-{environment}-app` (e.g., `ekleekv-dev-app`)
 
-## GitHub Actions E2E Resource Discovery
-
-The hosted E2E job discovers the Key Vault and Storage Account after Azure OIDC
-login. It scopes discovery to the environment's `RESOURCE_GROUP` variable and
-matches the tags applied by `main.bicep`:
-
-- `Application=Eklee-KeyVault`
-- `Environment=dev` for the development workflow
-
-Exactly one matching Key Vault and one matching Storage Account are required.
-Missing or multiple matches stop the workflow with the resource group, target
-environment, and required tags in the diagnostic message. The workflow derives
-the Key Vault URI from `properties.vaultUri` and the Storage Account URI from
-`properties.primaryEndpoints.blob`.
-
-`E2E_KEYVAULT_URI` and `E2E_STORAGE_URI` remain optional environment variables.
-When provided, each value is an explicit override. The workflow validates the
-URI format and confirms that the named resource exists in `RESOURCE_GROUP`
-before waiting for the Container App, obtaining an application token, and
-running the complete Playwright suite. The hosted workflow does not perform
-separate RBAC, network access, or cleanup checks.
-
-The GitHub Actions identity must be able to list resource metadata and read the
-selected Key Vault and Storage Account. The current deployment setup grants
-`Contributor` on the environment resource group, which includes these lookup
-operations. Resource identification does not require secret values or storage
-account keys.
-
 ## 🎯 Deployment
 
 ### Deploy with Azure CLI
