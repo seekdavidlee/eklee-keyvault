@@ -8,7 +8,9 @@
     Reads one resource group inventory and infers the resources managed by the
     active azd Bicep templates. The script reports its complete mapping by
     default. Tag updates require -Apply and are authorized individually by
-    PowerShell's ShouldProcess support.
+        PowerShell's ShouldProcess support. Private networking is detected from the
+        deployed Container Apps Environment, with matching azd environment metadata
+        used only when that resource is unavailable.
 
     The tag key is resource-id. Values are stable logical identifiers such as
     app-key-vault, and remain the same across resource groups and deployments.
@@ -26,7 +28,7 @@
 .EXAMPLE
     ./Scripts/Tag-ExistingStackResources.ps1 -ResourceGroupName eklee-keyvault-viewer-dev -Apply
 
-    Adds missing resource-id tags after preflight succeeds.
+    Adds resource-id tags after detecting the deployed networking mode.
 #>
 
 [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'High')]
@@ -72,6 +74,48 @@ function Invoke-AzureCliJson {
     }
 
     return $result | ConvertFrom-Json
+}
+
+function Get-AzdEnvironmentValue {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Name
+    )
+
+    if (-not (Get-Command azd -ErrorAction SilentlyContinue)) {
+        return $null
+    }
+
+    $value = & azd env get-value $Name 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        return $null
+    }
+
+    return ($value | Out-String).Trim()
+}
+
+function Get-AzdInfrastructureParameter {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Name
+    )
+
+    if (-not (Get-Command azd -ErrorAction SilentlyContinue)) {
+        return $null
+    }
+
+    $value = & azd env config get "infra.parameters.$Name" 2>$null
+    if ($LASTEXITCODE -ne 0) {
+        return $null
+    }
+
+    return ($value | Out-String).Trim().Trim('"')
 }
 
 function Get-ExistingResources {
@@ -132,18 +176,85 @@ function Get-ExistingResources {
     return @($uniqueResources)
 }
 
+function Get-PrivateNetworkingMode {
+    [CmdletBinding()]
+    [OutputType([object])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [object[]]$Resources,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$ResourceGroupName
+    )
+
+    $containerAppEnvironments = @($Resources | Where-Object {
+            $_.type -eq 'Microsoft.App/managedEnvironments'
+        })
+
+    if ($containerAppEnvironments.Count -eq 1) {
+        $containerAppEnvironment = Invoke-AzureCliJson -Arguments @(
+            'containerapp', 'env', 'show', '--ids', $containerAppEnvironments[0].id
+        )
+        $vnetConfiguration = $containerAppEnvironment.properties.vnetConfiguration
+        $infrastructureSubnetId = if ($vnetConfiguration) {
+            [string]$vnetConfiguration.infrastructureSubnetId
+        }
+        else {
+            $null
+        }
+
+        return [pscustomobject]@{
+            Enabled = -not [string]::IsNullOrWhiteSpace($infrastructureSubnetId)
+            Source = "Container Apps Environment '$($containerAppEnvironments[0].name)'"
+        }
+    }
+
+    $azdResourceGroupName = Get-AzdEnvironmentValue -Name 'resourceGroupName'
+    if ([string]::IsNullOrWhiteSpace($azdResourceGroupName)) {
+        $azdResourceGroupName = Get-AzdInfrastructureParameter -Name 'resourceGroupName'
+    }
+
+    if ($azdResourceGroupName -and $azdResourceGroupName -ieq $ResourceGroupName) {
+        $azdPrivateNetworking = Get-AzdEnvironmentValue -Name 'ENABLE_PRIVATE_NETWORKING'
+        if ($azdPrivateNetworking) {
+            $azdPrivateNetworking = $azdPrivateNetworking.ToLowerInvariant()
+        }
+
+        if ($azdPrivateNetworking -in @('true', 'false')) {
+            return [pscustomobject]@{
+                Enabled = $azdPrivateNetworking -eq 'true'
+                Source = 'matching azd environment metadata'
+            }
+        }
+    }
+
+    $environmentStatus = if ($containerAppEnvironments.Count -eq 0) { 'no' } else { 'multiple' }
+    throw "Unable to detect private networking: found $environmentStatus Container Apps Environments and no matching azd environment setting for resource group '$ResourceGroupName'."
+}
+
 function Get-RoleDefinitions {
     [CmdletBinding()]
     [OutputType([object[]])]
-    param()
+    param(
+        [Parameter(Mandatory = $true)]
+        [bool]$EnablePrivateNetworking
+    )
 
-    return @(
+    $roleDefinitions = [System.Collections.Generic.List[object]]::new()
+    foreach ($roleDefinition in @(
         [pscustomobject]@{ Role = 'storage-account'; ResourceId = 'app-storage-account'; Type = 'Microsoft.Storage/storageAccounts'; NameSuffix = $null; ExactName = $null }
         [pscustomobject]@{ Role = 'key-vault'; ResourceId = 'app-key-vault'; Type = 'Microsoft.KeyVault/vaults'; NameSuffix = $null; ExactName = $null }
         [pscustomobject]@{ Role = 'log-analytics-workspace'; ResourceId = 'app-log-analytics-workspace'; Type = 'Microsoft.OperationalInsights/workspaces'; NameSuffix = $null; ExactName = $null }
         [pscustomobject]@{ Role = 'managed-identity'; ResourceId = 'app-managed-identity'; Type = 'Microsoft.ManagedIdentity/userAssignedIdentities'; NameSuffix = $null; ExactName = $null }
         [pscustomobject]@{ Role = 'container-app-environment'; ResourceId = 'app-container-app-environment'; Type = 'Microsoft.App/managedEnvironments'; NameSuffix = $null; ExactName = $null }
         [pscustomobject]@{ Role = 'container-app'; ResourceId = 'app-container-app'; Type = 'Microsoft.App/containerApps'; NameSuffix = $null; ExactName = $null }
+    )) {
+        $roleDefinitions.Add($roleDefinition)
+    }
+
+    if ($EnablePrivateNetworking) {
+        foreach ($roleDefinition in @(
         [pscustomobject]@{ Role = 'virtual-network'; ResourceId = 'app-virtual-network'; Type = 'Microsoft.Network/virtualNetworks'; NameSuffix = $null; ExactName = $null }
         [pscustomobject]@{ Role = 'container-app-network-security-group'; ResourceId = 'app-container-app-network-security-group'; Type = 'Microsoft.Network/networkSecurityGroups'; NameSuffix = '-containerapp-nsg'; ExactName = $null }
         [pscustomobject]@{ Role = 'resource-network-security-group'; ResourceId = 'app-resource-network-security-group'; Type = 'Microsoft.Network/networkSecurityGroups'; NameSuffix = '-resource-nsg'; ExactName = $null }
@@ -153,7 +264,12 @@ function Get-RoleDefinitions {
         [pscustomobject]@{ Role = 'key-vault-private-dns-zone'; ResourceId = 'app-key-vault-private-dns-zone'; Type = 'Microsoft.Network/privateDnsZones'; NameSuffix = $null; ExactName = 'privatelink.vaultcore.azure.net' }
         [pscustomobject]@{ Role = 'storage-private-dns-zone-link'; ResourceId = 'app-storage-private-dns-zone-link'; Type = 'Microsoft.Network/privateDnsZones/virtualNetworkLinks'; NameSuffix = '-blob-link'; ExactName = $null }
         [pscustomobject]@{ Role = 'key-vault-private-dns-zone-link'; ResourceId = 'app-key-vault-private-dns-zone-link'; Type = 'Microsoft.Network/privateDnsZones/virtualNetworkLinks'; NameSuffix = '-vault-link'; ExactName = $null }
-    )
+        )) {
+            $roleDefinitions.Add($roleDefinition)
+        }
+    }
+
+    return @($roleDefinitions)
 }
 
 function Get-ResourceTagValue {
@@ -211,10 +327,13 @@ function New-RolePlan {
         [string]$TagKey,
 
         [Parameter(Mandatory = $true)]
-        [bool]$AllowForce
+        [bool]$AllowForce,
+
+        [Parameter(Mandatory = $true)]
+        [bool]$EnablePrivateNetworking
     )
 
-    $rolePlans = foreach ($roleDefinition in Get-RoleDefinitions) {
+    $rolePlans = foreach ($roleDefinition in Get-RoleDefinitions -EnablePrivateNetworking $EnablePrivateNetworking) {
         $candidates = @(Get-RoleCandidates -Resources $Resources -RoleDefinition $roleDefinition)
         $expectedTagValue = $roleDefinition.ResourceId
         $resourcesWithExpectedTag = @($Resources | Where-Object {
@@ -284,7 +403,7 @@ function Write-RolePlan {
 }
 
 function Set-ResourceRoleTags {
-    [CmdletBinding()]
+    [CmdletBinding(SupportsShouldProcess = $true)]
     [OutputType([void])]
     param(
         [Parameter(Mandatory = $true)]
@@ -322,9 +441,11 @@ if ($MyInvocation.InvocationName -ne '.') {
         Test-AzureCliAvailable
 
         $resources = Get-ExistingResources -ResourceGroupName $ResourceGroupName
-        $rolePlans = New-RolePlan -Resources $resources -TagKey 'resource-id' -AllowForce $Force
+        $privateNetworkingMode = Get-PrivateNetworkingMode -Resources $resources -ResourceGroupName $ResourceGroupName
+        $rolePlans = New-RolePlan -Resources $resources -TagKey 'resource-id' -AllowForce $Force -EnablePrivateNetworking $privateNetworkingMode.Enabled
 
         Write-Host "Resource-id tag plan for '$ResourceGroupName':" -ForegroundColor Cyan
+        Write-Host "Private networking: $(if ($privateNetworkingMode.Enabled) { 'enabled' } else { 'disabled' }) ($($privateNetworkingMode.Source))." -ForegroundColor Cyan
         Write-RolePlan -RolePlans $rolePlans
 
         if (-not $Apply) {
