@@ -292,6 +292,9 @@ else {
             --body "@$tempFileRole" `
             --headers "Content-Type=application/json" `
             --output none
+        if ($LASTEXITCODE -ne 0) {
+            throw "Failed to add API application role 'E2E.Tester'."
+        }
     }
     finally {
         Remove-Item $tempFileRole -ErrorAction SilentlyContinue
