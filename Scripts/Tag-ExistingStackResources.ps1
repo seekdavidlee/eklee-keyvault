@@ -117,7 +117,19 @@ function Get-ExistingResources {
         }
     }
 
-    return @($resources)
+    $uniqueResources = [System.Collections.Generic.List[object]]::new()
+    $resourceIds = [System.Collections.Generic.HashSet[string]]::new(
+        [System.StringComparer]::OrdinalIgnoreCase
+    )
+
+    foreach ($resource in $resources) {
+        $resourceId = [string]$resource.id
+        if ([string]::IsNullOrWhiteSpace($resourceId) -or $resourceIds.Add($resourceId)) {
+            $uniqueResources.Add($resource)
+        }
+    }
+
+    return @($uniqueResources)
 }
 
 function Get-RoleDefinitions {
