@@ -141,12 +141,13 @@ function Get-ExistingResources {
         $resources.Add($dnsZone)
     }
 
+    $dnsZoneNames = @($dnsZones | ForEach-Object { $_.name })
     $managedDnsZones = @(
         'privatelink.blob.core.windows.net'
         'privatelink.vaultcore.azure.net'
     )
     foreach ($zoneName in $managedDnsZones) {
-        if ($dnsZones.name -notcontains $zoneName) {
+        if ($dnsZoneNames -notcontains $zoneName) {
             continue
         }
 
