@@ -223,7 +223,7 @@ else {
         }
     } | ConvertTo-Json -Depth 5
 
-    $tempFile = Join-Path $env:TEMP "app-update-$([guid]::NewGuid()).json"
+    $tempFile = Join-Path ([System.IO.Path]::GetTempPath()) "app-update-$([guid]::NewGuid()).json"
     try {
         $body | Out-File -FilePath $tempFile -Encoding utf8
         az rest --method PATCH `
@@ -252,7 +252,7 @@ else {
         }
     } | ConvertTo-Json -Depth 5
 
-    $tempFile2 = Join-Path $env:TEMP "app-preauth-$([guid]::NewGuid()).json"
+    $tempFile2 = Join-Path ([System.IO.Path]::GetTempPath()) "app-preauth-$([guid]::NewGuid()).json"
     try {
         $preAuthBody | Out-File -FilePath $tempFile2 -Encoding utf8
         az rest --method PATCH `
@@ -274,7 +274,7 @@ else {
         }
     } | ConvertTo-Json -Depth 5
 
-    $tempFile3 = Join-Path $env:TEMP "app-spa-$([guid]::NewGuid()).json"
+    $tempFile3 = Join-Path ([System.IO.Path]::GetTempPath()) "app-spa-$([guid]::NewGuid()).json"
     try {
         $spaBody | Out-File -FilePath $tempFile3 -Encoding utf8
         az rest --method PATCH `
@@ -376,7 +376,7 @@ $reconciliationBody = [ordered]@{
     spa            = $spaPatch
 } | ConvertTo-Json -Depth 20
 
-$reconciliationFile = Join-Path $env:TEMP "app-reconcile-$([guid]::NewGuid()).json"
+$reconciliationFile = Join-Path ([System.IO.Path]::GetTempPath()) "app-reconcile-$([guid]::NewGuid()).json"
 try {
     $reconciliationBody | Out-File -FilePath $reconciliationFile -Encoding utf8
     az rest --method PATCH `

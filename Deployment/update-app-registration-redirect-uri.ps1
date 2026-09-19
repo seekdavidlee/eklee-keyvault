@@ -155,7 +155,7 @@ $body = @{
     }
 } | ConvertTo-Json -Depth 6
 
-$tempFile = Join-Path $env:TEMP "app-redirect-update-$([guid]::NewGuid()).json"
+$tempFile = Join-Path ([System.IO.Path]::GetTempPath()) "app-redirect-update-$([guid]::NewGuid()).json"
 try {
     $body | Out-File -FilePath $tempFile -Encoding utf8
     az rest --method PATCH --url "https://graph.microsoft.com/v1.0/applications/$objectId" --body "@$tempFile" --headers "Content-Type=application/json" --output none
