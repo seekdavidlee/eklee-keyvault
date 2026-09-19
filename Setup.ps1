@@ -403,6 +403,31 @@ function Select-Target {
     }
 }
 
+function Get-AzdAuthenticatedAccountName {
+    <# .SYNOPSIS Gets the account name reported by a valid azd session. #>
+    [CmdletBinding()]
+    [OutputType([string])]
+    param()
+
+    $statusOutput = @(& azd auth login --check-status 2>$null)
+    if ($LASTEXITCODE -ne 0) {
+        return $null
+    }
+
+    $accountStatusLine = $statusOutput | Where-Object {
+        $_ -match '^Logged in to Azure as\s+(?<AccountName>.+)$'
+    } | Select-Object -First 1
+    if (-not $accountStatusLine) {
+        return $null
+    }
+
+    if ($accountStatusLine -match '^Logged in to Azure as\s+(?<AccountName>.+)$') {
+        return $Matches.AccountName.Trim()
+    }
+
+    return $null
+}
+
 function Connect-ToTarget {
     <# .SYNOPSIS Aligns Azure CLI and azd authentication with a target. #>
     [CmdletBinding()]
@@ -430,10 +455,26 @@ function Connect-ToTarget {
         'account', 'set', '--subscription', $Target.subscriptionId
     )
 
-    Write-Host "Refreshing azd authentication for tenant $($Target.tenantId)..." -ForegroundColor Cyan
-    Invoke-ExternalCommand -CommandName 'azd' -Arguments @(
-        'auth', 'logout', '--no-prompt'
-    )
+    $currentAccountJson = & az account show --output json 2>$null
+    if ($LASTEXITCODE -ne 0 -or -not $currentAccountJson) {
+        throw "Could not verify the active Azure CLI account after selecting subscription $($Target.subscriptionId)."
+    }
+
+    $currentAccount = ($currentAccountJson -join [Environment]::NewLine) | ConvertFrom-Json
+    if ($currentAccount.tenantId -ne $Target.tenantId) {
+        throw "Subscription $($Target.subscriptionId) is not active in target tenant $($Target.tenantId)."
+    }
+
+    $azdAccountName = Get-AzdAuthenticatedAccountName
+    $azureCliAccountName = [string]$currentAccount.user.name
+    if ($azdAccountName -and
+        $azureCliAccountName -and
+        [string]::Equals($azdAccountName, $azureCliAccountName, [StringComparison]::OrdinalIgnoreCase)) {
+        Write-Host "Reusing azd authentication for $azdAccountName." -ForegroundColor Green
+        return
+    }
+
+    Write-Host "Signing in to azd for tenant $($Target.tenantId)..." -ForegroundColor Cyan
     Invoke-ExternalCommand -CommandName 'azd' -Arguments @(
         'auth', 'login', '--tenant-id', $Target.tenantId
     )

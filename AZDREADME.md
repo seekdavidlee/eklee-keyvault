@@ -163,8 +163,10 @@ The template deploys the following resources:
 
 ## Authentication
 
-`azd` maintains its own authentication session separate from the Azure CLI (`az`). Log in before
-deploying:
+`azd` maintains its own authentication session separate from the Azure CLI (`az`). When you use
+[Setup.ps1](Setup.ps1), it reuses a valid `azd` session only when it belongs to the same account
+as the Azure CLI target selection. Otherwise, it prompts for a tenant-scoped `azd` sign-in. For a
+direct `azd` deployment, sign in first:
 
 ```bash
 azd auth login --use-device-code
