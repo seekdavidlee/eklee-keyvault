@@ -15,9 +15,9 @@ tags:
   - oidc
 ai_note: Created with AI assistance and requires maintainer review
 summary: Defines the CI environment-routing and temporary Container App lifecycle for branches and releases, including the separation from public GitHub releases.
-post_date: 2026-09-12
+post_date: 2026-09-18
 author: Eklee KeyVault maintainers
-ms.date: 2026-09-12
+ms.date: 2026-09-18
 ms.topic: design
 keywords:
   - deployment environments
@@ -35,7 +35,9 @@ Container App lifecycle and the operational safeguards required to rely on it.
 
 The checked-in workflows implement the per-reference deployment, hosted E2E,
 and cleanup paths. Azure resources and GitHub Environment values remain
-deployment prerequisites that must be verified outside the repository.
+deployment prerequisites that must be verified outside the repository. The
+dev-only E2E identity separation in this document is a required follow-up to
+the current shared deployment-identity implementation.
 
 ## Decision Summary
 
@@ -109,6 +111,21 @@ rather than updating a branch app. The public-release design proposes moving
 stable GHCR `latest` ownership to the tag-triggered release workflow; that
 proposal does not change the temporary release-app cleanup contract.
 
+### Customer Deployments
+
+Customers provision their own development and production environments. Each
+customer API registration exposes delegated user access only. It does not
+define `E2E.Tester`, permit application-only access to the API, or assign a
+GitHub service principal. Customer deployments must use registrations distinct
+from the repository maintainer's dev API registration.
+
+The repository's hosted E2E workflow targets only the maintainer-owned `dev`
+environment. Its separate E2E service principal can perform all API operations
+against the dev API, but it has no application-role assignment, Azure RBAC, or
+valid token audience for customer or production environments. Microsoft Entra
+application roles are registration-wide, so this boundary requires separate
+dev and non-dev API registrations rather than a single shared registration.
+
 ## CI Routing And Deployment
 
 The [`cicd.yml`](../.github/workflows/cicd.yml) `setup` job compares
@@ -159,6 +176,12 @@ Each GitHub Environment contains its own deployment variables, including
 `AZURE_SUBSCRIPTION_ID`. Application registration values are also configured per
 environment.
 
+The GitHub deployment identity is not the hosted E2E identity. The E2E OIDC
+principal exists only for the repository maintainer's `dev` environment and is
+assigned only the dev API's `E2E.Tester` role plus the minimal Azure Reader
+scope needed to resolve its target. Neither the `prod` environment nor customer
+environments define or assign that role.
+
 The `dev` deployment reuses the existing user-assigned managed identity for every
 branch Container App. The identity is shared by those apps, while the apps
 themselves remain separate resources. The cleanup action must remove only the
@@ -181,6 +204,9 @@ controls:
 * `prod` protection rules require the intended reviewers or checks.
 * Access to workflow dispatch, environment modification, and Azure role
   assignments is limited to deployment maintainers.
+* The maintainer dev API registration, dev E2E OIDC principal, and customer or
+  production API registrations are distinct, and only the dev API registration
+  exposes `E2E.Tester`.
 
 ## Release Interaction
 
@@ -242,6 +268,10 @@ for those changes.
   action deletes it after the release is merged into `main`.
 * Confirm the configured OIDC subjects and GitHub Environment protections match
   the setup model.
+* Confirm the dev E2E OIDC principal is distinct from deployment identities and
+  has no Azure or API access outside the maintainer dev environment.
+* Confirm customer and production API registrations expose only delegated user
+  access and do not define `E2E.Tester`.
 * Confirm `deploy-infra.yml` is manually dispatched with the intended environment.
 * Confirm a semantic tag creates public release artifacts without deploying Azure.
 

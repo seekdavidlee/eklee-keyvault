@@ -1,4 +1,22 @@
-# Azure Developer CLI (azd) Deployment
+---
+title: Azure Developer CLI Deployment
+description: Deploy Eklee KeyVault using the Azure Developer CLI and Bicep templates
+post_title: Azure Developer CLI Deployment
+author1: David Lee
+post_slug: azure-developer-cli-deployment
+featured_image: https://github.githubassets.com/images/modules/logos_page/GitHub-Mark.png
+categories:
+   - engineering
+tags:
+   - azure-developer-cli
+   - azure-container-apps
+   - entra-id
+ai_note: Created with AI assistance and requires maintainer review
+summary: Deploy Eklee KeyVault through Azure Developer CLI without provisioning a test service identity.
+post_date: 2026-09-18
+---
+
+## Azure Developer CLI Deployment
 
 This guide covers deploying the Eklee KeyVault application using the Azure Developer CLI (`azd`) with the
 [azure.yaml](azure.yaml) configuration and [Deployment/azd.bicep](Deployment/azd.bicep) infrastructure template.
@@ -26,22 +44,28 @@ The script also resolves Azure location for provisioning. It first checks `AZURE
 `infra.parameters.location`, then process environment `AZURE_LOCATION`. If none are set, it prompts
 for a location and stores it in the azd environment for future runs.
 
-If the app registration already exists, the script read-merges and verifies the required
-`api://<clientId>` identifier URI, enabled `access_as_user` scope, Azure CLI preauthorization,
-v2 access-token setting, localhost SPA redirect URI, and application-only `E2E.Tester` role. It
-preserves unrelated identifier URIs, API scopes, preauthorizations, SPA redirects, and roles. A
-bare client-ID identifier URI or v1 access-token policy is rejected for manual remediation. You
-can also run it manually:
+The customer application registration is for interactive users. It must contain the
+`api://<clientId>` identifier URI, enabled `access_as_user` scope, Azure CLI
+preauthorization, v2 access-token setting, and SPA redirect URIs. It must not
+define the application-only `E2E.Tester` role or assign a service identity. This
+keeps customer deployments isolated from the repository maintainer's hosted E2E
+environment.
+
+The checked-in preprovision script currently verifies and adds `E2E.Tester`.
+That behavior must be removed before this documented customer-deployment
+boundary is enforced. The role belongs only in the maintainer-owned dev API
+registration used for repository-hosted E2E tests. A bare client-ID identifier
+URI or v1 access-token policy is rejected for manual remediation. You can also
+run the script manually:
 
 ```powershell
 .\Deployment\setup-azd-app-registration.ps1 -Prefix "foobarkv1"
 ```
 
-When using [Start-Azd-Migration.ps1](Start-Azd-Migration.ps1), each target profile entry stores
-the GitHub deployment app registration name in `githubDeployAppRegistrationName`. After a
-successful `azd up`, the script assigns `E2E.Tester` to that existing app registration. Create it first with
-[setup-gh-deploy.ps1](Scripts/setup-gh-deploy.ps1). The migration script does not create
-or modify the GitHub app registration.
+When using [Start-Azd-Migration.ps1](Start-Azd-Migration.ps1), do not configure
+an E2E role assignment for a customer target profile. Customer `azd` deployments
+must not create, modify, or assign a GitHub service identity. The maintainer-only
+dev E2E identity is provisioned independently and is not an input to migration.
 
 At the end of `azd up`, the `postdeploy` hook runs
 [update-app-registration-redirect-uri.ps1](Deployment/update-app-registration-redirect-uri.ps1)
