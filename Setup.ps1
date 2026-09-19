@@ -553,9 +553,11 @@ function Set-AzdEnvironment {
     Invoke-ExternalCommand -CommandName 'azd' -Arguments @(
         'env', 'config', 'set', 'infra.parameters.resourceGroupName', $Target.resourceGroupName
     )
-    Invoke-ExternalCommand -CommandName (Join-Path $RepositoryPath 'Deployment\resolve-container-image.ps1') -Arguments @(
-        '-RepositoryPath', $RepositoryPath
-    )
+    $containerImageResolver = Join-Path $RepositoryPath 'Deployment\resolve-container-image.ps1'
+    & $containerImageResolver -RepositoryPath $RepositoryPath
+    if ($LASTEXITCODE -ne 0) {
+        throw "Container image resolver failed with exit code $LASTEXITCODE."
+    }
 }
 
 function Get-AzdEnvironmentConfigValue {
