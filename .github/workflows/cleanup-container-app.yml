@@ -34,7 +34,7 @@ jobs:
     environment: dev
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v6
+        uses: actions/checkout@v7
 
       - name: Login to Azure with OIDC
         uses: azure/login@v3
