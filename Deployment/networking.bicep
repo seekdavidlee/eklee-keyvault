@@ -64,7 +64,8 @@ param keyVaultName string
 // VARIABLES
 // ============================================================================
 
-var virtualNetworkName = !empty(existingVirtualNetworkName) ? existingVirtualNetworkName : '${applicationName}-${environment}-vnet'
+var useExistingVirtualNetwork = !empty(existingVirtualNetworkName)
+var virtualNetworkName = useExistingVirtualNetwork ? existingVirtualNetworkName : '${applicationName}-${environment}-vnet'
 var containerAppSubnetName = 'containerapp'
 var resourceSubnetName = 'resource'
 var containerAppNsgName = !empty(existingContainerAppNsgName) ? existingContainerAppNsgName : '${applicationName}-${environment}-containerapp-nsg'
@@ -180,7 +181,7 @@ resource resourceNsg 'Microsoft.Network/networkSecurityGroups@2024-05-01' = {
 // VIRTUAL NETWORK
 // ============================================================================
 
-resource virtualNetwork 'Microsoft.Network/virtualNetworks@2024-05-01' = {
+resource virtualNetwork 'Microsoft.Network/virtualNetworks@2024-05-01' = if (!useExistingVirtualNetwork) {
   name: virtualNetworkName
   location: location
   tags: virtualNetworkTags
@@ -190,47 +191,58 @@ resource virtualNetwork 'Microsoft.Network/virtualNetworks@2024-05-01' = {
         '10.0.0.0/16'
       ]
     }
-    subnets: [
+  }
+}
+
+resource existingVirtualNetwork 'Microsoft.Network/virtualNetworks@2024-05-01' existing = if (useExistingVirtualNetwork) {
+  name: virtualNetworkName
+}
+
+// Create the required subnets only for a new VNet. A reused VNet must already
+// contain compatible subnets so its address space and subnet topology remain untouched.
+resource containerAppSubnet 'Microsoft.Network/virtualNetworks/subnets@2024-05-01' = if (!useExistingVirtualNetwork) {
+  parent: virtualNetwork
+  name: containerAppSubnetName
+  properties: {
+    addressPrefix: '10.0.0.0/23'
+    networkSecurityGroup: {
+      id: containerAppNsg.id
+    }
+    delegations: [
       {
-        name: containerAppSubnetName
+        name: 'Microsoft.App.environments'
         properties: {
-          addressPrefix: '10.0.0.0/23'
-          networkSecurityGroup: {
-            id: containerAppNsg.id
-          }
-          delegations: [
-            {
-              name: 'Microsoft.App.environments'
-              properties: {
-                serviceName: 'Microsoft.App/environments'
-              }
-            }
-          ]
-        }
-      }
-      {
-        name: resourceSubnetName
-        properties: {
-          addressPrefix: '10.0.2.0/24'
-          networkSecurityGroup: {
-            id: resourceNsg.id
-          }
+          serviceName: 'Microsoft.App/environments'
         }
       }
     ]
   }
 }
 
-// Named subnet references for safe non-positional access
-resource containerAppSubnet 'Microsoft.Network/virtualNetworks/subnets@2024-05-01' existing = {
+resource resourceSubnet 'Microsoft.Network/virtualNetworks/subnets@2024-05-01' = if (!useExistingVirtualNetwork) {
   parent: virtualNetwork
+  name: resourceSubnetName
+  properties: {
+    addressPrefix: '10.0.2.0/24'
+    networkSecurityGroup: {
+      id: resourceNsg.id
+    }
+  }
+}
+
+resource existingContainerAppSubnet 'Microsoft.Network/virtualNetworks/subnets@2024-05-01' existing = if (useExistingVirtualNetwork) {
+  parent: existingVirtualNetwork
   name: containerAppSubnetName
 }
 
-resource resourceSubnet 'Microsoft.Network/virtualNetworks/subnets@2024-05-01' existing = {
-  parent: virtualNetwork
+resource existingResourceSubnet 'Microsoft.Network/virtualNetworks/subnets@2024-05-01' existing = if (useExistingVirtualNetwork) {
+  parent: existingVirtualNetwork
   name: resourceSubnetName
 }
+
+var virtualNetworkId = useExistingVirtualNetwork ? existingVirtualNetwork.id : virtualNetwork.id
+var containerAppSubnetId = useExistingVirtualNetwork ? existingContainerAppSubnet.id : containerAppSubnet.id
+var resourceSubnetId = useExistingVirtualNetwork ? existingResourceSubnet.id : resourceSubnet.id
 
 // ============================================================================
 // PRIVATE DNS ZONES
@@ -259,7 +271,7 @@ resource storageDnsZoneLink 'Microsoft.Network/privateDnsZones/virtualNetworkLin
   properties: {
     registrationEnabled: false
     virtualNetwork: {
-      id: virtualNetwork.id
+      id: virtualNetworkId
     }
   }
 }
@@ -273,7 +285,7 @@ resource keyVaultDnsZoneLink 'Microsoft.Network/privateDnsZones/virtualNetworkLi
   properties: {
     registrationEnabled: false
     virtualNetwork: {
-      id: virtualNetwork.id
+      id: virtualNetworkId
     }
   }
 }
@@ -289,7 +301,7 @@ resource storagePrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01' 
   tags: storagePrivateEndpointTags
   properties: {
     subnet: {
-      id: resourceSubnet.id
+      id: resourceSubnetId
     }
     privateLinkServiceConnections: [
       {
@@ -328,7 +340,7 @@ resource keyVaultPrivateEndpoint 'Microsoft.Network/privateEndpoints@2024-05-01'
   tags: keyVaultPrivateEndpointTags
   properties: {
     subnet: {
-      id: resourceSubnet.id
+      id: resourceSubnetId
     }
     privateLinkServiceConnections: [
       {
@@ -365,7 +377,7 @@ resource keyVaultPrivateEndpointDnsGroup 'Microsoft.Network/privateEndpoints/pri
 // ============================================================================
 
 @description('The resource ID of the Container Apps subnet for VNET integration')
-output containerAppSubnetId string = containerAppSubnet.id
+output containerAppSubnetId string = containerAppSubnetId
 
 @description('The name of the Virtual Network')
-output virtualNetworkName string = virtualNetwork.name
+output virtualNetworkName string = virtualNetworkName
