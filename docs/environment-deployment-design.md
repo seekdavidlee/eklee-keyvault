@@ -35,9 +35,9 @@ Container App lifecycle and the operational safeguards required to rely on it.
 
 The checked-in workflows implement the per-reference deployment, hosted E2E,
 and cleanup paths. Azure resources and GitHub Environment values remain
-deployment prerequisites that must be verified outside the repository. The
-dev-only E2E identity separation in this document is a required follow-up to
-the current shared deployment-identity implementation.
+deployment prerequisites that must be verified outside the repository. Hosted
+E2E uses the protected `dev` deployment identity with an `E2E.Tester` role on
+the dedicated dev API registration.
 
 ## Decision Summary
 
@@ -125,6 +125,9 @@ against the dev API, but it has no application-role assignment, Azure RBAC, or
 valid token audience for customer or production environments. Microsoft Entra
 application roles are registration-wide, so this boundary requires separate
 dev and non-dev API registrations rather than a single shared registration.
+`Setup-Dev.ps1` reads the single maintainer target from `setup-dev.json` and
+rejects its app-registration name when it appears in a same-tenant customer
+target in `setup.json`.
 
 ## CI Routing And Deployment
 
@@ -176,10 +179,9 @@ Each GitHub Environment contains its own deployment variables, including
 `AZURE_SUBSCRIPTION_ID`. Application registration values are also configured per
 environment.
 
-The GitHub deployment identity is not the hosted E2E identity. The E2E OIDC
-principal exists only for the repository maintainer's `dev` environment and is
-assigned only the dev API's `E2E.Tester` role plus the minimal Azure Reader
-scope needed to resolve its target. Neither the `prod` environment nor customer
+The hosted E2E workflow uses the existing `dev` deployment identity. That
+principal retains its deployment permissions and is assigned the dedicated dev
+API's `E2E.Tester` role. Neither the `prod` environment nor customer
 environments define or assign that role.
 
 The `dev` deployment reuses the existing user-assigned managed identity for every
@@ -199,14 +201,17 @@ controls:
 
 * The `dev` and `prod` GitHub Environments contain the expected variables and
   secrets.
+* The `dev` GitHub Environment is limited to this repository and protected
+  release branches, requires the intended reviewers, and protects both its
+  deployment variables and the hosted E2E workflow.
 * The Microsoft Entra application has active federated credentials for the
   `main`, `dev`, and `prod` subjects created by the setup script.
 * `prod` protection rules require the intended reviewers or checks.
 * Access to workflow dispatch, environment modification, and Azure role
   assignments is limited to deployment maintainers.
-* The maintainer dev API registration, dev E2E OIDC principal, and customer or
-  production API registrations are distinct, and only the dev API registration
-  exposes `E2E.Tester`.
+* The maintainer dev API registration and customer or production API
+  registrations are distinct, and only the dev API registration exposes
+  `E2E.Tester` to the `dev` deployment principal.
 
 ## Release Interaction
 

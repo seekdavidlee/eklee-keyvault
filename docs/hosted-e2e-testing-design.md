@@ -35,18 +35,18 @@ App. Direct development-branch merges into `main` are rejected by the
 release-promotion check and do not trigger hosted E2E. Ordinary branch CI
 completions do not trigger hosted E2E.
 
-The workflow and provisioning scripts must be updated to satisfy the dev-only
-application identity boundary described below. Until then, the hosted E2E
-identity is not isolated from the general deployment identity.
+The repository implementation enforces the dev-only application identity
+boundary described below. GitHub Environment protection and Microsoft Entra
+assignments remain maintainer-operated controls that must be verified before
+the hosted identity is used.
 
 ## Decision Summary
 
-GitHub-hosted automation uses a maintainer-owned, dev-only GitHub Actions OIDC
-service principal to resolve the per-ref Container App and run the hosted
-Playwright suite against its HTTPS URL. It receives full API authorization only
-for the isolated dev API registration and dev resources. The hosted workflow is
-separate from deployment so branch deployments are not tested automatically on
-every commit.
+GitHub-hosted automation uses the maintainer-owned `dev` deployment GitHub
+Actions OIDC service principal to resolve the per-ref Container App and run the
+hosted Playwright suite against its HTTPS URL. It receives `E2E.Tester` only for
+the isolated dev API registration. The hosted workflow is separate from
+deployment so branch deployments are not tested automatically on every commit.
 
 The Container App's existing managed identity remains dedicated to the
 application. It authenticates the application to Key Vault, Blob Storage, and
@@ -59,27 +59,47 @@ the public GHCR image. It will not be used as the E2E caller identity.
 | Container App managed identity | Outbound access to its environment's Key Vault and Blob Storage |
 | Customer API application registration | Customer-owned. Exposes only delegated user access and never defines an E2E application role or service identity permission. |
 | Dev API application registration | Maintainer-owned. Used only by the repository's dev Container Apps and exposes the application-only `E2E.Tester` role. |
-| Dev GitHub Actions E2E OIDC service principal | Maintainer-owned. Reads the dev test target and acquires an `E2E.Tester` token for the dev API only. It is distinct from the deployment identity. |
+| Dev GitHub Actions deployment OIDC service principal | Maintainer-owned. Deploys dev resources, reads the dev test target, and acquires an `E2E.Tester` token for the dev API only. |
 | `E2E.Tester` application role | Maps the dev hosted caller to the API's Admin authorization role without creating or persisting a user-access record. |
 
 The Container App's managed identity is not the caller identity for the GitHub
 runner. It remains responsible for outbound access to Key Vault and Blob
-Storage. The E2E service principal is not assigned any role in customer or
-production environments, and production API registrations do not expose an
-`E2E.Tester` role.
+Storage. The dev deployment principal is not assigned `E2E.Tester` in customer
+or production API registrations, and production API registrations do not expose
+that role.
 
 ## Required Setup
 
 Only the maintainer-owned dev API application registration may expose the
-application-only `E2E.Tester` role. Only the dedicated dev GitHub Actions E2E
-service principal may be assigned that role. The role is never added to a
-customer-created or production API registration.
+application-only `E2E.Tester` role. `Setup-Dev.ps1` assigns that role to the
+existing `dev` GitHub Environment deployment principal. The role is never added
+to a customer-created or production API registration.
 
-The E2E principal receives Azure RBAC only for the dev target discovery it
-needs, such as Reader at the dev Container App or resource-group scope. It must
-not reuse the deployment principal or receive Contributor, Key Vault, Storage,
-or production access. The dedicated provisioning path is maintainer-only and
-is intentionally excluded from customer setup and `azd` deployment workflows.
+The shared principal retains its existing deployment permissions, including its
+dev Contributor assignment. Protect the `dev` environment and its release
+branches because hosted E2E runs can exercise the dev API's administrative test
+surface. The maintainer-only provisioning path is intentionally excluded from
+customer setup and `azd` deployment workflows.
+
+Deploy the maintainer development target with `azd` and reconcile its identities
+with:
+
+```powershell
+./Setup-Dev.ps1
+```
+
+The script reads exactly one target from
+`$HOME/.eklee-keyvault/setup-dev.json`. Its `appRegistrationName` is the
+dedicated dev API registration and must differ from customer registrations in
+the same Microsoft Entra tenant; the script rejects a duplicate listed in
+`setup.json`. It updates the normal `dev` deployment environment with the dev
+API audience used by Container Apps, resolves its existing `AZURE_CLIENT_ID`,
+and assigns that deployment principal `E2E.Tester` on the dedicated dev API.
+It does not create a separate environment or E2E-prefixed Azure variables.
+Before a hosted run, maintainers must protect `dev` for this repository and
+release branches and require the intended reviewers. The script uses the local
+Git `origin` remote to identify the GitHub repository unless both GitHub
+parameters are explicitly supplied.
 
 The hosted workflow acquires a token for:
 
@@ -110,8 +130,9 @@ network access to that environment.
   identity.
 5. Resolve the same deterministic dev Container App name used by deployment.
 6. Wait for `/healthz` to respond successfully.
-7. Acquire an application token for `api://<dev-api-client-id>/.default`.
-8. Run the authenticated Playwright browser test against the resolved HTTPS URL
+7. Verify the live Container App accepts the dedicated dev API client ID.
+8. Acquire an application token for `api://<dev-api-client-id>/.default`.
+9. Run the authenticated Playwright browser test against the resolved HTTPS URL
   and upload a report that does not contain bearer tokens.
 
 ## Browser Test Boundary

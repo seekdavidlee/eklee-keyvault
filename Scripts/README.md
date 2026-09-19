@@ -18,9 +18,9 @@ folder, which contains infrastructure-as-code and CI/CD deployment helpers.
 
 | Script | Purpose |
 | --- | --- |
-| [`assign-e2e-app-role.ps1`](assign-e2e-app-role.ps1) | Exposes the API `E2E.Tester` application role and assigns it to a managed identity or GitHub Actions service principal. |
 | [`assign-mi-rbac.ps1`](assign-mi-rbac.ps1) | Assigns the deployed managed identity its Key Vault and Storage RBAC roles. |
 | [`copy-keyvault-secrets.ps1`](copy-keyvault-secrets.ps1) | Copies enabled secrets from an Azure Key Vault into the Eklee KeyVault API without overwriting existing secrets. |
+| [`../Setup-Dev.ps1`](../Setup-Dev.ps1) | Deploys the single maintainer dev profile with `azd` and configures its dedicated API registration and Reader-scoped GitHub OIDC E2E identity. |
 | [`Update-BranchRedirectUri.ps1`](Update-BranchRedirectUri.ps1) | Registers a deployed branch Container App URL in the Microsoft Entra SPA app registration and configures the Container App runtime redirect URI. |
 | [`Invoke-HostedE2E.ps1`](Invoke-HostedE2E.ps1) | Runs local Playwright tests against a deployed Container App using the signed-in Azure CLI identity. |
 | [`setup-gh-deploy.ps1`](setup-gh-deploy.ps1) | Creates the GitHub Actions OIDC deployment identity, resource groups, role assignments, and environment variables. |
@@ -67,3 +67,13 @@ Azure CLI identity, and runs `login.spec.ts`.
 Use `-Filter secrets-crud` for the Admin CRUD test or `-Headed` to show the
 browser. Use `-NoDeps` when the UI dependencies and Chromium are already
 installed.
+
+## Dev E2E Identity
+
+Use [`../Setup-Dev.ps1`](../Setup-Dev.ps1) only for the repository maintainer's
+isolated dev environment. It reads one target from
+`$HOME/.eklee-keyvault/setup-dev.json`, deploys it with `azd`, and requires its
+`appRegistrationName` to differ from customer registrations in the same tenant.
+Supplying both `-LegacyApiClientId` and `-LegacyCallerAppId` inspects that exact
+legacy role assignment without changing it. Removal requires
+`-RemoveLegacyE2ERole` and `-ConfirmLegacyRemoval` in addition to both IDs.

@@ -51,21 +51,20 @@ define the application-only `E2E.Tester` role or assign a service identity. This
 keeps customer deployments isolated from the repository maintainer's hosted E2E
 environment.
 
-The checked-in preprovision script currently verifies and adds `E2E.Tester`.
-That behavior must be removed before this documented customer-deployment
-boundary is enforced. The role belongs only in the maintainer-owned dev API
-registration used for repository-hosted E2E tests. A bare client-ID identifier
-URI or v1 access-token policy is rejected for manual remediation. You can also
-run the script manually:
+The maintainer-owned dev API registration used for repository-hosted E2E tests
+is provisioned separately. A bare client-ID identifier URI or v1 access-token
+policy is rejected for manual remediation. You can also run the script
+manually:
 
 ```powershell
 .\Deployment\setup-azd-app-registration.ps1 -Prefix "foobarkv1"
 ```
 
-When using [Start-Azd-Migration.ps1](Start-Azd-Migration.ps1), do not configure
-an E2E role assignment for a customer target profile. Customer `azd` deployments
-must not create, modify, or assign a GitHub service identity. The maintainer-only
-dev E2E identity is provisioned independently and is not an input to migration.
+When using [Setup.ps1](Setup.ps1), do not configure an E2E role assignment for
+a customer target profile. Customer `azd` deployments must not create, modify,
+or assign a GitHub service identity. The maintainer-only dev E2E identity is
+provisioned independently by [Setup-Dev.ps1](Setup-Dev.ps1) and is not an input
+to customer setup.
 
 At the end of `azd up`, the `postdeploy` hook runs
 [update-app-registration-redirect-uri.ps1](Deployment/update-app-registration-redirect-uri.ps1)
@@ -229,19 +228,39 @@ container output and corresponding MISE telemetry with the production change app
 
 ### Target-Catalog Deployment
 
-Use the migration script when one repository is deployed to multiple tenants or subscriptions:
+Use the customer setup script when one repository is deployed to multiple tenants or subscriptions:
 
 ```powershell
-.\Start-Azd-Migration.ps1
+.\Setup.ps1
 ```
 
-New targets include an `Enable private networking (Y/N)` question. The answer is stored as
-non-secret target metadata and set as `ENABLE_PRIVATE_NETWORKING` before `azd up`. Existing
-targets are prompted once when selected and default to public networking when no answer exists.
+The script reads and updates `$HOME\.eklee-keyvault\setup.json`. New targets
+include an `Enable private networking (Y/N)` question. The answer is stored as
+non-secret target metadata and set as `ENABLE_PRIVATE_NETWORKING` before `azd
+up`. Existing targets are prompted once when selected and default to public
+networking when no answer exists.
 
 Set `appRegistrationName` in a target profile to choose the Microsoft Entra application display
 name. It is set as `APP_REGISTRATION_NAME` before the preprovision hook looks up or creates the
 application. Existing targets without this key are prompted once and default to `<prefix>-app`.
+
+### Maintainer Dev Setup
+
+Repository maintainers deploy the hosted E2E target through a separate, single
+profile and registration:
+
+```powershell
+.\Setup-Dev.ps1
+```
+
+`Setup-Dev.ps1` reads `$HOME\.eklee-keyvault\setup-dev.json`, runs `azd up` for
+that one target, then provisions the isolated dev E2E identity. Its
+`appRegistrationName` must differ from every customer registration in the same
+Microsoft Entra tenant. The script rejects a duplicate name found in
+`$HOME\.eklee-keyvault\setup.json` and must never be used for a customer or
+production target. It derives the GitHub owner and repository from the local
+`origin` remote; pass `-GitHubOrganization` and `-GitHubRepoName` together only
+when the remote cannot be used.
 
 ## Post-Deployment Configuration
 

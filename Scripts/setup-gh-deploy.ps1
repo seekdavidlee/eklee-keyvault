@@ -30,21 +30,12 @@
 .PARAMETER Location
     The Azure region for the resource groups. Defaults to 'eastus2'.
 
-.PARAMETER ApiClientId
-    The client ID of the API app registration. When supplied, the script
-    ensures the API service principal exists and assigns its E2E.Tester
-    application role to the GitHub Actions service principal.
-
 .EXAMPLE
     .\setup-gh-deploy.ps1 -GitHubOrganization "seekdavidlee" -GitHubRepoName "eklee-keyvault" -ResourceGroupName "rg-eklee-keyvault"
 
     Creates resource groups 'rg-eklee-keyvault-dev' and 'rg-eklee-keyvault-prod', assigns
     Contributor role on both, and sets GitHub environment variables accordingly.
 
-    .\setup-gh-deploy.ps1 -GitHubOrganization "seekdavidlee" -GitHubRepoName "eklee-keyvault" `
-        -ResourceGroupName "rg-eklee-keyvault" -ApiClientId "00000000-0000-0000-0000-000000000000"
-
-    Also assigns the GitHub OIDC client the API's E2E.Tester application role.
 #>
 
 [CmdletBinding()]
@@ -59,10 +50,7 @@ param(
     [string]$ResourceGroupName,
 
     [Parameter(Mandatory = $false)]
-    [string]$Location = 'eastus2',
-
-    [Parameter(Mandatory = $false)]
-    [string]$ApiClientId
+    [string]$Location = 'eastus2'
 )
 
 # ============================================================================
@@ -280,24 +268,6 @@ foreach ($fedCred in $federatedCredentials) {
             exit 1
         }
     }
-}
-
-# ============================================================================
-# Optionally assign the API application role to the GitHub OIDC client
-# ============================================================================
-
-if (-not [string]::IsNullOrWhiteSpace($ApiClientId)) {
-    Write-Header "Assigning API Application Role to GitHub OIDC Client"
-    $assignmentScript = Join-Path $PSScriptRoot 'assign-e2e-app-role.ps1'
-    & pwsh -NoProfile -File $assignmentScript `
-        -ApiClientId $ApiClientId `
-        -CallerAppId $appId
-
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error "Failed to assign the API E2E.Tester role to the GitHub OIDC client."
-        exit 1
-    }
-    Write-Success "API E2E.Tester role assigned to the GitHub OIDC client."
 }
 
 # ============================================================================

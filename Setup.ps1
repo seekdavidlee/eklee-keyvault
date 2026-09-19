@@ -14,11 +14,11 @@
     Path to the local target catalog. Defaults to a file under the user's
     profile directory.
 .EXAMPLE
-    .\Start-Azd-Migration.ps1
+    .\Setup.ps1
 
     Selects or creates a target, prepares its azd environment, and runs azd up.
 .EXAMPLE
-    .\Start-Azd-Migration.ps1 -WhatIf
+    .\Setup.ps1 -WhatIf
 
     Selects or creates a target and shows the azd up action without running it.
 .NOTES
@@ -31,7 +31,7 @@
 param(
     [Parameter(Mandatory = $false)]
     [ValidateNotNullOrEmpty()]
-    [string]$ProfilePath = (Join-Path $HOME '.eklee-keyvault\azd-targets.json')
+    [string]$ProfilePath = (Join-Path $HOME '.eklee-keyvault\setup.json')
 )
 
 $ErrorActionPreference = 'Stop'
@@ -516,67 +516,6 @@ function Set-AzdEnvironment {
     )
 }
 
-function Invoke-GitHubE2eRoleAssignment {
-    <# .SYNOPSIS Assigns the hosted E2E role to the existing GitHub app. #>
-    [CmdletBinding()]
-    [OutputType([void])]
-    param(
-        [Parameter(Mandatory = $true)]
-        [object]$Target
-    )
-
-    $githubAppNameProperty = $Target.PSObject.Properties['githubDeployAppRegistrationName']
-    $githubDeploymentAppRegistrationName = if ($githubAppNameProperty) {
-        [string]$githubAppNameProperty.Value
-    }
-    else {
-        $null
-    }
-    if ([string]::IsNullOrWhiteSpace($githubDeploymentAppRegistrationName)) {
-        throw "Target '$($Target.displayName)' has no GitHub deployment app registration name. Add githubDeployAppRegistrationName to the target profile entry."
-    }
-
-    Write-Host 'Reading the API client ID from the azd environment...' -ForegroundColor Cyan
-    $apiClientOutput = azd env get-value APP_CLIENT_ID 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        throw "Could not read APP_CLIENT_ID from the azd environment: $($apiClientOutput -join ' ')"
-    }
-
-    $apiClientId = ($apiClientOutput | Out-String).Trim().Trim('"')
-    $parsedApiClientId = [guid]::Empty
-    if (-not [guid]::TryParse($apiClientId, [ref]$parsedApiClientId)) {
-        throw "The azd environment contains an invalid APP_CLIENT_ID value: '$apiClientId'."
-    }
-
-    Write-Host "Looking up GitHub deployment app registration '$githubDeploymentAppRegistrationName'..." -ForegroundColor Cyan
-    $githubAppOutput = az ad app list --display-name $githubDeploymentAppRegistrationName --output json 2>&1
-    if ($LASTEXITCODE -ne 0) {
-        throw "Could not look up the GitHub deployment app registration: $($githubAppOutput -join ' ')"
-    }
-
-    $githubApps = @($githubAppOutput | ConvertFrom-Json | Where-Object {
-            $_.displayName -eq $githubDeploymentAppRegistrationName
-        })
-    if ($githubApps.Count -eq 0) {
-        throw "GitHub deployment app registration '$githubDeploymentAppRegistrationName' was not found. Run Scripts/setup-gh-deploy.ps1 first."
-    }
-    if ($githubApps.Count -gt 1) {
-        throw "Multiple GitHub deployment app registrations named '$githubDeploymentAppRegistrationName' were found. Resolve the duplicate registrations before continuing."
-    }
-
-    $assignmentScript = Join-Path $PSScriptRoot 'Scripts\assign-e2e-app-role.ps1'
-    Write-Host "Assigning E2E.Tester to '$githubDeploymentAppRegistrationName'..." -ForegroundColor Cyan
-    & pwsh -NoProfile -File $assignmentScript `
-        -ApiClientId $apiClientId `
-        -CallerAppId ([string]$githubApps[0].appId)
-
-    if ($LASTEXITCODE -ne 0) {
-        throw "Failed to assign E2E.Tester to '$githubDeploymentAppRegistrationName'."
-    }
-
-    Write-Host 'E2E.Tester assignment completed.' -ForegroundColor Green
-}
-
 function Get-AzdEnvironmentConfigValue {
     <# .SYNOPSIS Gets a named infrastructure parameter from an azd environment. #>
     [CmdletBinding()]
@@ -1009,11 +948,6 @@ if ($MyInvocation.InvocationName -ne '.') {
             if ($PSCmdlet.ShouldProcess("azd environment '$($target.environmentName)'", 'Run azd up')) {
                 Invoke-ExternalCommand -CommandName 'azd' -Arguments @('up')
 
-                if ($PSCmdlet.ShouldProcess(
-                        $target.githubDeployAppRegistrationName,
-                        'Assign E2E.Tester application role')) {
-                    Invoke-GitHubE2eRoleAssignment -Target $target
-                }
             }
         }
         finally {
@@ -1022,7 +956,7 @@ if ($MyInvocation.InvocationName -ne '.') {
         exit 0
     }
     catch {
-        Write-Error "Azd migration setup failed: $($_.Exception.Message)"
+        Write-Error "Setup failed: $($_.Exception.Message)"
         exit 1
     }
 }
