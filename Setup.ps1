@@ -229,7 +229,7 @@ function ConvertTo-EnvironmentName {
 function Read-Target {
     <# .SYNOPSIS Collects a tenant and subscription target from the console. #>
     [CmdletBinding()]
-    [OutputType([hashtable])]
+    [OutputType([pscustomobject])]
     param()
 
     $displayName = Read-RequiredValue -Prompt 'Target display name'
@@ -263,7 +263,7 @@ function Read-Target {
         throw "azd environment name '$environmentName' must contain lowercase letters, numbers, or hyphens."
     }
 
-    return [ordered]@{
+    return [pscustomobject][ordered]@{
         displayName     = $displayName
         tenantId        = $tenantId
         subscriptionId  = $subscriptionId
