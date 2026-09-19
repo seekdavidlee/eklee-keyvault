@@ -244,7 +244,7 @@ function Get-ContainerImageDigest {
         [string]$Tag
     )
 
-    $tokenUri = "https://ghcr.io/token?scope=$([uri]::EscapeDataString("repository:$Repository:pull"))"
+    $tokenUri = "https://ghcr.io/token?scope=$([uri]::EscapeDataString("repository:${Repository}:pull"))"
     try {
         $tokenResponse = Invoke-RestMethod -Uri $tokenUri -UseBasicParsing
     }
