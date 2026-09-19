@@ -134,7 +134,16 @@ function Get-RecentReleaseVersions {
     }
 
     $releaseVersions = foreach ($release in $releases) {
-        if ($null -ne $release -and -not [bool]$release.draft -and -not [bool]$release.prerelease) {
+        if ($null -eq $release) {
+            continue
+        }
+
+        $draftProperty = $release.PSObject.Properties['draft']
+        $prereleaseProperty = $release.PSObject.Properties['prerelease']
+        $isDraft = $null -ne $draftProperty -and [bool]$draftProperty.Value
+        $isPrerelease = $null -ne $prereleaseProperty -and [bool]$prereleaseProperty.Value
+
+        if (-not $isDraft -and -not $isPrerelease) {
             ConvertTo-StableReleaseVersion -Value ([string]$release.tag_name)
         }
     }
