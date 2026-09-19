@@ -464,7 +464,7 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
             }
             {
               name: 'AzureAd__Audience'
-              value: 'api://${clientId}'
+              value: clientId
             }
           ]
           probes: [
