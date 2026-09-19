@@ -107,27 +107,44 @@ function Set-AzdEnvironmentValue {
     }
 }
 
+function Get-EnablePrivateNetworking {
+    [CmdletBinding()]
+    [OutputType([bool])]
+    param()
+
+    $value = Get-AzdEnvironmentValue -Name 'ENABLE_PRIVATE_NETWORKING'
+    if ($value -eq 'true') {
+        return $true
+    }
+
+    if ($value -eq 'false') {
+        return $false
+    }
+
+    throw "ENABLE_PRIVATE_NETWORKING must be 'true' or 'false', but was '$value'."
+}
+
 function Get-RoleDefinitions {
     [CmdletBinding()]
     [OutputType([object[]])]
     param()
 
     return @(
-        [pscustomobject]@{ Role = 'storage-account'; ResourceId = 'app-storage-account'; Type = 'Microsoft.Storage/storageAccounts'; EnvironmentVariable = 'EXISTING_STORAGE_ACCOUNT_NAME' }
-        [pscustomobject]@{ Role = 'key-vault'; ResourceId = 'app-key-vault'; Type = 'Microsoft.KeyVault/vaults'; EnvironmentVariable = 'EXISTING_KEY_VAULT_NAME' }
-        [pscustomobject]@{ Role = 'log-analytics-workspace'; ResourceId = 'app-log-analytics-workspace'; Type = 'Microsoft.OperationalInsights/workspaces'; EnvironmentVariable = 'EXISTING_LOG_ANALYTICS_WORKSPACE_NAME' }
-        [pscustomobject]@{ Role = 'managed-identity'; ResourceId = 'app-managed-identity'; Type = 'Microsoft.ManagedIdentity/userAssignedIdentities'; EnvironmentVariable = 'EXISTING_MANAGED_IDENTITY_NAME' }
-        [pscustomobject]@{ Role = 'container-app-environment'; ResourceId = 'app-container-app-environment'; Type = 'Microsoft.App/managedEnvironments'; EnvironmentVariable = 'EXISTING_CONTAINER_APP_ENVIRONMENT_NAME' }
-        [pscustomobject]@{ Role = 'container-app'; ResourceId = 'app-container-app'; Type = 'Microsoft.App/containerApps'; EnvironmentVariable = 'EXISTING_CONTAINER_APP_NAME' }
-        [pscustomobject]@{ Role = 'virtual-network'; ResourceId = 'app-virtual-network'; Type = 'Microsoft.Network/virtualNetworks'; EnvironmentVariable = 'EXISTING_VIRTUAL_NETWORK_NAME' }
-        [pscustomobject]@{ Role = 'container-app-network-security-group'; ResourceId = 'app-container-app-network-security-group'; Type = 'Microsoft.Network/networkSecurityGroups'; EnvironmentVariable = 'EXISTING_CONTAINER_APP_NSG_NAME' }
-        [pscustomobject]@{ Role = 'resource-network-security-group'; ResourceId = 'app-resource-network-security-group'; Type = 'Microsoft.Network/networkSecurityGroups'; EnvironmentVariable = 'EXISTING_RESOURCE_NSG_NAME' }
-        [pscustomobject]@{ Role = 'storage-private-endpoint'; ResourceId = 'app-storage-private-endpoint'; Type = 'Microsoft.Network/privateEndpoints'; EnvironmentVariable = 'EXISTING_STORAGE_PRIVATE_ENDPOINT_NAME' }
-        [pscustomobject]@{ Role = 'key-vault-private-endpoint'; ResourceId = 'app-key-vault-private-endpoint'; Type = 'Microsoft.Network/privateEndpoints'; EnvironmentVariable = 'EXISTING_KEY_VAULT_PRIVATE_ENDPOINT_NAME' }
-        [pscustomobject]@{ Role = 'storage-private-dns-zone'; ResourceId = 'app-storage-private-dns-zone'; Type = 'Microsoft.Network/privateDnsZones'; EnvironmentVariable = 'EXISTING_STORAGE_PRIVATE_DNS_ZONE_NAME'; ExactName = 'privatelink.blob.core.windows.net' }
-        [pscustomobject]@{ Role = 'key-vault-private-dns-zone'; ResourceId = 'app-key-vault-private-dns-zone'; Type = 'Microsoft.Network/privateDnsZones'; EnvironmentVariable = 'EXISTING_KEY_VAULT_PRIVATE_DNS_ZONE_NAME'; ExactName = 'privatelink.vaultcore.azure.net' }
-        [pscustomobject]@{ Role = 'storage-private-dns-zone-link'; ResourceId = 'app-storage-private-dns-zone-link'; Type = 'Microsoft.Network/privateDnsZones/virtualNetworkLinks'; EnvironmentVariable = 'EXISTING_STORAGE_PRIVATE_DNS_ZONE_LINK_NAME' }
-        [pscustomobject]@{ Role = 'key-vault-private-dns-zone-link'; ResourceId = 'app-key-vault-private-dns-zone-link'; Type = 'Microsoft.Network/privateDnsZones/virtualNetworkLinks'; EnvironmentVariable = 'EXISTING_KEY_VAULT_PRIVATE_DNS_ZONE_LINK_NAME' }
+        [pscustomobject]@{ Role = 'storage-account'; ResourceId = 'app-storage-account'; Type = 'Microsoft.Storage/storageAccounts'; EnvironmentVariable = 'EXISTING_STORAGE_ACCOUNT_NAME'; RequiresPrivateNetworking = $false }
+        [pscustomobject]@{ Role = 'key-vault'; ResourceId = 'app-key-vault'; Type = 'Microsoft.KeyVault/vaults'; EnvironmentVariable = 'EXISTING_KEY_VAULT_NAME'; RequiresPrivateNetworking = $false }
+        [pscustomobject]@{ Role = 'log-analytics-workspace'; ResourceId = 'app-log-analytics-workspace'; Type = 'Microsoft.OperationalInsights/workspaces'; EnvironmentVariable = 'EXISTING_LOG_ANALYTICS_WORKSPACE_NAME'; RequiresPrivateNetworking = $false }
+        [pscustomobject]@{ Role = 'managed-identity'; ResourceId = 'app-managed-identity'; Type = 'Microsoft.ManagedIdentity/userAssignedIdentities'; EnvironmentVariable = 'EXISTING_MANAGED_IDENTITY_NAME'; RequiresPrivateNetworking = $false }
+        [pscustomobject]@{ Role = 'container-app-environment'; ResourceId = 'app-container-app-environment'; Type = 'Microsoft.App/managedEnvironments'; EnvironmentVariable = 'EXISTING_CONTAINER_APP_ENVIRONMENT_NAME'; RequiresPrivateNetworking = $false }
+        [pscustomobject]@{ Role = 'container-app'; ResourceId = 'app-container-app'; Type = 'Microsoft.App/containerApps'; EnvironmentVariable = 'EXISTING_CONTAINER_APP_NAME'; RequiresPrivateNetworking = $false }
+        [pscustomobject]@{ Role = 'virtual-network'; ResourceId = 'app-virtual-network'; Type = 'Microsoft.Network/virtualNetworks'; EnvironmentVariable = 'EXISTING_VIRTUAL_NETWORK_NAME'; RequiresPrivateNetworking = $true }
+        [pscustomobject]@{ Role = 'container-app-network-security-group'; ResourceId = 'app-container-app-network-security-group'; Type = 'Microsoft.Network/networkSecurityGroups'; EnvironmentVariable = 'EXISTING_CONTAINER_APP_NSG_NAME'; RequiresPrivateNetworking = $true }
+        [pscustomobject]@{ Role = 'resource-network-security-group'; ResourceId = 'app-resource-network-security-group'; Type = 'Microsoft.Network/networkSecurityGroups'; EnvironmentVariable = 'EXISTING_RESOURCE_NSG_NAME'; RequiresPrivateNetworking = $true }
+        [pscustomobject]@{ Role = 'storage-private-endpoint'; ResourceId = 'app-storage-private-endpoint'; Type = 'Microsoft.Network/privateEndpoints'; EnvironmentVariable = 'EXISTING_STORAGE_PRIVATE_ENDPOINT_NAME'; RequiresPrivateNetworking = $true }
+        [pscustomobject]@{ Role = 'key-vault-private-endpoint'; ResourceId = 'app-key-vault-private-endpoint'; Type = 'Microsoft.Network/privateEndpoints'; EnvironmentVariable = 'EXISTING_KEY_VAULT_PRIVATE_ENDPOINT_NAME'; RequiresPrivateNetworking = $true }
+        [pscustomobject]@{ Role = 'storage-private-dns-zone'; ResourceId = 'app-storage-private-dns-zone'; Type = 'Microsoft.Network/privateDnsZones'; EnvironmentVariable = 'EXISTING_STORAGE_PRIVATE_DNS_ZONE_NAME'; ExactName = 'privatelink.blob.core.windows.net'; RequiresPrivateNetworking = $true }
+        [pscustomobject]@{ Role = 'key-vault-private-dns-zone'; ResourceId = 'app-key-vault-private-dns-zone'; Type = 'Microsoft.Network/privateDnsZones'; EnvironmentVariable = 'EXISTING_KEY_VAULT_PRIVATE_DNS_ZONE_NAME'; ExactName = 'privatelink.vaultcore.azure.net'; RequiresPrivateNetworking = $true }
+        [pscustomobject]@{ Role = 'storage-private-dns-zone-link'; ResourceId = 'app-storage-private-dns-zone-link'; Type = 'Microsoft.Network/privateDnsZones/virtualNetworkLinks'; EnvironmentVariable = 'EXISTING_STORAGE_PRIVATE_DNS_ZONE_LINK_NAME'; RequiresPrivateNetworking = $true }
+        [pscustomobject]@{ Role = 'key-vault-private-dns-zone-link'; ResourceId = 'app-key-vault-private-dns-zone-link'; Type = 'Microsoft.Network/privateDnsZones/virtualNetworkLinks'; EnvironmentVariable = 'EXISTING_KEY_VAULT_PRIVATE_DNS_ZONE_LINK_NAME'; RequiresPrivateNetworking = $true }
     )
 }
 
@@ -141,7 +158,10 @@ function Get-ExistingResources {
 
         [Parameter(Mandatory = $true)]
         [ValidateNotNullOrEmpty()]
-        [string]$SubscriptionId
+        [string]$SubscriptionId,
+
+        [Parameter(Mandatory = $true)]
+        [bool]$IncludePrivateNetworking
     )
 
     $resources = [System.Collections.Generic.List[object]]::new()
@@ -151,23 +171,26 @@ function Get-ExistingResources {
         $resources.Add($resource)
     }
 
-    $dnsZones = @(Invoke-AzureCliJson -Arguments @(
-            'network', 'private-dns', 'zone', 'list', '--resource-group', $ResourceGroupName, '--subscription', $SubscriptionId
-        ))
-    foreach ($dnsZone in $dnsZones) {
-        $resources.Add($dnsZone)
-    }
-
-    foreach ($zoneName in @('privatelink.blob.core.windows.net', 'privatelink.vaultcore.azure.net')) {
-        if ($dnsZones.name -notcontains $zoneName) {
-            continue
+    if ($IncludePrivateNetworking) {
+        $dnsZones = @(Invoke-AzureCliJson -Arguments @(
+                'network', 'private-dns', 'zone', 'list', '--resource-group', $ResourceGroupName, '--subscription', $SubscriptionId
+            ))
+        foreach ($dnsZone in $dnsZones) {
+            $resources.Add($dnsZone)
         }
 
-        foreach ($link in @(Invoke-AzureCliJson -Arguments @(
-                    'network', 'private-dns', 'link', 'vnet', 'list', '--resource-group', $ResourceGroupName,
-                    '--zone-name', $zoneName, '--subscription', $SubscriptionId
-                ))) {
-            $resources.Add($link)
+        $dnsZoneNames = @($dnsZones | ForEach-Object { $_.name })
+        foreach ($zoneName in @('privatelink.blob.core.windows.net', 'privatelink.vaultcore.azure.net')) {
+            if ($dnsZoneNames -notcontains $zoneName) {
+                continue
+            }
+
+            foreach ($link in @(Invoke-AzureCliJson -Arguments @(
+                        'network', 'private-dns', 'link', 'vnet', 'list', '--resource-group', $ResourceGroupName,
+                        '--zone-name', $zoneName, '--subscription', $SubscriptionId
+                    ))) {
+                $resources.Add($link)
+            }
         }
     }
 
@@ -191,6 +214,7 @@ function Get-TaggedResource {
     [OutputType([object])]
     param(
         [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
         [object[]]$Resources,
 
         [Parameter(Mandatory = $true)]
@@ -251,6 +275,7 @@ function Set-RbacAssignmentSkipFlags {
     [OutputType([void])]
     param(
         [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
         [object[]]$Resources,
 
         [Parameter(Mandatory = $true)]
@@ -319,10 +344,14 @@ function Resolve-TaggedResourceNames {
     [OutputType([void])]
     param(
         [Parameter(Mandatory = $true)]
-        [object[]]$Resources
+        [AllowEmptyCollection()]
+        [object[]]$Resources,
+
+        [Parameter(Mandatory = $true)]
+        [object[]]$RoleDefinitions
     )
 
-    foreach ($roleDefinition in Get-RoleDefinitions) {
+    foreach ($roleDefinition in $RoleDefinitions) {
         $expectedTagValue = $roleDefinition.ResourceId
         $taggedResources = @($Resources | Where-Object {
                 (Get-ResourceTagValue -Resource $_ -TagKey 'resource-id') -eq $expectedTagValue
@@ -374,6 +403,20 @@ function Invoke-ResourceNameResolution {
         throw "AZURE_SUBSCRIPTION_ID '$subscriptionId' must be a GUID."
     }
 
+    $enablePrivateNetworking = Get-EnablePrivateNetworking
+    $roleDefinitions = @(Get-RoleDefinitions)
+    $activeRoleDefinitions = @($roleDefinitions | Where-Object {
+            $enablePrivateNetworking -or -not $_.RequiresPrivateNetworking
+        })
+
+    if (-not $enablePrivateNetworking) {
+        foreach ($roleDefinition in @($roleDefinitions | Where-Object { $_.RequiresPrivateNetworking })) {
+            Set-AzdEnvironmentValue -Name $roleDefinition.EnvironmentVariable -Value ''
+        }
+
+        Write-Host 'Private networking is disabled; private resource reuse checks are skipped.' -ForegroundColor Yellow
+    }
+
     $resourceGroupName = Get-AzdEnvironmentValue -Name 'resourceGroupName'
     if ([string]::IsNullOrWhiteSpace($resourceGroupName)) {
         $resourceGroupName = Get-AzdInfrastructureParameter -Name 'resourceGroupName'
@@ -388,7 +431,7 @@ function Invoke-ResourceNameResolution {
         'group', 'exists', '--name', $resourceGroupName, '--subscription', $subscriptionId
     )
     if (-not $resourceGroupExists) {
-        foreach ($roleDefinition in Get-RoleDefinitions) {
+        foreach ($roleDefinition in $roleDefinitions) {
             Set-AzdEnvironmentValue -Name $roleDefinition.EnvironmentVariable -Value ''
         }
         Set-AzdEnvironmentValue -Name 'SKIP_KEY_VAULT_ROLE_ASSIGNMENT' -Value 'false'
@@ -397,8 +440,8 @@ function Invoke-ResourceNameResolution {
         return
     }
 
-    $resources = Get-ExistingResources -ResourceGroupName $resourceGroupName -SubscriptionId $subscriptionId
-    Resolve-TaggedResourceNames -Resources $resources
+    $resources = @(Get-ExistingResources -ResourceGroupName $resourceGroupName -SubscriptionId $subscriptionId -IncludePrivateNetworking $enablePrivateNetworking)
+    Resolve-TaggedResourceNames -Resources $resources -RoleDefinitions $activeRoleDefinitions
     Set-RbacAssignmentSkipFlags -Resources $resources -SubscriptionId $subscriptionId
 }
 
