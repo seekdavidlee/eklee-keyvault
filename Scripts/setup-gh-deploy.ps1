@@ -1,21 +1,20 @@
 #!/usr/bin/env pwsh
 <#
 .SYNOPSIS
-    Creates an Azure AD app registration with federated credentials for GitHub Actions deployment.
+    Creates an Azure AD app registration with a federated credential for GitHub Actions development deployment.
 
 .DESCRIPTION
     This script creates (or reuses) an app registration named 'eklee-azkeyvault-viewer-gh-deploy'
     and configures federated credentials so GitHub Actions can authenticate to Azure using
     OpenID Connect (OIDC) without storing client secrets.
 
-    The federated credential trusts the 'main' branch of the specified GitHub repository.
+    One development resource group is created using the base ResourceGroupName with a
+    '-dev' suffix. The Contributor role is assigned to the app registration's service
+    principal on that resource group.
 
-    Two resource groups are created: one for dev and one for prod, using the base
-    ResourceGroupName with '-dev' and '-prod' suffixes. The Contributor role is assigned
-    to the app registration's service principal on both resource groups.
-
-    GitHub Actions environment-scoped variables are set per environment (dev/prod) for
+    GitHub Actions environment-scoped variables are set for the dev environment:
     RESOURCE_GROUP, AZURE_TENANT_ID, AZURE_SUBSCRIPTION_ID, and AZURE_CLIENT_ID.
+    Customer production deployments are managed outside GitHub Actions.
 
 .PARAMETER GitHubOrganization
     The GitHub organization (or username) that owns the repository.
@@ -24,8 +23,8 @@
     The name of the GitHub repository.
 
 .PARAMETER ResourceGroupName
-    The base name of the Azure resource groups. Two resource groups will be created:
-    '{ResourceGroupName}-dev' and '{ResourceGroupName}-prod'.
+    The base name of the Azure resource group. One resource group will be created:
+    '{ResourceGroupName}-dev'.
 
 .PARAMETER Location
     The Azure region for the resource groups. Defaults to 'eastus2'.
@@ -33,8 +32,8 @@
 .EXAMPLE
     .\setup-gh-deploy.ps1 -GitHubOrganization "seekdavidlee" -GitHubRepoName "eklee-keyvault" -ResourceGroupName "rg-eklee-keyvault"
 
-    Creates resource groups 'rg-eklee-keyvault-dev' and 'rg-eklee-keyvault-prod', assigns
-    Contributor role on both, and sets GitHub environment variables accordingly.
+    Creates resource group 'rg-eklee-keyvault-dev', assigns Contributor to the GitHub
+    Actions deployment identity, and sets the dev GitHub Environment variables.
 
 #>
 
@@ -61,7 +60,6 @@ $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
 
 $appRegistrationName = 'eklee-azkeyvault-viewer-gh-deploy'
-$federatedCredentialName = 'github-actions-main-branch'
 
 # ============================================================================
 # Functions
@@ -132,12 +130,11 @@ else {
 }
 
 # ============================================================================
-# Ensure Resource Groups Exist (dev and prod)
+# Ensure Development Resource Group Exists
 # ============================================================================
 
 $environments = @(
-    @{ Name = 'dev';  ResourceGroup = "${ResourceGroupName}-dev" }
-    @{ Name = 'prod'; ResourceGroup = "${ResourceGroupName}-prod" }
+    @{ Name = 'dev'; ResourceGroup = "${ResourceGroupName}-dev" }
 )
 
 foreach ($env in $environments) {
@@ -162,7 +159,7 @@ foreach ($env in $environments) {
 }
 
 # ============================================================================
-# Assign Contributor Role to App Registration on Both Resource Groups
+# Assign Contributor Role to App Registration on the Development Resource Group
 # ============================================================================
 
 Write-Step "Retrieving service principal for app registration..."
@@ -209,24 +206,18 @@ foreach ($env in $environments) {
 }
 
 # ============================================================================
-# Configure Federated Credentials (branch + environments)
+# Configure Development Environment Federated Credential
 # ============================================================================
 
-# Define all federated credentials: one for main branch, one per environment
 $federatedCredentials = @(
-    @{
-        Name        = $federatedCredentialName
-        Subject     = "repo:${GitHubOrganization}/${GitHubRepoName}:ref:refs/heads/main"
-        Description = "GitHub Actions deployment from main branch"
+    foreach ($env in $environments) {
+        @{
+            Name        = "github-actions-env-$($env.Name)"
+            Subject     = "repo:${GitHubOrganization}/${GitHubRepoName}:environment:$($env.Name)"
+            Description = "GitHub Actions deployment for $($env.Name) environment"
+        }
     }
 )
-foreach ($env in $environments) {
-    $federatedCredentials += @{
-        Name        = "github-actions-env-$($env.Name)"
-        Subject     = "repo:${GitHubOrganization}/${GitHubRepoName}:environment:$($env.Name)"
-        Description = "GitHub Actions deployment for $($env.Name) environment"
-    }
-}
 
 Write-Step "Listing existing federated credentials..."
 $existingCredentials = az ad app federated-credential list --id $objectId --output json | ConvertFrom-Json
@@ -304,7 +295,7 @@ foreach ($env in $environments) {
 }
 
 Write-Host ""
-Write-Success "All GitHub repository variables have been configured for $ghRepo"
+Write-Success "All GitHub development environment variables have been configured for $ghRepo"
 Write-Host ""
 
 # Output as structured object for programmatic use

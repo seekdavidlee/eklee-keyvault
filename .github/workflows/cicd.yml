@@ -19,24 +19,18 @@ concurrency:
 
 jobs:
   setup:
-    name: Choose Secrets Environment
+    name: Resolve Container App Name
     runs-on: ubuntu-latest
     steps:
       - name: Checkout repository
         uses: actions/checkout@v6
 
       - id: setup
-        name: Setup Environment
+        name: Resolve Container App Name
         run: |
-          if [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
-            echo "build_env=prod" >> "$GITHUB_OUTPUT"
-          else
-            echo "build_env=dev" >> "$GITHUB_OUTPUT"
-          fi
           container_app_name=$(BRANCH_NAME="${GITHUB_REF_NAME}" bash .github/scripts/resolve-container-app-name.sh)
           echo "container_app_name=$container_app_name" >> "$GITHUB_OUTPUT"
     outputs:
-      build_env: ${{ steps.setup.outputs.build_env }}
       container_app_name: ${{ steps.setup.outputs.container_app_name }}
 
   test-dotnet:
@@ -85,7 +79,6 @@ jobs:
     needs: [setup, test-dotnet, test-npm]
     if: ${{ !failure() && !cancelled() }}
     runs-on: ubuntu-latest
-    environment: ${{ needs.setup.outputs.build_env }}
     outputs:
       image: ${{ steps.image-tag.outputs.image }}
     
@@ -119,9 +112,9 @@ jobs:
           docker push ${{ steps.image-tag.outputs.image }}
 
       - name: Tag and push additional tags
-        if: needs.setup.outputs.build_env == 'prod'
+        if: github.ref == 'refs/heads/main'
         run: |
-          # For production, also tag with the commit SHA
+          # Retain an immutable companion tag for the mutable latest tag.
           docker tag ${{ steps.image-tag.outputs.image }} \
             ghcr.io/${{ github.repository }}:${GITHUB_SHA::8}
           docker push ghcr.io/${{ github.repository }}:${GITHUB_SHA::8}
@@ -130,16 +123,16 @@ jobs:
         run: |
           echo "✅ Successfully built and pushed image:"
           echo "   ${{ steps.image-tag.outputs.image }}"
-          if [[ "${{ needs.setup.outputs.build_env }}" == "prod" ]]; then
+          if [[ "${GITHUB_REF}" == "refs/heads/main" ]]; then
             echo "   ghcr.io/${{ github.repository }}:${GITHUB_SHA::8}"
           fi
 
   deploy:
     name: Deploy to Azure Container Apps
     needs: [setup, build-and-push]
-    if: ${{ !failure() && !cancelled() }}
+    if: ${{ !failure() && !cancelled() && github.ref != 'refs/heads/main' }}
     runs-on: ubuntu-latest
-    environment: ${{ needs.setup.outputs.build_env }}
+    environment: dev
     outputs:
       fqdn: ${{ steps.deploy-app.outputs.fqdn }}
 

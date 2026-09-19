@@ -9,7 +9,6 @@ on:
         type: choice
         options:
           - dev
-          - prod
       enablePrivateNetworking:
         description: 'Enable private networking (VNET, private endpoints)'
         required: false

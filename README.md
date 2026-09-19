@@ -94,16 +94,12 @@ To target a different project file:
 
 1. Fork this repo.
 1. Run `Scripts/setup-gh-deploy.ps1` to create the deployment service principal, resource groups, RBAC assignments, and set the deployment-related GitHub environment variables (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `RESOURCE_GROUP`).
-1. Run `Eklee.KeyVault.Api/setup-app-registration.ps1` with the `-GitHubOrganization`, `-GitHubRepoName`, and `-AzureAdRedirectUriDev` (and optionally `-AzureAdRedirectUriProd`) parameters to create the app registration and set the SPA-related GitHub environment variables (`VITE_AZURE_AD_CLIENT_ID`, `VITE_AZURE_AD_AUTHORITY`, `VITE_AZURE_AD_REDIRECT_URI`).
+1. Run `Eklee.KeyVault.Api/setup-app-registration.ps1` with the `-GitHubOrganization`, `-GitHubRepoName`, and `-AzureAdRedirectUriDev` parameters to create the maintainer dev app registration and set the SPA-related GitHub environment variables (`VITE_AZURE_AD_CLIENT_ID`, `VITE_AZURE_AD_AUTHORITY`, `VITE_AZURE_AD_REDIRECT_URI`). Customer production registrations are configured by the customer deployment process.
 
-1. Deploy infrastructure by running the **Deploy Infrastructure** workflow (`deploy-infra.yml`):
-
-   ```sh
-   gh workflow run deploy-infra.yml -f branch=main -f environment=dev
-   ```
+1. Deploy infrastructure by running `gh workflow run deploy-infra.yml -f environment=dev`
 
 1. Run `Scripts/assign-mi-rbac.ps1` to assign RBAC roles to the managed identity.
-1. Push to any branch to trigger the **CI/CD** workflow (`cicd.yml`), which builds and deploys the container.
+1. Push to a non-`main` branch to trigger the **CI/CD** workflow (`cicd.yml`), which builds and deploys a temporary dev Container App. A push to `main` builds and publishes the `latest` image and a short-SHA image tag without deploying to Azure; the customer deployment process performs production updates.
 1. After CI deploys a branch Container App, run
   `./Scripts/Update-BranchRedirectUri.ps1` as a user who can update the
   resource group and the SPA app registration.
@@ -118,9 +114,9 @@ To target a different project file:
 
 1. Perform user role assignments per [Post Deployment RBAC](#post-deployment-rbac).
 
-When a same-repository pull request is merged into a `release/*` branch, the cleanup workflow deletes the matching temporary Container App and `branch-<normalized-branch>` GHCR image. When a release branch is merged into `main`, it deletes the release Container App and `release-<normalized-version>` GHCR image. The long-lived `main` Container App and production image tags are not deleted.
+When a same-repository pull request is merged into a `release/*` branch, the cleanup workflow deletes the matching temporary Container App and `branch-<normalized-branch>` GHCR image. When a release branch is merged into `main`, it deletes the release Container App and `release-<normalized-version>` GHCR image. The cleanup workflow does not delete the long-lived `main` Container App or `main` image tags.
 
-The two setup scripts configure the following GitHub environment variables (per `dev`/`prod`):
+The two setup scripts configure the following GitHub environment variables in `dev`:
 
 | Variable | Set by |
 | --- | --- |
