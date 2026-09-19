@@ -71,7 +71,7 @@ jobs:
           fi
 
       - name: Delete merged GHCR image
-        if: always()
+        if: success()
         env:
           BRANCH_NAME: ${{ github.event.pull_request.head.ref }}
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
