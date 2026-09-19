@@ -12,7 +12,7 @@ infra:
 hooks:
   preprovision:
     shell: pwsh
-    run: ./Deployment/resolve-resource-names.ps1; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; ./Deployment/setup-azd-app-registration.ps1
+    run: pwsh -NoProfile -File ./Deployment/resolve-resource-names.ps1; if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }; ./Deployment/setup-azd-app-registration.ps1
     interactive: true
   postprovision:
     shell: pwsh
