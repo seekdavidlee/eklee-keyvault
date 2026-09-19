@@ -1,4 +1,5 @@
 using Azure;
+using Eklee.KeyVault.Api;
 using Eklee.KeyVault.Api.Models;
 using Eklee.KeyVault.Api.Services;
 using Microsoft.AspNetCore.Authorization;
@@ -30,6 +31,15 @@ public class UserAccessController(UserAccessService userAccessService, ILogger<U
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     public async Task<IActionResult> GetMe()
     {
+        if (User.HasE2eApplicationRole())
+        {
+            return Ok(new UserAccess
+            {
+                Role = UserRole.Admin,
+                CreatedAt = DateTime.UtcNow
+            });
+        }
+
         var objectId = GetObjectId();
         var email = GetEmail();
 

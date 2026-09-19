@@ -18,8 +18,7 @@ The primary costs are Azure Container Apps, Azure Storage, and Azure Key Vault. 
 - [Node.js](https://nodejs.org/) (LTS recommended)
 - [.NET SDK](https://dotnet.microsoft.com/download)
 - [Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli) (logged in with `az login`)
-- [GitHub CLI](https://cli.github.com/) (authenticated with `gh auth login`)
-- [Docker Desktop](https://www.docker.com/products/docker-desktop/) (for local Docker workflow)
+- [GitHub CLI](https://cli.github.com/) (optional; needed only for GitHub workflow administration)
 
 ## Local Development
 
@@ -91,88 +90,39 @@ To target a different project file:
 .\UpdateNuget.ps1 -ProjectPath "path/to/Project.csproj"
 ```
 
-### Running Locally with Docker
-
-The `run-local.ps1` script builds and runs the full application (API + UI) in a single Docker container using your local Azure CLI credentials.
-
-#### How It Works
-
-1. Reads `ClientId` and `TenantId` from `Eklee.KeyVault.Api/appsettings.json`
-2. Builds the Docker image with `--target local` (frontend + backend, no Azure CLI installed)
-3. Pre-fetches access tokens for Key Vault and Storage from your host Azure CLI session
-4. Mounts the token files read-only into the container
-5. A lightweight `az` wrapper inside the container serves tokens to `AzureCliCredential`
-
-#### Usage
-
-```powershell
-# Build and run (foreground with logs)
-.\run-local.ps1
-
-# Build and run in background
-.\run-local.ps1 -Detached
-
-# Skip rebuild, just refresh tokens and run
-.\run-local.ps1 -NoBuild
-
-# Custom port
-.\run-local.ps1 -Port 9090
-```
-
-The container serves both the API and UI on the same port. After startup:
-
-| Endpoint | URL |
-| --- | --- |
-| Application | `http://localhost:8080` |
-| Swagger UI | `http://localhost:8080/swagger` |
-| Health check | `http://localhost:8080/healthz` |
-
-#### SPA Redirect URI
-
-Ensure `http://localhost:8080` is registered as a SPA redirect URI in your Entra ID app registration. If not, run:
-
-```powershell
-az ad app update --id <your-client-id> --spa-redirect-uris http://localhost:8080 http://localhost:5173
-```
-
-#### Token Expiry
-
-Pre-fetched tokens expire after approximately 1 hour. Re-run `.\run-local.ps1` (with or without `-NoBuild`) to refresh them.
-
-#### Parameters
-
-| Parameter | Default | Description |
-| --- | --- | --- |
-| `-Port` | `8080` | Host port mapped to the container |
-| `-ImageName` | `eklee-keyvault-local` | Docker image name |
-| `-Detached` | `$false` | Run container in background |
-| `-NoBuild` | `$false` | Skip Docker build, use existing image |
-| `-RedirectUri` | `http://localhost:<Port>` | MSAL redirect URI baked into the SPA |
-
 ## Automated Deployment
 
 1. Fork this repo.
-1. Run `Deployment/setup-gh-deploy.ps1` to create the deployment service principal, resource groups, RBAC assignments, and set the deployment-related GitHub environment variables (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `RESOURCE_GROUP`, `ACR_RESOURCE_GROUP`).
-1. Run `Eklee.KeyVault.Api/setup-app-registration.ps1` with the `-GitHubOrganization`, `-GitHubRepoName`, and `-AzureAdRedirectUriDev` (and optionally `-AzureAdRedirectUriProd`) parameters to create the app registration and set the SPA-related GitHub environment variables (`VITE_AZURE_AD_CLIENT_ID`, `VITE_AZURE_AD_AUTHORITY`, `VITE_AZURE_AD_REDIRECT_URI`).
-1. Deploy infrastructure by running the **Deploy Infrastructure** workflow (`deploy-infra.yml`):
+1. Run `Scripts/setup-gh-deploy.ps1` to create the deployment service principal, resource groups, RBAC assignments, and set the deployment-related GitHub environment variables (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `RESOURCE_GROUP`).
+1. Run `Eklee.KeyVault.Api/setup-app-registration.ps1` with the `-GitHubOrganization`, `-GitHubRepoName`, and `-AzureAdRedirectUriDev` parameters to create the maintainer dev app registration and set the SPA-related GitHub environment variables (`VITE_AZURE_AD_CLIENT_ID`, `VITE_AZURE_AD_AUTHORITY`, `VITE_AZURE_AD_REDIRECT_URI`). Customer production registrations are configured by the customer deployment process.
 
-   ```sh
-   gh workflow run deploy-infra.yml -f branch=main -f environment=dev
-   ```
+1. Deploy infrastructure by running `gh workflow run deploy-infra.yml -f environment=dev`
 
-1. Run `Deployment/assign-mi-rbac.ps1` to assign RBAC roles to the managed identity.
-1. Push to any branch to trigger the **CI/CD** workflow (`cicd.yml`), which builds and deploys the container.
-1. Register the Container App URL as a SPA redirect URI in the Entra ID app registration.
+1. Run `Scripts/assign-mi-rbac.ps1` to assign RBAC roles to the managed identity.
+1. Push to a non-`main` branch to trigger the **CI/CD** workflow (`cicd.yml`), which builds and deploys a temporary dev Container App. A push to `main` builds and publishes the `latest` image and a short-SHA image tag without deploying to Azure; the customer deployment process performs production updates.
+1. After CI deploys a branch Container App, run
+  `./Scripts/Update-BranchRedirectUri.ps1` as a user who can update the
+  resource group and the SPA app registration.
+
+  The script prompts for an azd environment, reads its resource group and SPA
+  client ID, and derives the branch Container App name from the checked-out
+  Git branch. It discovers the deployed FQDN, adds its URL to the SPA redirect
+  URI list without removing existing entries, and configures the Container App
+  to use that URL at runtime. Pass `-EnvironmentName <name>` to avoid the
+  prompt, or pass `-ResourceGroupName`, `-ContainerAppName`, and
+  `-SpaAppClientId` explicitly for recovery scenarios.
+
 1. Perform user role assignments per [Post Deployment RBAC](#post-deployment-rbac).
 
-The two setup scripts configure the following GitHub environment variables (per `dev`/`prod`):
+When a same-repository pull request is merged into a `release/*` branch, the cleanup workflow deletes the matching temporary Container App and `branch-<normalized-branch>` GHCR image. When a release branch is merged into `main`, it deletes the release Container App and `release-<normalized-version>` GHCR image. The cleanup workflow does not delete the long-lived `main` Container App or `main` image tags.
+
+The two setup scripts configure the following GitHub environment variables in `dev`:
 
 | Variable | Set by |
 | --- | --- |
 | `AZURE_CLIENT_ID` | `setup-gh-deploy.ps1` |
 | `AZURE_TENANT_ID` | `setup-gh-deploy.ps1` |
 | `AZURE_SUBSCRIPTION_ID` | `setup-gh-deploy.ps1` |
-| `ACR_RESOURCE_GROUP` | `setup-gh-deploy.ps1` |
 | `RESOURCE_GROUP` | `setup-gh-deploy.ps1` |
 | `VITE_AZURE_AD_CLIENT_ID` | `setup-app-registration.ps1` |
 | `VITE_AZURE_AD_AUTHORITY` | `setup-app-registration.ps1` |
@@ -186,7 +136,7 @@ Optionally, you can configure a custom domain for your Azure Container App. Afte
 
 You can create an Azure Container App directly from the public GHCR image without
 building the Docker image yourself. This is useful for quick deployments or
-environments where you do not need a private Azure Container Registry.
+deployments that use the public GHCR release image.
 
 The public image is available at:
 
@@ -281,13 +231,12 @@ There are a few important roles to note:
 
 - **Key Vault Secrets User** — "Read secret contents." Assigned to the managed identity by `assign-mi-rbac.ps1`.
 - **Storage Blob Data Contributor** — Allows the managed identity to read/write user-access config in blob storage.
-- **AcrPull** — Allows the managed identity to pull container images from Azure Container Registry.
 
 The managed identity RBAC is handled by the script in the Deployment folder:
 
 ```powershell
 cd Deployment
-.\assign-mi-rbac.ps1 -ResourceGroup <resource-group-name> -ContainerRegistryResourceGroup <acr-resource-group>
+..\Scripts\assign-mi-rbac.ps1 -ResourceGroup <resource-group-name>
 ```
 
 See [Deployment/README.md](Deployment/README.md) for detailed instructions.

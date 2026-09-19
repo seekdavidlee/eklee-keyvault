@@ -39,7 +39,6 @@ Ensure compliance with the following validation requirements:
   - `post_title`: The title of the post.
   - `author1`: The primary author of the post.
   - `post_slug`: The URL slug for the post.
-  - `microsoft_alias`: The Microsoft alias of the author.
   - `featured_image`: The URL of the featured image.
   - `categories`: The categories for the post. These categories must be from the list in /categories.txt.
   - `tags`: The tags for the post.

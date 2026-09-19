@@ -9,7 +9,6 @@ on:
         type: choice
         options:
           - dev
-          - prod
       enablePrivateNetworking:
         description: 'Enable private networking (VNET, private endpoints)'
         required: false
@@ -28,7 +27,7 @@ jobs:
 
     steps:
       - name: Checkout repository
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
 
       - name: Login to Azure with OIDC federated credentials
         uses: azure/login@v3

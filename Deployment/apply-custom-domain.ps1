@@ -23,11 +23,12 @@ function Extract-AzdValue {
         return $null
     }
 
-    $lines = ($CommandOutput | Out-String) -split "`r?`n"
+    $output = (($CommandOutput | Out-String) -split 'Update available:', 2)[0]
+    $lines = $output -split "`r?`n"
     $candidateLines = @(
         $lines |
             ForEach-Object { $_.Trim() } |
-            Where-Object { $_ -and $_ -notmatch '^(WARNING:|To update to the latest version, run:|choco upgrade azd$)' }
+            Where-Object { $_ -and $_ -notmatch '^WARNING:' }
     )
 
     if ($candidateLines.Count -eq 0) {
@@ -141,12 +142,14 @@ if ($LASTEXITCODE -ne 0) {
 # ---------------------------------------------------------------------------
 
 $customDomainUrl = "https://$customDomain"
+$applicationContainerName = "eklee-keyvault"
 
 Write-Host "Updating Container App environment variables to use '$customDomainUrl'..." -ForegroundColor Cyan
 az containerapp update `
     --name $containerAppName `
     --resource-group $resourceGroupName `
     --subscription $subscriptionId `
+    --container-name $applicationContainerName `
     --set-env-vars `
         "VITE_AZURE_AD_REDIRECT_URI=$customDomainUrl" `
         "VITE_API_BASE_URL=$customDomainUrl" `

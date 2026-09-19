@@ -23,7 +23,67 @@ param tenantId string
 param clientId string
 
 @description('The full container image reference including digest (set by preprovision hook)')
-param containerImage string = 'ghcr.io/seekdavidlee/eklee-keyvault:latest'
+param containerImage string
+
+@description('The full immutable Microsoft Entra ID Auth SDK sidecar image reference')
+param miseSidecarImage string = ''
+
+@description('Enable the Microsoft Entra ID Auth SDK sidecar for API token validation')
+param enableMiseSidecar bool = false
+
+@description('Enable private networking with a virtual network and private endpoints')
+param enablePrivateNetworking bool = false
+
+@description('Existing storage account name resolved from its resource-id tag')
+param existingStorageAccountName string = ''
+
+@description('Existing Key Vault name resolved from its resource-id tag')
+param existingKeyVaultName string = ''
+
+@description('Existing Log Analytics workspace name resolved from its resource-id tag')
+param existingLogAnalyticsWorkspaceName string = ''
+
+@description('Existing user-assigned managed identity name resolved from its resource-id tag')
+param existingManagedIdentityName string = ''
+
+@description('Existing Container Apps environment name resolved from its resource-id tag')
+param existingContainerAppEnvironmentName string = ''
+
+@description('Existing Container App name resolved from its resource-id tag')
+param existingContainerAppName string = ''
+
+@description('Existing virtual network name resolved from its resource-id tag')
+param existingVirtualNetworkName string = ''
+
+@description('Existing Container Apps network security group name resolved from its resource-id tag')
+param existingContainerAppNsgName string = ''
+
+@description('Existing private-endpoint network security group name resolved from its resource-id tag')
+param existingResourceNsgName string = ''
+
+@description('Existing storage private endpoint name resolved from its resource-id tag')
+param existingStoragePrivateEndpointName string = ''
+
+@description('Existing Key Vault private endpoint name resolved from its resource-id tag')
+param existingKeyVaultPrivateEndpointName string = ''
+
+@description('Existing storage private DNS zone name resolved from its resource-id tag')
+param existingStoragePrivateDnsZoneName string = ''
+
+@description('Existing Key Vault private DNS zone name resolved from its resource-id tag')
+param existingKeyVaultPrivateDnsZoneName string = ''
+
+@description('Existing storage private DNS zone virtual network link name resolved from its resource-id tag')
+param existingStoragePrivateDnsZoneLinkName string = ''
+
+@description('Existing Key Vault private DNS zone virtual network link name resolved from its resource-id tag')
+param existingKeyVaultPrivateDnsZoneLinkName string = ''
+
+@description('Skip the Key Vault RBAC assignment when preprovision confirms it already exists')
+param skipKeyVaultRoleAssignment bool = false
+
+@description('Skip the Storage RBAC assignment when preprovision confirms it already exists')
+param skipStorageRoleAssignment bool = false
 
 @description('Tags to apply to all resources')
 param tags object
@@ -33,12 +93,26 @@ param tags object
 // ============================================================================
 
 var uniqueSuffix = uniqueString(resourceGroup().id, prefix)
-var storageAccountName = toLower('${prefix}${take(uniqueSuffix, 10)}sa')
-var keyVaultName = toLower('${prefix}-${take(uniqueSuffix, 6)}-kv')
-var containerAppEnvName = '${prefix}-env'
-var containerAppName = '${prefix}-app'
-var managedIdentityName = '${prefix}-identity'
-var logAnalyticsWorkspaceName = '${prefix}-logs'
+var storageAccountName = !empty(existingStorageAccountName) ? existingStorageAccountName : toLower('${prefix}${take(uniqueSuffix, 10)}sa')
+var keyVaultName = !empty(existingKeyVaultName) ? existingKeyVaultName : toLower('${prefix}-${take(uniqueSuffix, 6)}-kv')
+var containerAppEnvName = !empty(existingContainerAppEnvironmentName) ? existingContainerAppEnvironmentName : '${prefix}-env'
+var containerAppName = !empty(existingContainerAppName) ? existingContainerAppName : '${prefix}-app'
+var managedIdentityName = !empty(existingManagedIdentityName) ? existingManagedIdentityName : '${prefix}-identity'
+var logAnalyticsWorkspaceName = !empty(existingLogAnalyticsWorkspaceName) ? existingLogAnalyticsWorkspaceName : '${prefix}-logs'
+var logAnalyticsWorkspaceTags = union(tags, { 'resource-id': 'app-log-analytics-workspace' })
+var storageAccountTags = union(tags, { 'resource-id': 'app-storage-account' })
+var keyVaultTags = union(tags, { 'resource-id': 'app-key-vault' })
+var managedIdentityTags = union(tags, { 'resource-id': 'app-managed-identity' })
+var containerAppEnvironmentTags = union(tags, { 'resource-id': 'app-container-app-environment' })
+var containerAppTags = union(tags, { 'resource-id': 'app-container-app' })
+var resolvedContainerImage = contains(containerImage, '@sha256:')
+  ? containerImage
+  : fail('containerImage must use an immutable sha256 digest.')
+var resolvedMiseSidecarImage = enableMiseSidecar
+  ? (contains(miseSidecarImage, '@sha256:')
+      ? miseSidecarImage
+      : fail('miseSidecarImage must use an immutable sha256 digest when enableMiseSidecar is true.'))
+  : ''
 
 // Well-known RBAC role definition IDs
 var keyVaultSecretsOfficerRoleId = subscriptionResourceId(
@@ -57,7 +131,7 @@ var storageBlobDataContributorRoleId = subscriptionResourceId(
 resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2023-09-01' = {
   name: logAnalyticsWorkspaceName
   location: location
-  tags: tags
+  tags: logAnalyticsWorkspaceTags
   properties: {
     sku: {
       name: 'PerGB2018'
@@ -76,7 +150,7 @@ resource logAnalyticsWorkspace 'Microsoft.OperationalInsights/workspaces@2023-09
 resource storageAccount 'Microsoft.Storage/storageAccounts@2025-01-01' = {
   name: storageAccountName
   location: location
-  tags: tags
+  tags: storageAccountTags
   sku: {
     name: 'Standard_LRS'
   }
@@ -87,10 +161,10 @@ resource storageAccount 'Microsoft.Storage/storageAccounts@2025-01-01' = {
     allowBlobPublicAccess: false
     allowSharedKeyAccess: true
     defaultToOAuthAuthentication: true
-    publicNetworkAccess: 'Enabled'
+    publicNetworkAccess: enablePrivateNetworking ? 'Disabled' : 'Enabled'
     networkAcls: {
       bypass: 'AzureServices'
-      defaultAction: 'Allow'
+      defaultAction: enablePrivateNetworking ? 'Deny' : 'Allow'
     }
     encryption: {
       services: {
@@ -130,7 +204,7 @@ resource configsContainer 'Microsoft.Storage/storageAccounts/blobServices/contai
 resource keyVault 'Microsoft.KeyVault/vaults@2024-11-01' = {
   name: keyVaultName
   location: location
-  tags: tags
+  tags: keyVaultTags
   properties: {
     sku: {
       family: 'A'
@@ -143,10 +217,10 @@ resource keyVault 'Microsoft.KeyVault/vaults@2024-11-01' = {
     enableSoftDelete: true
     softDeleteRetentionInDays: 90
     enableRbacAuthorization: true
-    publicNetworkAccess: 'Enabled'
+    publicNetworkAccess: enablePrivateNetworking ? 'Disabled' : 'Enabled'
     networkAcls: {
       bypass: 'AzureServices'
-      defaultAction: 'Allow'
+      defaultAction: enablePrivateNetworking ? 'Deny' : 'Allow'
     }
   }
 }
@@ -158,7 +232,7 @@ resource keyVault 'Microsoft.KeyVault/vaults@2024-11-01' = {
 resource managedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-01-31' = {
   name: managedIdentityName
   location: location
-  tags: tags
+  tags: managedIdentityTags
 }
 
 // ============================================================================
@@ -166,7 +240,7 @@ resource managedIdentity 'Microsoft.ManagedIdentity/userAssignedIdentities@2023-
 // ============================================================================
 
 // Grant the managed identity Key Vault Secrets Officer on the Key Vault
-resource keyVaultRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+resource keyVaultRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!skipKeyVaultRoleAssignment) {
   name: guid(keyVault.id, managedIdentity.id, keyVaultSecretsOfficerRoleId)
   scope: keyVault
   properties: {
@@ -177,7 +251,7 @@ resource keyVaultRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04
 }
 
 // Grant the managed identity Storage Blob Data Contributor on the Storage Account
-resource storageRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = {
+resource storageRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-01' = if (!skipStorageRoleAssignment) {
   name: guid(storageAccount.id, managedIdentity.id, storageBlobDataContributorRoleId)
   scope: storageAccount
   properties: {
@@ -188,13 +262,40 @@ resource storageRoleAssignment 'Microsoft.Authorization/roleAssignments@2022-04-
 }
 
 // ============================================================================
+// PRIVATE NETWORKING
+// ============================================================================
+
+module networking 'networking.bicep' = if (enablePrivateNetworking) {
+  name: 'networking-${uniqueString(deployment().name)}'
+  params: {
+    location: location
+    applicationName: prefix
+    environment: 'azd'
+    tags: tags
+    existingVirtualNetworkName: existingVirtualNetworkName
+    existingContainerAppNsgName: existingContainerAppNsgName
+    existingResourceNsgName: existingResourceNsgName
+    existingStoragePrivateEndpointName: existingStoragePrivateEndpointName
+    existingKeyVaultPrivateEndpointName: existingKeyVaultPrivateEndpointName
+    existingStoragePrivateDnsZoneName: existingStoragePrivateDnsZoneName
+    existingKeyVaultPrivateDnsZoneName: existingKeyVaultPrivateDnsZoneName
+    existingStoragePrivateDnsZoneLinkName: existingStoragePrivateDnsZoneLinkName
+    existingKeyVaultPrivateDnsZoneLinkName: existingKeyVaultPrivateDnsZoneLinkName
+    storageAccountId: storageAccount.id
+    storageAccountName: storageAccount.name
+    keyVaultId: keyVault.id
+    keyVaultName: keyVault.name
+  }
+}
+
+// ============================================================================
 // CONTAINER APPS ENVIRONMENT
 // ============================================================================
 
 resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2025-01-01' = {
   name: containerAppEnvName
   location: location
-  tags: tags
+  tags: containerAppEnvironmentTags
   properties: {
     appLogsConfiguration: {
       destination: 'log-analytics'
@@ -203,6 +304,12 @@ resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2025-01-01' 
         sharedKey: logAnalyticsWorkspace.listKeys().primarySharedKey
       }
     }
+    vnetConfiguration: enablePrivateNetworking
+      ? {
+          infrastructureSubnetId: networking!.outputs.containerAppSubnetId
+          internal: false
+        }
+      : null
     workloadProfiles: [
       {
         name: 'Consumption'
@@ -220,7 +327,7 @@ resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2025-01-01' 
 resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
   name: containerAppName
   location: location
-  tags: tags
+  tags: containerAppTags
   identity: {
     type: 'UserAssigned'
     userAssignedIdentities: {
@@ -240,10 +347,10 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
       }
     }
     template: {
-      containers: [
+      containers: concat([
         {
           name: 'eklee-keyvault'
-          image: containerImage
+          image: resolvedContainerImage
           resources: {
             cpu: json('0.5')
             memory: '1Gi'
@@ -287,6 +394,10 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
               name: 'AzureAd__Audience'
               value: 'api://${clientId}'
             }
+            {
+              name: 'Mise__Enabled'
+              value: enableMiseSidecar ? 'true' : 'false'
+            }
             // React frontend runtime configuration (injected by docker-entrypoint.sh)
             {
               name: 'VITE_AZURE_AD_CLIENT_ID'
@@ -326,7 +437,65 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
             }
           ]
         }
-      ]
+      ], enableMiseSidecar ? [
+        {
+          name: 'mise-sidecar'
+          image: resolvedMiseSidecarImage
+          resources: {
+            cpu: json('0.25')
+            memory: '0.5Gi'
+          }
+          env: [
+            {
+              name: 'ASPNETCORE_URLS'
+              value: 'http://+:5000'
+            }
+            {
+              name: 'AzureAd__Instance'
+              value: environment().authentication.loginEndpoint
+            }
+            {
+              name: 'AzureAd__TenantId'
+              value: tenantId
+            }
+            {
+              name: 'AzureAd__ClientId'
+              value: clientId
+            }
+            {
+              name: 'AzureAd__Audience'
+              value: 'api://${clientId}'
+            }
+          ]
+          probes: [
+            {
+              type: 'Startup'
+              tcpSocket: {
+                port: 5000
+              }
+              initialDelaySeconds: 5
+              periodSeconds: 10
+              failureThreshold: 30
+            }
+            {
+              type: 'Liveness'
+              tcpSocket: {
+                port: 5000
+              }
+              initialDelaySeconds: 10
+              periodSeconds: 30
+            }
+            {
+              type: 'Readiness'
+              tcpSocket: {
+                port: 5000
+              }
+              initialDelaySeconds: 5
+              periodSeconds: 10
+            }
+          ]
+        }
+      ] : [])
       scale: {
         minReplicas: 0
         maxReplicas: 1
