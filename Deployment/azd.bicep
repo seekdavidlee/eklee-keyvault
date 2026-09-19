@@ -4,7 +4,7 @@
 // Subscription-scoped entry point that creates a resource group based on the
 // prefix and deploys all resources into it via the azd-resources module.
 //
-// No private networking. No Azure Container Registry.
+// No private networking. Container images are supplied from public GHCR.
 // ============================================================================
 
 targetScope = 'subscription'
@@ -13,10 +13,15 @@ targetScope = 'subscription'
 // PARAMETERS
 // ============================================================================
 
-@description('Required prefix used for naming all Azure resources and the resource group')
+@description('Required prefix used for naming Azure resources')
 @minLength(3)
 @maxLength(10)
 param prefix string
+
+@description('Name of the resource group to create or reuse')
+@minLength(1)
+@maxLength(90)
+param resourceGroupName string
 
 @description('The Azure region where resources will be deployed')
 param location string
@@ -28,7 +33,67 @@ param tenantId string = tenant().tenantId
 param clientId string = ''
 
 @description('The full container image reference including digest (set by preprovision hook)')
-param containerImage string = 'ghcr.io/seekdavidlee/eklee-keyvault:latest'
+param containerImage string
+
+@description('The full immutable Microsoft Entra ID Auth SDK sidecar image reference')
+param miseSidecarImage string = ''
+
+@description('Enable the Microsoft Entra ID Auth SDK sidecar for API token validation')
+param enableMiseSidecar bool = false
+
+@description('Enable private networking with a virtual network and private endpoints')
+param enablePrivateNetworking bool = false
+
+@description('Existing storage account name resolved from its resource-id tag')
+param existingStorageAccountName string = ''
+
+@description('Existing Key Vault name resolved from its resource-id tag')
+param existingKeyVaultName string = ''
+
+@description('Existing Log Analytics workspace name resolved from its resource-id tag')
+param existingLogAnalyticsWorkspaceName string = ''
+
+@description('Existing user-assigned managed identity name resolved from its resource-id tag')
+param existingManagedIdentityName string = ''
+
+@description('Existing Container Apps environment name resolved from its resource-id tag')
+param existingContainerAppEnvironmentName string = ''
+
+@description('Existing Container App name resolved from its resource-id tag')
+param existingContainerAppName string = ''
+
+@description('Existing virtual network name resolved from its resource-id tag')
+param existingVirtualNetworkName string = ''
+
+@description('Existing Container Apps network security group name resolved from its resource-id tag')
+param existingContainerAppNsgName string = ''
+
+@description('Existing private-endpoint network security group name resolved from its resource-id tag')
+param existingResourceNsgName string = ''
+
+@description('Existing storage private endpoint name resolved from its resource-id tag')
+param existingStoragePrivateEndpointName string = ''
+
+@description('Existing Key Vault private endpoint name resolved from its resource-id tag')
+param existingKeyVaultPrivateEndpointName string = ''
+
+@description('Existing storage private DNS zone name resolved from its resource-id tag')
+param existingStoragePrivateDnsZoneName string = ''
+
+@description('Existing Key Vault private DNS zone name resolved from its resource-id tag')
+param existingKeyVaultPrivateDnsZoneName string = ''
+
+@description('Existing storage private DNS zone virtual network link name resolved from its resource-id tag')
+param existingStoragePrivateDnsZoneLinkName string = ''
+
+@description('Existing Key Vault private DNS zone virtual network link name resolved from its resource-id tag')
+param existingKeyVaultPrivateDnsZoneLinkName string = ''
+
+@description('Skip the Key Vault RBAC assignment when preprovision confirms it already exists')
+param skipKeyVaultRoleAssignment bool = false
+
+@description('Skip the Storage RBAC assignment when preprovision confirms it already exists')
+param skipStorageRoleAssignment bool = false
 
 @description('Tags to apply to all resources')
 param tags object = {
@@ -39,8 +104,6 @@ param tags object = {
 // ============================================================================
 // VARIABLES
 // ============================================================================
-
-var resourceGroupName = '${prefix}-rg'
 
 // ============================================================================
 // RESOURCE GROUP
@@ -65,6 +128,26 @@ module resources 'azd-resources.bicep' = {
     tenantId: tenantId
     clientId: clientId
     containerImage: containerImage
+    miseSidecarImage: miseSidecarImage
+    enableMiseSidecar: enableMiseSidecar
+    enablePrivateNetworking: enablePrivateNetworking
+    existingStorageAccountName: existingStorageAccountName
+    existingKeyVaultName: existingKeyVaultName
+    existingLogAnalyticsWorkspaceName: existingLogAnalyticsWorkspaceName
+    existingManagedIdentityName: existingManagedIdentityName
+    existingContainerAppEnvironmentName: existingContainerAppEnvironmentName
+    existingContainerAppName: existingContainerAppName
+    existingVirtualNetworkName: existingVirtualNetworkName
+    existingContainerAppNsgName: existingContainerAppNsgName
+    existingResourceNsgName: existingResourceNsgName
+    existingStoragePrivateEndpointName: existingStoragePrivateEndpointName
+    existingKeyVaultPrivateEndpointName: existingKeyVaultPrivateEndpointName
+    existingStoragePrivateDnsZoneName: existingStoragePrivateDnsZoneName
+    existingKeyVaultPrivateDnsZoneName: existingKeyVaultPrivateDnsZoneName
+    existingStoragePrivateDnsZoneLinkName: existingStoragePrivateDnsZoneLinkName
+    existingKeyVaultPrivateDnsZoneLinkName: existingKeyVaultPrivateDnsZoneLinkName
+    skipKeyVaultRoleAssignment: skipKeyVaultRoleAssignment
+    skipStorageRoleAssignment: skipStorageRoleAssignment
     tags: tags
   }
 }

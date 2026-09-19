@@ -1,0 +1,150 @@
+name: Hosted Playwright E2E
+
+on:
+  workflow_run:
+    workflows: ['CI/CD']
+    types: [completed]
+    branches:
+      - 'release/**'
+  pull_request:
+    branches:
+      - main
+    types: [closed]
+
+permissions:
+  id-token: write
+  contents: read
+
+concurrency:
+  group: hosted-e2e-${{ github.event.workflow_run.head_branch || github.event.pull_request.head.ref }}
+  cancel-in-progress: true
+
+jobs:
+  playwright:
+    name: Run hosted Playwright tests
+    if: >-
+      (github.event_name == 'workflow_run' &&
+      github.event.workflow_run.conclusion == 'success') ||
+      (github.event_name == 'pull_request' &&
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      startsWith(github.event.pull_request.head.ref, 'release/'))
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.workflow_run.head_sha || github.event.pull_request.head.sha }}
+
+      - name: Login to Azure with OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Resolve target Container App
+        id: target
+        env:
+          BRANCH_NAME: ${{ github.event.workflow_run.head_branch || github.event.pull_request.head.ref }}
+          RESOURCE_GROUP: ${{ vars.RESOURCE_GROUP }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$BRANCH_NAME" == "main" ]]; then
+            echo "::error::Hosted E2E must target a branch or release Container App, not main."
+            exit 1
+          fi
+
+          container_app_name=$(bash .github/scripts/resolve-container-app-name.sh)
+          fqdn=$(az containerapp show \
+            --name "$container_app_name" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query properties.configuration.ingress.fqdn \
+            --output tsv)
+
+          if [[ -z "$fqdn" || "$fqdn" == "None" ]]; then
+            echo "::error::Container App '$container_app_name' has no external ingress FQDN."
+            exit 1
+          fi
+
+          echo "container_app_name=$container_app_name" >> "$GITHUB_OUTPUT"
+          echo "base_url=https://$fqdn" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for Container App
+        env:
+          BASE_URL: ${{ steps.target.outputs.base_url }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error "$BASE_URL/healthz" >/dev/null; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::Container App did not become healthy: $BASE_URL"
+          exit 1
+
+      - name: Get hosted E2E access token
+        id: token
+        run: |
+          set -euo pipefail
+          token=$(az account get-access-token \
+            --scope "api://${{ vars.VITE_AZURE_AD_CLIENT_ID }}/.default" \
+            --query accessToken \
+            --output tsv)
+          echo "::add-mask::$token"
+          echo "access_token=$token" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: Eklee.KeyVault.UI/package-lock.json
+
+      - name: Install UI dependencies
+        working-directory: Eklee.KeyVault.UI
+        run: npm ci
+
+      - name: Install Playwright browser
+        working-directory: Eklee.KeyVault.UI
+        run: npx playwright install --with-deps chromium
+
+      - name: Run Playwright tests
+        working-directory: Eklee.KeyVault.UI
+        env:
+          E2E_BASE_URL: ${{ steps.target.outputs.base_url }}
+          E2E_CLIENT_ID: ${{ vars.VITE_AZURE_AD_CLIENT_ID }}
+          E2E_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          E2E_ACCESS_TOKEN: ${{ steps.token.outputs.access_token }}
+        run: npx playwright test
+
+      - name: Upload Playwright results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: hosted-playwright-results
+          path: |
+            Eklee.KeyVault.UI/playwright-report/
+            Eklee.KeyVault.UI/test-results/
+          retention-days: 7
+
+  cleanup-release:
+    name: Clean up release Container App and image
+    needs: playwright
+    if: >-
+      needs.playwright.result == 'success' &&
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.base.ref == 'main' &&
+      startsWith(github.event.pull_request.head.ref, 'release/')
+    permissions:
+      contents: read
+      id-token: write
+      packages: write
+    uses: ./.github/workflows/cleanup-container-app.yml
+    with:
+      cleanup_release: true

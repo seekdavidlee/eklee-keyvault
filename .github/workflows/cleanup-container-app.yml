@@ -1,0 +1,122 @@
+name: Cleanup Merged Container App and GHCR Image
+
+on:
+  workflow_call:
+    inputs:
+      cleanup_release:
+        description: Clean a release Container App after hosted E2E succeeds.
+        required: false
+        type: boolean
+        default: false
+  pull_request:
+    types: [closed]
+
+permissions:
+  id-token: write
+  contents: read
+  packages: write
+
+jobs:
+  cleanup:
+    name: Delete merged branch or release Container App
+    if: >-
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      (
+        startsWith(github.event.pull_request.base.ref, 'release/') ||
+        (
+          inputs.cleanup_release == true &&
+          github.event.pull_request.base.ref == 'main' &&
+          startsWith(github.event.pull_request.head.ref, 'release/')
+        )
+      )
+    runs-on: ubuntu-latest
+    environment: dev
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Login to Azure with OIDC
+        uses: azure/login@v3
+        with:
+          client-id: ${{ vars.AZURE_CLIENT_ID }}
+          tenant-id: ${{ vars.AZURE_TENANT_ID }}
+          subscription-id: ${{ vars.AZURE_SUBSCRIPTION_ID }}
+
+      - name: Delete merged Container App
+        env:
+          BRANCH_NAME: ${{ github.event.pull_request.head.ref }}
+          RESOURCE_GROUP: ${{ vars.RESOURCE_GROUP }}
+        run: |
+          set -euo pipefail
+
+          if [[ "$BRANCH_NAME" == "main" ]]; then
+            echo "::error::Refusing to delete the main Container App."
+            exit 1
+          fi
+
+          container_app_name=$(bash .github/scripts/resolve-container-app-name.sh)
+          case "$container_app_name" in
+            ekv-branch-*|ekv-release-*) ;;
+            *)
+              echo "::error::Unexpected derived Container App name: $container_app_name"
+              exit 1
+              ;;
+          esac
+
+          if container_app_error=$(az containerapp show \
+            --name "$container_app_name" \
+            --resource-group "$RESOURCE_GROUP" \
+            --only-show-errors \
+            --output none 2>&1); then
+            az containerapp delete \
+              --name "$container_app_name" \
+              --resource-group "$RESOURCE_GROUP" \
+              --yes \
+              --output none
+            echo "Deleted Container App '$container_app_name'."
+          elif [[ "$container_app_error" == *"(ResourceNotFound)"* ]]; then
+            echo "Container App '$container_app_name' is already absent."
+          else
+            printf '%s\n' "$container_app_error" >&2
+            echo "::error::Failed to query Container App '$container_app_name'."
+            exit 1
+          fi
+
+      - name: Delete merged GHCR image
+        if: success()
+        env:
+          BRANCH_NAME: ${{ github.event.pull_request.head.ref }}
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+
+          package_owner="${GITHUB_REPOSITORY%%/*}"
+          package_name="${GITHUB_REPOSITORY#*/}"
+          package_name=$(printf '%s' "$package_name" | tr '[:upper:]' '[:lower:]')
+
+          image_tag=$(REF_NAME="$BRANCH_NAME" bash .github/scripts/resolve-image-tag.sh)
+
+          owner_type=$(gh api "/users/${package_owner}" --jq '.type')
+          if [[ "$owner_type" == "Organization" ]]; then
+            versions_endpoint="/orgs/${package_owner}/packages/container/${package_name}/versions"
+            delete_endpoint="$versions_endpoint"
+          else
+            versions_endpoint="/users/${package_owner}/packages/container/${package_name}/versions"
+            delete_endpoint="/user/packages/container/${package_name}/versions"
+          fi
+
+          version_ids=$(IMAGE_TAG="$image_tag" gh api --paginate \
+            "${versions_endpoint}?per_page=100" \
+            --jq '.[] | select((.metadata.container.tags // []) | index(env.IMAGE_TAG)) | .id')
+
+          if [[ -z "$version_ids" ]]; then
+            echo "GHCR image tag '${image_tag}' is already absent."
+            exit 0
+          fi
+
+          while IFS= read -r version_id; do
+            [[ -z "$version_id" ]] && continue
+            gh api --method DELETE --silent "${delete_endpoint}/${version_id}"
+            echo "Deleted GHCR image tag '${image_tag}' (package version ${version_id})."
+          done <<< "$version_ids"

@@ -1,0 +1,56 @@
+name: Feature Request
+description: Suggest an enhancement or new capability
+title: "feat: "
+labels: ["enhancement", "needs-triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for suggesting an improvement! Please describe the user need and the outcome you want.
+
+  - type: textarea
+    id: problem
+    attributes:
+      label: Problem or Use Case
+      description: What problem would this solve, and who would benefit from it?
+      placeholder: As a ..., I need ..., so that ...
+    validations:
+      required: true
+
+  - type: textarea
+    id: proposed-solution
+    attributes:
+      label: Proposed Solution
+      description: Describe the behavior or capability you would like to see.
+      placeholder: Describe the experience or outcome you are proposing
+    validations:
+      required: true
+
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives Considered
+      description: What workarounds or alternative approaches have you tried?
+      placeholder: Describe any existing workaround or alternative solution
+    validations:
+      required: false
+
+  - type: textarea
+    id: acceptance-criteria
+    attributes:
+      label: Acceptance Criteria
+      description: How could we tell that this feature is complete?
+      placeholder: |
+        - [ ] ...
+        - [ ] ...
+    validations:
+      required: false
+
+  - type: textarea
+    id: additional-context
+    attributes:
+      label: Additional Context
+      description: Add screenshots, examples, links, or other relevant information. Remove sensitive data first.
+      placeholder: Add any other details that might help
+    validations:
+      required: false

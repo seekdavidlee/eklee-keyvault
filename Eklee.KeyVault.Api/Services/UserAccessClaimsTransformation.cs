@@ -1,5 +1,6 @@
 using System.Security.Claims;
 using Azure;
+using Eklee.KeyVault.Api;
 using Eklee.KeyVault.Api.Models;
 using Microsoft.AspNetCore.Authentication;
 
@@ -20,6 +21,19 @@ public class UserAccessClaimsTransformation(UserAccessService userAccessService,
     /// <returns>The enriched <see cref="ClaimsPrincipal"/>.</returns>
     public async Task<ClaimsPrincipal> TransformAsync(ClaimsPrincipal principal)
     {
+        if (principal.HasE2eApplicationRole())
+        {
+            var applicationIdentity = principal.Identity as ClaimsIdentity;
+            if (applicationIdentity is not null &&
+                !principal.Claims.Any(claim =>
+                    claim.Value == UserRole.Admin.ToString() && claim.Type == ClaimTypes.Role))
+            {
+                applicationIdentity.AddClaim(new Claim(ClaimTypes.Role, UserRole.Admin.ToString()));
+            }
+
+            return principal;
+        }
+
         var objectId = principal.FindFirst("http://schemas.microsoft.com/identity/claims/objectidentifier")?.Value
                     ?? principal.FindFirst("oid")?.Value;
 

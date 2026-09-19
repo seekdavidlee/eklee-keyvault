@@ -1,0 +1,32 @@
+name: Validate Release Promotion
+
+on:
+  pull_request:
+    branches:
+      - main
+    types: [opened, synchronize, reopened, edited]
+
+permissions:
+  contents: read
+
+jobs:
+  release-promotion:
+    name: release/promotion-policy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Validate pull request source
+        env:
+          BASE_REPOSITORY: ${{ github.repository }}
+          HEAD_REPOSITORY: ${{ github.event.pull_request.head.repo.full_name }}
+          HEAD_BRANCH: ${{ github.event.pull_request.head.ref }}
+        shell: bash
+        run: |
+          set -euo pipefail
+
+          if [[ "$HEAD_REPOSITORY" != "$BASE_REPOSITORY" || "$HEAD_BRANCH" != release/* ]]; then
+            echo "::error::Only a release/* branch from this repository may merge into main."
+            echo "Source: ${HEAD_REPOSITORY}:${HEAD_BRANCH}"
+            exit 1
+          fi
+
+          echo "Validated release promotion from ${HEAD_BRANCH}."
