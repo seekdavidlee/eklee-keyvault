@@ -130,3 +130,21 @@ jobs:
             Eklee.KeyVault.UI/playwright-report/
             Eklee.KeyVault.UI/test-results/
           retention-days: 7
+
+  cleanup-release:
+    name: Clean up release Container App and image
+    needs: playwright
+    if: >-
+      needs.playwright.result == 'success' &&
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.base.ref == 'main' &&
+      startsWith(github.event.pull_request.head.ref, 'release/')
+    permissions:
+      contents: read
+      id-token: write
+      packages: write
+    uses: ./.github/workflows/cleanup-container-app.yml
+    with:
+      cleanup_release: true

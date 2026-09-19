@@ -1,6 +1,13 @@
 name: Cleanup Merged Container App and GHCR Image
 
 on:
+  workflow_call:
+    inputs:
+      cleanup_release:
+        description: Clean a release Container App after hosted E2E succeeds.
+        required: false
+        type: boolean
+        default: false
   pull_request:
     types: [closed]
 
@@ -18,6 +25,7 @@ jobs:
       (
         startsWith(github.event.pull_request.base.ref, 'release/') ||
         (
+          inputs.cleanup_release == true &&
           github.event.pull_request.base.ref == 'main' &&
           startsWith(github.event.pull_request.head.ref, 'release/')
         )
