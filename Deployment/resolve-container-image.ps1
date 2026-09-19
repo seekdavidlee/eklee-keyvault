@@ -114,7 +114,8 @@ function Get-GitHubReleaseList {
         'User-Agent' = 'eklee-keyvault-setup'
         'X-GitHub-Api-Version' = '2022-11-28'
     }
-    return @(Invoke-RestMethod -Uri $releaseUri -Headers $headers -UseBasicParsing)
+    Invoke-RestMethod -Uri $releaseUri -Headers $headers -UseBasicParsing |
+        ForEach-Object { $_ }
 }
 
 function Get-RecentReleaseVersions {
