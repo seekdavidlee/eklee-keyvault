@@ -82,6 +82,23 @@ function ConvertTo-StableReleaseVersion {
     return $Value
 }
 
+function ConvertTo-ManualImageTag {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyString()]
+        [string]$Value
+    )
+
+    if ([string]::IsNullOrWhiteSpace($Value) -or $Value -ne $Value.Trim() -or
+        $Value -notmatch '^[A-Za-z0-9_][A-Za-z0-9_.-]{0,127}$') {
+        throw "Manual image tag '$Value' must use only ASCII letters, digits, underscores, periods, or hyphens and be at most 128 characters."
+    }
+
+    return $Value
+}
+
 function Get-GitHubOrigin {
     [CmdletBinding()]
     [OutputType([pscustomobject])]
@@ -162,7 +179,7 @@ function Read-ManualReleaseVersion {
 
     while ($true) {
         try {
-            return ConvertTo-StableReleaseVersion -Value (Read-Host $Prompt)
+            return ConvertTo-ManualImageTag -Value (Read-Host $Prompt)
         }
         catch {
             Write-Warning $_.Exception.Message
