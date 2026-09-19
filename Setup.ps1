@@ -250,7 +250,6 @@ function Read-Target {
         $null
     }
     $appRegistrationName = Read-RequiredValue -Prompt 'App registration name' -DefaultValue "$prefix-app"
-    $githubDeployAppRegistrationName = Read-RequiredValue -Prompt 'GitHub deployment app registration name'
 
     if ($prefix -notmatch '^[a-z0-9]{3,10}$') {
         throw "Resource prefix '$prefix' must contain 3-10 lowercase letters or numbers."
@@ -277,7 +276,6 @@ function Read-Target {
         enableMiseSidecar = $enableMiseSidecar
         miseSidecarImage = $miseSidecarImage
         appRegistrationName = $appRegistrationName
-        githubDeployAppRegistrationName = $githubDeployAppRegistrationName
     }
 }
 
@@ -839,53 +837,6 @@ function Set-TargetCustomDomainName {
     return $Target
 }
 
-function Set-TargetGitHubDeployAppRegistrationName {
-    <# .SYNOPSIS Adds a GitHub deployment app registration name to legacy target entries. #>
-    [CmdletBinding()]
-    [OutputType([object])]
-    param(
-        [Parameter(Mandatory = $true)]
-        [object]$Target,
-
-        [Parameter(Mandatory = $true)]
-        [AllowEmptyCollection()]
-        [object[]]$Targets,
-
-        [Parameter(Mandatory = $true)]
-        [ValidateNotNullOrEmpty()]
-        [string]$ProfilePath
-    )
-
-    $githubAppNameProperty = $Target.PSObject.Properties['githubDeployAppRegistrationName']
-    if ($githubAppNameProperty -and -not [string]::IsNullOrWhiteSpace([string]$githubAppNameProperty.Value)) {
-        return $Target
-    }
-
-    Write-Host "Target '$($Target.displayName)' has no GitHub deployment app registration name configured." -ForegroundColor Yellow
-    $defaultAppRegistrationName = if ($Target.PSObject.Properties['appRegistrationName']) {
-        "$($Target.appRegistrationName)-gh-deploy"
-    }
-    else {
-        "$($Target.prefix)-app-gh-deploy"
-    }
-    $githubDeployAppRegistrationName = Read-RequiredValue -Prompt 'GitHub deployment app registration name' -DefaultValue $defaultAppRegistrationName
-    if ($githubAppNameProperty) {
-        $githubAppNameProperty.Value = $githubDeployAppRegistrationName
-    }
-    else {
-        $Target | Add-Member -MemberType NoteProperty -Name githubDeployAppRegistrationName -Value $githubDeployAppRegistrationName
-    }
-
-    $targetIndex = [Array]::IndexOf($Targets, $Target)
-    if ($targetIndex -ge 0) {
-        $Targets[$targetIndex] = $Target
-        Save-TargetCatalog -Path $ProfilePath -Targets $Targets
-        Write-Host "Target catalog updated at '$ProfilePath'." -ForegroundColor Green
-    }
-
-    return $Target
-}
-
 #endregion Functions
 
 #region Main Execution
@@ -922,7 +873,6 @@ if ($MyInvocation.InvocationName -ne '.') {
             $target = Set-TargetMiseSidecar -Target $target -Targets $targets -ProfilePath $ProfilePath
             $target = Set-TargetCustomDomainName -Target $target -Targets $targets -ProfilePath $ProfilePath
             $target = Set-TargetAppRegistrationName -Target $target -Targets $targets -ProfilePath $ProfilePath
-            $target = Set-TargetGitHubDeployAppRegistrationName -Target $target -Targets $targets -ProfilePath $ProfilePath
 
                 if ($target.displayName -and @($targets | Where-Object {
                         $_.tenantId -eq $target.tenantId -and
