@@ -64,18 +64,23 @@ jobs:
               ;;
           esac
 
-          if az containerapp show \
+          if container_app_error=$(az containerapp show \
             --name "$container_app_name" \
             --resource-group "$RESOURCE_GROUP" \
-            --output none 2>/dev/null; then
+            --only-show-errors \
+            --output none 2>&1); then
             az containerapp delete \
               --name "$container_app_name" \
               --resource-group "$RESOURCE_GROUP" \
               --yes \
               --output none
             echo "Deleted Container App '$container_app_name'."
-          else
+          elif [[ "$container_app_error" == *"(ResourceNotFound)"* ]]; then
             echo "Container App '$container_app_name' is already absent."
+          else
+            printf '%s\n' "$container_app_error" >&2
+            echo "::error::Failed to query Container App '$container_app_name'."
+            exit 1
           fi
 
       - name: Delete merged GHCR image
