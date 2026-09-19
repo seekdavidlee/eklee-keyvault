@@ -131,11 +131,96 @@ jobs:
             Eklee.KeyVault.UI/test-results/
           retention-days: 7
 
-  cleanup-release:
-    name: Clean up release Container App and image
+  publish-release:
+    name: Publish semantic release image
     needs: playwright
     if: >-
       needs.playwright.result == 'success' &&
+      github.event_name == 'pull_request' &&
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.head.repo.full_name == github.repository &&
+      github.event.pull_request.base.ref == 'main' &&
+      startsWith(github.event.pull_request.head.ref, 'release/')
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+      packages: write
+    steps:
+      - name: Checkout merged release
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.pull_request.merge_commit_sha }}
+          fetch-depth: 0
+
+      - name: Publish immutable release artifacts
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          IMAGE: ghcr.io/${{ github.repository }}
+          MERGE_SHA: ${{ github.event.pull_request.merge_commit_sha }}
+          RELEASE_BRANCH: ${{ github.event.pull_request.head.ref }}
+        run: |
+          set -euo pipefail
+
+          if [[ ! "$RELEASE_BRANCH" =~ ^release/((0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*))$ ]]; then
+            echo "::error::Release branch '$RELEASE_BRANCH' must use release/MAJOR.MINOR.PATCH."
+            exit 1
+          fi
+
+          version="${BASH_REMATCH[1]}"
+
+          if ! git merge-base --is-ancestor "$MERGE_SHA" origin/main; then
+            echo "::error::Release merge commit '$MERGE_SHA' is not reachable from origin/main."
+            exit 1
+          fi
+
+          tag_exists=false
+          if git ls-remote --exit-code --tags origin "refs/tags/$version" >/dev/null 2>&1; then
+            tag_exists=true
+            git fetch --no-tags origin "refs/tags/$version:refs/tags/$version"
+            tag_commit=$(git rev-parse "$version^{commit}")
+            if [[ "$tag_commit" != "$MERGE_SHA" ]]; then
+              echo "::error::Existing tag '$version' identifies '$tag_commit', not '$MERGE_SHA'."
+              exit 1
+            fi
+          fi
+
+          gh release view "$version" --json targetCommitish >/dev/null 2>&1 && release_exists=true || release_exists=false
+          if [[ "$release_exists" == true ]]; then
+            release_target=$(gh release view "$version" --json targetCommitish --jq .targetCommitish)
+            if [[ "$release_target" != "$MERGE_SHA" ]]; then
+              echo "::error::Existing GitHub Release '$version' identifies '$release_target', not '$MERGE_SHA'."
+              exit 1
+            fi
+          fi
+
+          docker login ghcr.io --username "$GITHUB_ACTOR" --password "$GH_TOKEN"
+          docker manifest inspect "$IMAGE:$version" >/dev/null 2>&1 && image_exists=true || image_exists=false
+
+          if [[ "$tag_exists" == false && ( "$release_exists" == true || "$image_exists" == true ) ]]; then
+            echo "::error::Release artifacts exist for '$version' without its Git tag. Refusing to overwrite or adopt them."
+            exit 1
+          fi
+
+          if [[ "$tag_exists" == false ]]; then
+            git tag --annotate "$version" "$MERGE_SHA" --message "Release $version"
+            git push origin "refs/tags/$version"
+          fi
+
+          if [[ "$image_exists" == false ]]; then
+            docker build --target runtime --tag "$IMAGE:$version" .
+            docker push "$IMAGE:$version"
+          fi
+
+          if [[ "$release_exists" == false ]]; then
+            gh release create "$version" --target "$MERGE_SHA" --title "$version" --generate-notes
+          fi
+
+  cleanup-release:
+    name: Clean up release Container App and image
+    needs: [playwright, publish-release]
+    if: >-
+      needs.playwright.result == 'success' &&
+      needs.publish-release.result == 'success' &&
       github.event_name == 'pull_request' &&
       github.event.pull_request.merged == true &&
       github.event.pull_request.head.repo.full_name == github.repository &&
