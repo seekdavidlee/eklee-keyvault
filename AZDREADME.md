@@ -38,11 +38,15 @@ The `preprovision` hook in [azure.yaml](azure.yaml) automatically runs
 This script creates (or reuses) an Azure AD app registration named `<prefix>-app` and stores
 `clientId` and `tenantId` in the azd environment.
 
-At the end of the preprovision hook, [resolve-container-image.ps1](Deployment/resolve-container-image.ps1)
-queries the public `ghcr.io` registry for the latest digest of the `seekdavidlee/eklee-keyvault:latest`
-tag and stores the full image reference (with `@sha256:...` digest) in the `CONTAINER_IMAGE` azd
-environment variable. This ensures every `azd up` deploys the most recent container image by
-forcing a new Container App revision whenever the digest changes.
+During [Setup.ps1](Setup.ps1), [resolve-container-image.ps1](Deployment/resolve-container-image.ps1)
+derives the public GHCR repository from this checkout's GitHub `origin`. It checks for the latest
+published GitHub Release and offers its bare semantic version as the default. When the repository
+has no published release, enter a stable version such as `1.0.0`. The script validates the selected
+tag, resolves it to a `sha256` digest, and stores the immutable reference in `CONTAINER_IMAGE`
+before `azd up` runs. It never accepts an arbitrary registry or repository image reference.
+
+A direct `azd up` rerun of an environment configured by `Setup.ps1` reuses the stored digest. Run
+`Setup.ps1` again when you intentionally want to select a different release image.
 
 The script also resolves Azure location for provisioning. It first checks `AZURE_LOCATION`, then
 `infra.parameters.location`, then process environment `AZURE_LOCATION`. If none are set, it prompts
@@ -86,6 +90,9 @@ to add the deployed Container App URL to the app registration SPA redirect URIs.
 
 Private networking is a `Y/N` choice that defaults to `N` and determines whether to deploy private
 endpoints and disable Storage and Key Vault public access.
+
+The release version defaults to the latest published release. When no release exists, enter a bare
+stable version such as `1.0.0`.
 
 `tenantId` and `clientId` are no longer prompted. The preprovision hook script populates both
 values in the current azd environment by creating or reusing the app registration.
@@ -149,7 +156,7 @@ The template deploys the following resources:
   - Key Vault Secrets Officer on the Key Vault
   - Storage Blob Data Contributor on the Storage Account
 - **Container Apps Environment**: Consumption workload profile
-- **Container App**: running the image resolved from `ghcr.io/seekdavidlee/eklee-keyvault` (pinned by digest)
+- **Container App**: running the selected release image from this repository's GHCR package (pinned by digest)
 - **Optional MISE sidecar**: a private token-validation container when explicitly enabled
 - **Private networking when selected**: VNet integration for Container Apps, private endpoints
    for the Storage Account and Key Vault, and linked private DNS zones
@@ -220,13 +227,14 @@ container output and corresponding MISE telemetry with the production change app
    .\Setup.ps1
    ```
 
-   Select or create a target, then provide its resource group name when prompted. `Setup.ps1`
-   configures the azd environment and invokes `azd up`. The first deployment also asks whether
-   private networking is required and retains that choice in the azd environment.
+   Select or create a target, then provide its resource group name and release image version when
+   prompted. `Setup.ps1` checks the latest published release first, configures the azd environment,
+   resolves the selected image to a digest, and invokes `azd up`. The first deployment also asks
+   whether private networking is required and retains that choice in the azd environment.
 
    To rerun an already configured target without using the setup flow, select its environment and
-   run `azd up`. Do not use a bare `azd up` to initialize a new target because it does not collect
-   the required resource group name.
+   run `azd up`; it reuses the selected image digest. Do not use a bare `azd up` to initialize a
+   new target because it does not collect the required resource group name or release image.
 
 2. Note the outputs printed after deployment:
 
@@ -252,6 +260,11 @@ networking when no answer exists.
 Set `appRegistrationName` in a target profile to choose the Microsoft Entra application display
 name. It is set as `APP_REGISTRATION_NAME` before the preprovision hook looks up or creates the
 application. Existing targets without this key are prompted once and default to `<prefix>-app`.
+
+After selecting a target, the script checks for the latest published GitHub Release. Press Enter to
+use that version, or enter a bare stable version such as `1.0.0`. If no release exists, a version is
+required. The selected GHCR tag must resolve successfully before the script stores the digest and
+continues to `azd up`.
 
 ### Maintainer Dev Setup
 

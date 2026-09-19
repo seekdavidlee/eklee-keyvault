@@ -512,6 +512,9 @@ function Set-AzdEnvironment {
     Invoke-ExternalCommand -CommandName 'azd' -Arguments @(
         'env', 'config', 'set', 'infra.parameters.resourceGroupName', $Target.resourceGroupName
     )
+    Invoke-ExternalCommand -CommandName (Join-Path $RepositoryPath 'Deployment\resolve-container-image.ps1') -Arguments @(
+        '-RepositoryPath', $RepositoryPath
+    )
 }
 
 function Get-AzdEnvironmentConfigValue {
@@ -614,6 +617,34 @@ function Confirm-TargetDeployment {
     Write-Host "  Resource group  : $($Target.resourceGroupName)"
 
     return Read-YesNoValue -Prompt 'Run azd up for this target?' -DefaultValue $false
+}
+
+function Invoke-AzdDeployment {
+    <# .SYNOPSIS Configures an azd environment, resolves its image, and optionally deploys it. #>
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [object]$Target,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$RepositoryPath
+    )
+
+    Set-AzdEnvironment -Target $Target -RepositoryPath $RepositoryPath
+
+    if (-not (Confirm-TargetDeployment -Target $Target)) {
+        Write-Host 'Cancelled.'
+        return
+    }
+
+    Write-Host ''
+    Write-Host "Tenant / subscription selected: $($Target.displayName)" -ForegroundColor Green
+    Write-Host 'Running azd up...' -ForegroundColor Cyan
+    if ($PSCmdlet.ShouldProcess("azd environment '$($Target.environmentName)'", 'Run azd up')) {
+        Invoke-ExternalCommand -CommandName 'azd' -Arguments @('up')
+    }
 }
 
 function Set-TargetResourceGroupName {
@@ -843,8 +874,9 @@ function Set-TargetCustomDomainName {
 
 if ($MyInvocation.InvocationName -ne '.') {
     try {
-        Test-CommandAvailable -CommandName 'az'
-        Test-CommandAvailable -CommandName 'azd'
+        foreach ($commandName in @('az', 'azd', 'gh', 'git')) {
+            Test-CommandAvailable -CommandName $commandName
+        }
 
         $repositoryPath = $PSScriptRoot
         Push-Location $repositoryPath
@@ -884,21 +916,8 @@ if ($MyInvocation.InvocationName -ne '.') {
                 Write-Host "Target catalog updated at '$ProfilePath'." -ForegroundColor Green
             }
 
-            if (-not $WhatIfPreference -and -not (Confirm-TargetDeployment -Target $target)) {
-                Write-Host 'Cancelled.'
-                exit 0
-            }
-
             Connect-ToTarget -Target $target
-            Set-AzdEnvironment -Target $target -RepositoryPath $repositoryPath
-
-            Write-Host ''
-            Write-Host "Tenant / subscription selected: $($target.displayName)" -ForegroundColor Green
-            Write-Host "Running azd up..." -ForegroundColor Cyan
-            if ($PSCmdlet.ShouldProcess("azd environment '$($target.environmentName)'", 'Run azd up')) {
-                Invoke-ExternalCommand -CommandName 'azd' -Arguments @('up')
-
-            }
+            Invoke-AzdDeployment -Target $target -RepositoryPath $repositoryPath -WhatIf:$WhatIfPreference
         }
         finally {
             Pop-Location
