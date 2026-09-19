@@ -202,6 +202,8 @@ jobs:
           fi
 
           if [[ "$tag_exists" == false ]]; then
+            git config user.name "github-actions[bot]"
+            git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
             git tag --annotate "$version" "$MERGE_SHA" --message "Release $version"
             git push origin "refs/tags/$version"
           fi
