@@ -21,6 +21,10 @@ post_date: 2026-09-18
 This guide covers deploying the Eklee KeyVault application using the Azure Developer CLI (`azd`) with the
 [azure.yaml](azure.yaml) configuration and [Deployment/azd.bicep](Deployment/azd.bicep) infrastructure template.
 
+Use [Setup.ps1](Setup.ps1) for the first deployment of each target. It collects the target subscription,
+location, prefix, and resource group name, stores those settings in the selected azd environment, and then
+invokes `azd up`. The resource group name defaults to `<prefix>-rg` but can be changed during setup.
+
 ## Prerequisites
 
 - [Azure Developer CLI](https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd) installed
@@ -72,12 +76,13 @@ to add the deployed Container App URL to the app registration SPA redirect URIs.
 
 ## Collected Parameters
 
-`azd` prompts for the following parameters during provisioning (unless already stored):
+`Setup.ps1` prompts for the following target settings and stores them before it invokes `azd up`:
 
 | Parameter            | Description                                                                     | Example     |
 |----------------------|---------------------------------------------------------------------------------|-------------|
 | `location`           | Azure region used for deployment                                                | `centralus` |
 | `prefix`             | Resource naming prefix (3-10 chars)                                             | `ekleekv`   |
+| `resourceGroupName`  | Resource group to create or reuse                                               | `ekleekv-rg`|
 
 Private networking is a `Y/N` choice that defaults to `N` and determines whether to deploy private
 endpoints and disable Storage and Key Vault public access.
@@ -209,15 +214,19 @@ container output and corresponding MISE telemetry with the production change app
 
 ## Deployment Steps
 
-1. Provision infrastructure and deploy:
+1. Configure the target and provision infrastructure:
 
-   ```bash
-   azd up
+   ```powershell
+   .\Setup.ps1
    ```
 
-   Select an environment name when prompted (for example, `dev`), then enter values for `location`
-   and `prefix`. The first deployment to an environment also asks whether private networking is
-   required and retains that choice in the azd environment.
+   Select or create a target, then provide its resource group name when prompted. `Setup.ps1`
+   configures the azd environment and invokes `azd up`. The first deployment also asks whether
+   private networking is required and retains that choice in the azd environment.
+
+   To rerun an already configured target without using the setup flow, select its environment and
+   run `azd up`. Do not use a bare `azd up` to initialize a new target because it does not collect
+   the required resource group name.
 
 2. Note the outputs printed after deployment:
 
