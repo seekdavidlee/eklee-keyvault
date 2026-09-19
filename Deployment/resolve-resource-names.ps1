@@ -374,15 +374,14 @@ function Invoke-ResourceNameResolution {
         throw "AZURE_SUBSCRIPTION_ID '$subscriptionId' must be a GUID."
     }
 
-    $resourceGroupName = Get-AzdInfrastructureParameter -Name 'resourceGroupName'
+    $resourceGroupName = Get-AzdEnvironmentValue -Name 'resourceGroupName'
     if ([string]::IsNullOrWhiteSpace($resourceGroupName)) {
-        $prefix = Get-AzdInfrastructureParameter -Name 'prefix'
-        if ([string]::IsNullOrWhiteSpace($prefix)) {
-            throw 'infra.parameters.prefix is required before resolving existing resources when resourceGroupName is not configured.'
+        $resourceGroupName = Get-AzdInfrastructureParameter -Name 'resourceGroupName'
+        if ([string]::IsNullOrWhiteSpace($resourceGroupName)) {
+            throw "resourceGroupName is required. Set it with 'azd env set resourceGroupName <name>' or run Setup.ps1."
         }
 
-        $resourceGroupName = "$prefix-rg"
-        Write-Host "infra.parameters.resourceGroupName is not configured; checking the default resource group '$resourceGroupName'." -ForegroundColor Yellow
+        Set-AzdEnvironmentValue -Name 'resourceGroupName' -Value $resourceGroupName
     }
 
     $resourceGroupExists = Invoke-AzureCliJson -Arguments @(

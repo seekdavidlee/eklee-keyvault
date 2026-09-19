@@ -3,6 +3,9 @@
     "location": {
       "value": "${AZURE_LOCATION}"
     },
+    "resourceGroupName": {
+      "value": "${resourceGroupName}"
+    },
     "clientId": {
       "value": "${APP_CLIENT_ID}"
     },
