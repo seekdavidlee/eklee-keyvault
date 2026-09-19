@@ -18,7 +18,7 @@ The primary costs are Azure Container Apps, Azure Storage, and Azure Key Vault. 
 - [Node.js](https://nodejs.org/) (LTS recommended)
 - [.NET SDK](https://dotnet.microsoft.com/download)
 - [Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli) (logged in with `az login`)
-- [GitHub CLI](https://cli.github.com/) (authenticated with `gh auth login`)
+- [GitHub CLI](https://cli.github.com/) (optional; needed only for GitHub workflow administration)
 
 ## Local Development
 

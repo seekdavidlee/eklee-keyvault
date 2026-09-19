@@ -917,7 +917,7 @@ function Set-TargetCustomDomainName {
 
 if ($MyInvocation.InvocationName -ne '.') {
     try {
-        foreach ($commandName in @('az', 'azd', 'gh', 'git')) {
+        foreach ($commandName in @('az', 'azd', 'git')) {
             Test-CommandAvailable -CommandName $commandName
         }
 

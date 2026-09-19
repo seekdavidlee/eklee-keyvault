@@ -99,20 +99,22 @@ function Get-GitHubOrigin {
     return ConvertFrom-GitHubOrigin -Origin (($originOutput -join [Environment]::NewLine).Trim())
 }
 
-function Get-GitHubReleaseListResponse {
+function Get-GitHubReleaseList {
     [CmdletBinding()]
-    [OutputType([pscustomobject])]
+    [OutputType([object[]])]
     param(
         [Parameter(Mandatory = $true)]
         [ValidateNotNullOrEmpty()]
         [string]$Repository
     )
 
-    $releaseOutput = @(& gh release list --repo $Repository --limit 5 --exclude-drafts --exclude-pre-releases --json tagName 2>&1)
-    return [pscustomobject]@{
-        ExitCode = $LASTEXITCODE
-        Output = $releaseOutput
+    $releaseUri = "https://api.github.com/repos/$Repository/releases?per_page=100"
+    $headers = @{
+        Accept = 'application/vnd.github+json'
+        'User-Agent' = 'eklee-keyvault-setup'
+        'X-GitHub-Api-Version' = '2022-11-28'
     }
+    return @(Invoke-RestMethod -Uri $releaseUri -Headers $headers -UseBasicParsing)
 }
 
 function Get-RecentReleaseVersions {
@@ -124,26 +126,20 @@ function Get-RecentReleaseVersions {
         [string]$Repository
     )
 
-    $releaseResponse = Get-GitHubReleaseListResponse -Repository $Repository
-    if ($releaseResponse.ExitCode -ne 0) {
-        $errorMessage = ($releaseResponse.Output -join ' ').Trim()
-        throw "Could not retrieve GitHub Releases for '$Repository': $errorMessage"
-    }
-
     try {
-        $releases = @(($releaseResponse.Output -join [Environment]::NewLine) | ConvertFrom-Json)
+        $releases = @(Get-GitHubReleaseList -Repository $Repository)
     }
     catch {
-        throw "The GitHub Release response for '$Repository' was not valid JSON: $($_.Exception.Message)"
+        throw "Could not retrieve GitHub Releases for '$Repository': $($_.Exception.Message)"
     }
 
     $releaseVersions = foreach ($release in $releases) {
-        if ($null -ne $release) {
-            ConvertTo-StableReleaseVersion -Value ([string]$release.tagName)
+        if ($null -ne $release -and -not [bool]$release.draft -and -not [bool]$release.prerelease) {
+            ConvertTo-StableReleaseVersion -Value ([string]$release.tag_name)
         }
     }
 
-    return @($releaseVersions)
+    return @($releaseVersions | Select-Object -First 5)
 }
 
 function Read-ManualReleaseVersion {

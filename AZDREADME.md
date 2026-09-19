@@ -31,6 +31,8 @@ invokes `azd up`. The resource group name defaults to `<prefix>-rg` but can be c
 - [Azure CLI](https://learn.microsoft.com/cli/azure/install-azure-cli) installed and logged in (`az login`)
 - An Azure subscription with permissions to create resources
 
+`Setup.ps1` does not require GitHub CLI or GitHub authentication. For this public repository, it retrieves published release metadata from GitHub's public API before resolving the selected GHCR image tag to an immutable digest.
+
 ## App Registration Setup
 
 The `preprovision` hook in [azure.yaml](azure.yaml) automatically runs
