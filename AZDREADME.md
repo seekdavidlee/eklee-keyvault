@@ -39,11 +39,12 @@ This script creates (or reuses) an Azure AD app registration named `<prefix>-app
 `clientId` and `tenantId` in the azd environment.
 
 During [Setup.ps1](Setup.ps1), [resolve-container-image.ps1](Deployment/resolve-container-image.ps1)
-derives the public GHCR repository from this checkout's GitHub `origin`. It checks for the latest
-published GitHub Release and offers its bare semantic version as the default. When the repository
-has no published release, enter a stable version such as `1.0.0`. The script validates the selected
-tag, resolves it to a `sha256` digest, and stores the immutable reference in `CONTAINER_IMAGE`
-before `azd up` runs. It never accepts an arbitrary registry or repository image reference.
+derives the public GHCR repository from this checkout's GitHub `origin`. It shows up to five recent
+published stable releases so you can choose one or enter a version manually. When the repository
+has no published stable release, enter a stable version such as `1.0.0`. The script validates the
+selected tag, resolves it to a `sha256` digest, and stores the immutable reference in
+`CONTAINER_IMAGE` before `azd up` runs. It never accepts an arbitrary registry or repository image
+reference.
 
 A direct `azd up` rerun of an environment configured by `Setup.ps1` reuses the stored digest. Run
 `Setup.ps1` again when you intentionally want to select a different release image.
@@ -91,8 +92,8 @@ to add the deployed Container App URL to the app registration SPA redirect URIs.
 Private networking is a `Y/N` choice that defaults to `N` and determines whether to deploy private
 endpoints and disable Storage and Key Vault public access.
 
-The release version defaults to the latest published release. When no release exists, enter a bare
-stable version such as `1.0.0`.
+Choose one of up to five recent stable releases, or select manual entry for a bare stable version
+such as `1.0.0`. When no release exists, Setup requests that manual version directly.
 
 `tenantId` and `clientId` are no longer prompted. The preprovision hook script populates both
 values in the current azd environment by creating or reusing the app registration.
@@ -263,10 +264,10 @@ Set `appRegistrationName` in a target profile to choose the Microsoft Entra appl
 name. It is set as `APP_REGISTRATION_NAME` before the preprovision hook looks up or creates the
 application. Existing targets without this key are prompted once and default to `<prefix>-app`.
 
-After selecting a target, the script checks for the latest published GitHub Release. Press Enter to
-use that version, or enter a bare stable version such as `1.0.0`. If no release exists, a version is
-required. The selected GHCR tag must resolve successfully before the script stores the digest and
-continues to `azd up`.
+After selecting a target, the script shows up to five recent published stable releases. Select a
+numbered release or choose manual entry for a bare stable version such as `1.0.0`. If no eligible
+release exists, the script requests that manual version directly. The selected GHCR tag must resolve
+successfully before the script stores the digest and continues to `azd up`.
 
 ### Maintainer Dev Setup
 

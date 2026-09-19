@@ -99,7 +99,7 @@ function Get-GitHubOrigin {
     return ConvertFrom-GitHubOrigin -Origin (($originOutput -join [Environment]::NewLine).Trim())
 }
 
-function Get-GitHubLatestReleaseResponse {
+function Get-GitHubReleaseListResponse {
     [CmdletBinding()]
     [OutputType([pscustomobject])]
     param(
@@ -108,44 +108,60 @@ function Get-GitHubLatestReleaseResponse {
         [string]$Repository
     )
 
-    $releaseOutput = @(& gh release view --repo $Repository --json tagName,isDraft,isPrerelease 2>&1)
+    $releaseOutput = @(& gh release list --repo $Repository --limit 5 --exclude-drafts --exclude-pre-releases --json tagName 2>&1)
     return [pscustomobject]@{
         ExitCode = $LASTEXITCODE
         Output = $releaseOutput
     }
 }
 
-function Get-LatestReleaseVersion {
+function Get-RecentReleaseVersions {
     [CmdletBinding()]
-    [OutputType([string])]
+    [OutputType([string[]])]
     param(
         [Parameter(Mandatory = $true)]
         [ValidateNotNullOrEmpty()]
         [string]$Repository
     )
 
-    $releaseResponse = Get-GitHubLatestReleaseResponse -Repository $Repository
+    $releaseResponse = Get-GitHubReleaseListResponse -Repository $Repository
     if ($releaseResponse.ExitCode -ne 0) {
         $errorMessage = ($releaseResponse.Output -join ' ').Trim()
-        if ($errorMessage -match '(?i)release not found') {
-            return $null
-        }
-
-        throw "Could not retrieve the latest GitHub Release for '$Repository': $errorMessage"
+        throw "Could not retrieve GitHub Releases for '$Repository': $errorMessage"
     }
 
     try {
-        $release = ($releaseResponse.Output -join [Environment]::NewLine) | ConvertFrom-Json
+        $releases = @(($releaseResponse.Output -join [Environment]::NewLine) | ConvertFrom-Json)
     }
     catch {
-        throw "The latest GitHub Release response for '$Repository' was not valid JSON: $($_.Exception.Message)"
+        throw "The GitHub Release response for '$Repository' was not valid JSON: $($_.Exception.Message)"
     }
 
-    if ($release.isDraft -or $release.isPrerelease) {
-        throw "The latest GitHub Release for '$Repository' must be a published stable release."
+    $releaseVersions = foreach ($release in $releases) {
+        if ($null -ne $release) {
+            ConvertTo-StableReleaseVersion -Value ([string]$release.tagName)
+        }
     }
 
-    return ConvertTo-StableReleaseVersion -Value ([string]$release.tagName)
+    return @($releaseVersions)
+}
+
+function Read-ManualReleaseVersion {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory = $false)]
+        [string]$Prompt = 'Container image release version (for example, 1.0.0)'
+    )
+
+    while ($true) {
+        try {
+            return ConvertTo-StableReleaseVersion -Value (Read-Host $Prompt)
+        }
+        catch {
+            Write-Warning $_.Exception.Message
+        }
+    }
 }
 
 function Read-ReleaseVersion {
@@ -160,30 +176,35 @@ function Read-ReleaseVersion {
         [string]$ExplicitVersion
     )
 
-    if ($PSBoundParameters.ContainsKey('ExplicitVersion')) {
+    if (-not [string]::IsNullOrWhiteSpace($ExplicitVersion)) {
         return ConvertTo-StableReleaseVersion -Value $ExplicitVersion
     }
 
-    $latestVersion = Get-LatestReleaseVersion -Repository $Repository
+    $releaseVersions = @(Get-RecentReleaseVersions -Repository $Repository)
+    if ($releaseVersions.Count -eq 0) {
+        Write-Host 'No published stable releases were found. Enter a release version manually.' -ForegroundColor Yellow
+        return Read-ManualReleaseVersion
+    }
+
+    Write-Host 'Choose a container image release:' -ForegroundColor Cyan
+    for ($index = 0; $index -lt $releaseVersions.Count; $index++) {
+        Write-Host "$($index + 1). $($releaseVersions[$index])"
+    }
+    Write-Host 'M. Enter a release version manually'
+
     while ($true) {
-        $prompt = if ($latestVersion) {
-            "Container image release version [$latestVersion]"
-        }
-        else {
-            'Container image release version (for example, 1.0.0)'
-        }
-
-        $selectedVersion = Read-Host $prompt
-        if ([string]::IsNullOrWhiteSpace($selectedVersion) -and $latestVersion) {
-            return $latestVersion
+        $selection = (Read-Host 'Selection').Trim()
+        $selectedIndex = 0
+        if ([int]::TryParse($selection, [ref]$selectedIndex) -and
+            $selectedIndex -ge 1 -and $selectedIndex -le $releaseVersions.Count) {
+            return $releaseVersions[$selectedIndex - 1]
         }
 
-        try {
-            return ConvertTo-StableReleaseVersion -Value $selectedVersion
+        if ($selection -match '^(?i)m(?:anual)?$') {
+            return Read-ManualReleaseVersion
         }
-        catch {
-            Write-Warning $_.Exception.Message
-        }
+
+        Write-Warning "Choose a release number from 1 to $($releaseVersions.Count), or enter M for a manual version."
     }
 }
 
@@ -278,7 +299,12 @@ function Resolve-ContainerImage {
     )
 
     $githubRepository = Get-GitHubOrigin -Path $Path
-    $releaseVersion = Read-ReleaseVersion -Repository $githubRepository.Name -ExplicitVersion $ExplicitVersion
+    $releaseVersion = if ([string]::IsNullOrWhiteSpace($ExplicitVersion)) {
+        Read-ReleaseVersion -Repository $githubRepository.Name
+    }
+    else {
+        Read-ReleaseVersion -Repository $githubRepository.Name -ExplicitVersion $ExplicitVersion
+    }
     $digest = Get-ContainerImageDigest -Repository $githubRepository.Name -Tag $releaseVersion
     $imageReference = "ghcr.io/$($githubRepository.Name)@$digest"
 
