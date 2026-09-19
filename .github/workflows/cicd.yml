@@ -47,10 +47,13 @@ jobs:
           dotnet-quality: 'preview'
 
       - name: Restore dependencies
-        run: dotnet restore Eklee.KeyVault.Api/Eklee.KeyVault.Api.csproj
+        run: dotnet restore Eklee.KeyVault.sln
 
-      - name: Build API
-        run: dotnet build Eklee.KeyVault.Api/Eklee.KeyVault.Api.csproj --no-restore --configuration Release
+      - name: Build solution
+        run: dotnet build Eklee.KeyVault.sln --no-restore --configuration Release
+
+      - name: Run .NET tests
+        run: dotnet test Eklee.KeyVault.sln --no-restore --no-build --configuration Release
 
   test-npm:
     name: Test npm Build
