@@ -8,7 +8,7 @@
 // - Azure Key Vault (for secrets management)
 // - (Optional) Virtual Network with private endpoints for secure networking
 //
-// NOTE: RBAC role assignments are handled separately via assign-mi-rbac.ps1
+// NOTE: azd runs Deployment/assign-mi-rbac.ps1 from its postprovision hook.
 // ============================================================================
 
 // ============================================================================

@@ -141,6 +141,11 @@ each provisioning to:
 3. Update `VITE_AZURE_AD_REDIRECT_URI` and `VITE_API_BASE_URL` environment
    variables on the Container App to use the custom domain
 
+The same hook then runs [assign-mi-rbac.ps1](Deployment/assign-mi-rbac.ps1) to
+assign the managed identity its Key Vault and Storage roles. It reads the azd
+`resourceGroupName` value and fails provisioning when that value cannot be resolved
+or either required role assignment fails.
+
 The `postdeploy` hook also adds `https://<custom-domain>` to the app registration
 SPA redirect URIs.
 

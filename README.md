@@ -98,7 +98,7 @@ To target a different project file:
 
 1. Deploy infrastructure by running `gh workflow run deploy-infra.yml -f environment=dev`
 
-1. Run `Scripts/assign-mi-rbac.ps1` to assign RBAC roles to the managed identity.
+1. The infrastructure workflow uses Azure CLI directly and does not run azd hooks. Run `Deployment/assign-mi-rbac.ps1` to assign RBAC roles to the managed identity.
 1. Push to a non-`main` branch to trigger the **CI/CD** workflow (`cicd.yml`), which builds and deploys a temporary dev Container App. A push to `main` builds and publishes the `latest` image and a short-SHA image tag without deploying to Azure; the customer deployment process performs production updates.
 1. After CI deploys a branch Container App, run
   `./Scripts/Update-BranchRedirectUri.ps1` as a user who can update the
@@ -225,18 +225,21 @@ az containerapp update \
   --image ghcr.io/seekdavidlee/eklee-keyvault:latest
 ```
 
-## Post Deployment RBAC
+## Post-Deployment RBAC
 
 There are a few important roles to note:
 
-- **Key Vault Secrets User** — "Read secret contents." Assigned to the managed identity by `assign-mi-rbac.ps1`.
+- **Key Vault Secrets Officer** — Allows the managed identity to read, write, and delete secrets. Assigned by `Deployment/assign-mi-rbac.ps1`.
 - **Storage Blob Data Contributor** — Allows the managed identity to read/write user-access config in blob storage.
 
-The managed identity RBAC is handled by the script in the Deployment folder:
+`azd provision` and `azd up` run the managed identity RBAC script automatically from
+the post-provision hook after Bicep provisioning. No separate command is required for
+those workflows. GitHub Actions infrastructure deployment uses Azure CLI directly, so it
+continues to require the same script after infrastructure deployment:
 
 ```powershell
 cd Deployment
-..\Scripts\assign-mi-rbac.ps1 -ResourceGroup <resource-group-name>
+.\assign-mi-rbac.ps1 -ResourceGroup <resource-group-name>
 ```
 
 See [Deployment/README.md](Deployment/README.md) for detailed instructions.
