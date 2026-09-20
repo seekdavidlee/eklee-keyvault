@@ -31,6 +31,19 @@ export interface SecretSetResponse {
   name: string;
 }
 
+/** Policy used to request a generated secret candidate from the API. */
+export interface SecretGenerationRequest {
+  totalLength: number;
+  minimumAlphabeticCharacters: number;
+  minimumNumericCharacters: number;
+  minimumSpecialCharacters: number;
+}
+
+/** Candidate secret value returned by the API without persisting it. */
+export interface SecretGenerationResponse {
+  value: string;
+}
+
 /** Authorization role for a user in the application. */
 export type UserRole = 'Admin' | 'User';
 

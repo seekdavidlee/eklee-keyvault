@@ -1,5 +1,12 @@
 import apiClient from './apiClient';
-import type { SecretItemView, SecretValueResponse, SecretSetRequest, SecretSetResponse } from '../types';
+import type {
+  SecretGenerationRequest,
+  SecretGenerationResponse,
+  SecretItemView,
+  SecretSetRequest,
+  SecretSetResponse,
+  SecretValueResponse,
+} from '../types';
 
 /** Fetches all secrets combined with their display metadata. */
 export async function getSecrets(): Promise<SecretItemView[]> {
@@ -23,6 +30,15 @@ export async function setSecret(name: string, value: string): Promise<string> {
     body
   );
   return response.data.name;
+}
+
+/** Generates a candidate secret value without persisting it. Admin-only. */
+export async function generateSecret(request: SecretGenerationRequest): Promise<string> {
+  const response = await apiClient.post<SecretGenerationResponse>(
+    '/api/secrets/generate',
+    request
+  );
+  return response.data.value;
 }
 
 /** Deletes a Key Vault secret by name. Admin-only. */

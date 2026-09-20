@@ -1,5 +1,8 @@
-import { useState, useEffect, useCallback } from 'react';
+import { useState, useEffect, useCallback, useRef } from 'react';
 import {
+  Accordion,
+  AccordionDetails,
+  AccordionSummary,
   Box,
   TextField,
   IconButton,
@@ -29,16 +32,24 @@ import {
   Close as CloseIcon,
   Delete as DeleteIcon,
   Add as AddIcon,
+  ExpandMore as ExpandMoreIcon,
   Refresh as RefreshIcon,
 } from '@mui/icons-material';
 import { DataGrid, type GridColDef } from '@mui/x-data-grid';
-import { getSecrets, getSecretValue, setSecret, deleteSecret } from '../services/secretsService';
+import { deleteSecret, generateSecret, getSecrets, getSecretValue, setSecret } from '../services/secretsService';
 import { getMetadata, updateMetadata } from '../services/metadataService';
 import { useUser } from '../auth/UserContext';
-import type { SecretItemView, SecretItemMetaList } from '../types';
+import type { SecretGenerationRequest, SecretItemMetaList, SecretItemView } from '../types';
 
 /** Placeholder text shown instead of the actual secret value. */
 const PLACEHOLDER_VALUE = '***';
+
+const DEFAULT_SECRET_GENERATION_POLICY: SecretGenerationRequest = {
+  totalLength: 15,
+  minimumAlphabeticCharacters: 1,
+  minimumNumericCharacters: 1,
+  minimumSpecialCharacters: 3,
+};
 
 /** Extended view model with mutable client-side state for display name editing and secret reveal. */
 interface SecretRow extends SecretItemView {
@@ -68,6 +79,11 @@ export function Dashboard() {
   const [secretDialogName, setSecretDialogName] = useState('');
   const [secretDialogValue, setSecretDialogValue] = useState('');
   const [secretDialogSaving, setSecretDialogSaving] = useState(false);
+  const [secretDialogGenerating, setSecretDialogGenerating] = useState(false);
+  const [secretGenerationPolicy, setSecretGenerationPolicy] = useState<SecretGenerationRequest>(
+    DEFAULT_SECRET_GENERATION_POLICY
+  );
+  const secretGenerationInProgress = useRef(false);
 
   // Delete confirmation dialog state
   const [deleteDialogOpen, setDeleteDialogOpen] = useState(false);
@@ -285,6 +301,9 @@ export function Dashboard() {
     setSecretDialogMode('create');
     setSecretDialogName('');
     setSecretDialogValue('');
+    setSecretGenerationPolicy(DEFAULT_SECRET_GENERATION_POLICY);
+    secretGenerationInProgress.current = false;
+    setSecretDialogGenerating(false);
     setSecretDialogOpen(true);
   }, []);
 
@@ -292,14 +311,50 @@ export function Dashboard() {
     setSecretDialogMode('update');
     setSecretDialogName(row.name);
     setSecretDialogValue('');
+    setSecretGenerationPolicy(DEFAULT_SECRET_GENERATION_POLICY);
+    secretGenerationInProgress.current = false;
+    setSecretDialogGenerating(false);
     setSecretDialogOpen(true);
   }, []);
 
   const handleCloseSecretDialog = useCallback(() => {
+    if (secretGenerationInProgress.current) {
+      return;
+    }
+
     setSecretDialogOpen(false);
     setSecretDialogName('');
     setSecretDialogValue('');
+    setSecretGenerationPolicy(DEFAULT_SECRET_GENERATION_POLICY);
   }, []);
+
+  const handleGenerateSecret = useCallback(async () => {
+    setError(null);
+    setSuccess(null);
+    secretGenerationInProgress.current = true;
+    setSecretDialogGenerating(true);
+
+    try {
+      const generatedValue = await generateSecret(secretGenerationPolicy);
+      setSecretDialogValue(generatedValue);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : 'Failed to generate secret.');
+    } finally {
+      secretGenerationInProgress.current = false;
+      setSecretDialogGenerating(false);
+    }
+  }, [secretGenerationPolicy]);
+
+  const handleSecretGenerationPolicyChange = useCallback(
+    (field: keyof SecretGenerationRequest, value: string) => {
+      const numericValue = Number(value);
+      setSecretGenerationPolicy((currentPolicy) => ({
+        ...currentPolicy,
+        [field]: Number.isFinite(numericValue) ? numericValue : 0,
+      }));
+    },
+    []
+  );
 
   const handleSaveSecret = useCallback(async () => {
     setError(null);
@@ -558,7 +613,16 @@ export function Dashboard() {
       {/* Create / Update Secret Dialog */}
       <Dialog
         open={secretDialogOpen}
-        onClose={handleCloseSecretDialog}
+        onClose={(_, reason) => {
+          if (
+            secretGenerationInProgress.current &&
+            (reason === 'backdropClick' || reason === 'escapeKeyDown')
+          ) {
+            return;
+          }
+
+          handleCloseSecretDialog();
+        }}
         maxWidth="sm"
         fullWidth
       >
@@ -588,15 +652,89 @@ export function Dashboard() {
             value={secretDialogValue}
             onChange={(e) => setSecretDialogValue(e.target.value)}
           />
+          <Accordion disableGutters sx={{ mt: 2 }}>
+            <AccordionSummary expandIcon={<ExpandMoreIcon />}>
+              <Typography>Advanced settings</Typography>
+            </AccordionSummary>
+            <AccordionDetails>
+              <TextField
+                label="Total length"
+                fullWidth
+                margin="dense"
+                type="number"
+                value={secretGenerationPolicy.totalLength}
+                onChange={(e) =>
+                  handleSecretGenerationPolicyChange('totalLength', e.target.value)
+                }
+                slotProps={{ htmlInput: { min: 1, max: 128 } }}
+              />
+              <TextField
+                label="Minimum alphabetic characters"
+                fullWidth
+                margin="dense"
+                type="number"
+                value={secretGenerationPolicy.minimumAlphabeticCharacters}
+                onChange={(e) =>
+                  handleSecretGenerationPolicyChange(
+                    'minimumAlphabeticCharacters',
+                    e.target.value
+                  )
+                }
+                slotProps={{ htmlInput: { min: 0, max: 128 } }}
+              />
+              <TextField
+                label="Minimum numeric characters"
+                fullWidth
+                margin="dense"
+                type="number"
+                value={secretGenerationPolicy.minimumNumericCharacters}
+                onChange={(e) =>
+                  handleSecretGenerationPolicyChange(
+                    'minimumNumericCharacters',
+                    e.target.value
+                  )
+                }
+                slotProps={{ htmlInput: { min: 0, max: 128 } }}
+              />
+              <TextField
+                label="Minimum special characters"
+                fullWidth
+                margin="dense"
+                type="number"
+                value={secretGenerationPolicy.minimumSpecialCharacters}
+                onChange={(e) =>
+                  handleSecretGenerationPolicyChange(
+                    'minimumSpecialCharacters',
+                    e.target.value
+                  )
+                }
+                slotProps={{ htmlInput: { min: 0, max: 128 } }}
+              />
+            </AccordionDetails>
+          </Accordion>
         </DialogContent>
         <DialogActions>
-          <Button onClick={handleCloseSecretDialog} disabled={secretDialogSaving}>
+          <Button
+            onClick={handleCloseSecretDialog}
+            disabled={secretDialogSaving || secretDialogGenerating}
+          >
             Cancel
+          </Button>
+          <Button
+            onClick={handleGenerateSecret}
+            disabled={secretDialogSaving || secretDialogGenerating}
+          >
+            {secretDialogGenerating ? 'Generating...' : 'Generate secret'}
           </Button>
           <Button
             onClick={handleSaveSecret}
             variant="contained"
-            disabled={secretDialogSaving || !secretDialogName.trim() || !secretDialogValue}
+            disabled={
+              secretDialogSaving ||
+              secretDialogGenerating ||
+              !secretDialogName.trim() ||
+              !secretDialogValue
+            }
           >
             {secretDialogSaving
               ? 'Saving...'
