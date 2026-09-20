@@ -22,7 +22,7 @@ folder, which contains infrastructure-as-code and CI/CD deployment helpers.
 | [`copy-keyvault-secrets.ps1`](copy-keyvault-secrets.ps1) | Copies enabled secrets from an Azure Key Vault into the Eklee KeyVault API without overwriting existing secrets. |
 | [`../Setup-Dev.ps1`](../Setup-Dev.ps1) | Deploys the single maintainer dev profile with `azd` and configures its dedicated API registration and Reader-scoped GitHub OIDC E2E identity. |
 | [`Update-BranchRedirectUri.ps1`](Update-BranchRedirectUri.ps1) | Registers a deployed branch Container App URL in the Microsoft Entra SPA app registration and configures the Container App runtime redirect URI. |
-| [`Invoke-HostedE2E.ps1`](Invoke-HostedE2E.ps1) | Runs local Playwright tests against a deployed Container App using the signed-in Azure CLI identity. |
+| [`Invoke-HostedE2E.ps1`](Invoke-HostedE2E.ps1) | Runs local Playwright tests against the checked-out branch or release Container App using the signed-in Azure CLI identity. |
 | [`setup-gh-deploy.ps1`](setup-gh-deploy.ps1) | Creates the GitHub Actions OIDC deployment identity, resource groups, role assignments, and environment variables. |
 | [`Tag-ExistingStackResources.ps1`](Tag-ExistingStackResources.ps1) | Reports or applies stable `resource-id` tags to an existing Eklee KeyVault stack. |
 
@@ -56,13 +56,27 @@ store or print access tokens.
 Run the local Playwright authentication test against a deployed environment:
 
 ```powershell
-./Scripts/Invoke-HostedE2E.ps1 -EnvironmentName dev
+./Scripts/Invoke-HostedE2E.ps1 -Current
 ```
 
-The script reads the resource group, Container App name, API client ID, tenant,
-and subscription from the selected azd environment. It resolves the live HTTPS
+To test the checked-out release branch, use:
+
+```powershell
+./Scripts/Invoke-HostedE2E.ps1 -Release
+```
+
+Both commands read the single maintainer profile at
+`$HOME/.eklee-keyvault/setup-dev.json`, which is configured by
+[`../Setup-Dev.ps1`](../Setup-Dev.ps1). Its `environmentName` identifies the
+azd environment that supplies the resource group, API client ID, tenant, and
+subscription. The script derives the deployed Container App name from the
+checked-out branch using the same convention as CI, resolves its live HTTPS
 ingress URL, waits for `/healthz`, acquires an API token through the signed-in
 Azure CLI identity, and runs `login.spec.ts`.
+
+`-Current` accepts a checked-out non-`main` branch. `-Release` requires a
+checked-out `release/MAJOR.MINOR.PATCH` branch. Detached checkouts and `main`
+are rejected before the script contacts Azure.
 
 Use `-Filter secrets-crud` for the Admin CRUD test or `-Headed` to show the
 browser. Use `-NoDeps` when the UI dependencies and Chromium are already
