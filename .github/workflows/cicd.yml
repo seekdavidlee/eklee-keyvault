@@ -14,25 +14,43 @@ permissions:
   packages: write
   pull-requests: read
 
-concurrency:
-  group: cicd-${{ github.ref }}
-  cancel-in-progress: true
-
 jobs:
   setup:
     name: Resolve Container App Name
+    if: ${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/') }}
     runs-on: ubuntu-latest
+    environment: dev
     steps:
       - name: Checkout repository
         uses: actions/checkout@v7
 
       - id: setup
         name: Resolve Container App Name
+        env:
+          DEV_CONTAINER_APP_NAME: ${{ vars.DEV_CONTAINER_APP_NAME }}
+          DEV_E2E_BASE_URL: ${{ vars.DEV_E2E_BASE_URL }}
+          RELEASE_CONTAINER_APP_NAME: ${{ vars.RELEASE_CONTAINER_APP_NAME }}
+          RELEASE_E2E_BASE_URL: ${{ vars.RELEASE_E2E_BASE_URL }}
         run: |
+          set -euo pipefail
           container_app_name=$(BRANCH_NAME="${GITHUB_REF_NAME}" bash .github/scripts/resolve-container-app-name.sh)
           echo "container_app_name=$container_app_name" >> "$GITHUB_OUTPUT"
+          if [[ "${GITHUB_REF_NAME}" == "main" ]]; then
+            : "${DEV_E2E_BASE_URL:?DEV_E2E_BASE_URL is required for main deployments}"
+            echo "target=main" >> "$GITHUB_OUTPUT"
+            echo "base_url=${DEV_E2E_BASE_URL}" >> "$GITHUB_OUTPUT"
+          elif [[ "${GITHUB_REF_NAME}" == release/* ]]; then
+            : "${RELEASE_E2E_BASE_URL:?RELEASE_E2E_BASE_URL is required for release deployments}"
+            echo "target=release" >> "$GITHUB_OUTPUT"
+            echo "base_url=${RELEASE_E2E_BASE_URL}" >> "$GITHUB_OUTPUT"
+          else
+            echo "::error::Unsupported permanent deployment ref '${GITHUB_REF_NAME}'."
+            exit 1
+          fi
     outputs:
       container_app_name: ${{ steps.setup.outputs.container_app_name }}
+      target: ${{ steps.setup.outputs.target }}
+      base_url: ${{ steps.setup.outputs.base_url }}
 
   test-dotnet:
     name: Test .NET Build
@@ -84,11 +102,11 @@ jobs:
 
   build-and-push:
     name: Build and Push Docker Image
-    needs: [setup, test-dotnet, test-npm]
+    needs: [test-dotnet, test-npm]
     if: ${{ !failure() && !cancelled() }}
     runs-on: ubuntu-latest
     outputs:
-      image: ${{ steps.image-tag.outputs.image }}
+      image: ${{ steps.image-digest.outputs.image }}
     
     steps:
       - name: Checkout repository
@@ -110,8 +128,11 @@ jobs:
 
           REF_NAME="${GITHUB_REF_NAME}"
           TAG=$(REF_NAME="$REF_NAME" bash .github/scripts/resolve-image-tag.sh)
+          COMMIT_TAG="sha-${GITHUB_SHA}"
           echo "tag=$TAG" >> $GITHUB_OUTPUT
-          echo "image=ghcr.io/${{ github.repository }}:$TAG" >> $GITHUB_OUTPUT
+          echo "repository=ghcr.io/${{ github.repository }}" >> $GITHUB_OUTPUT
+          echo "image_tag=$TAG" >> $GITHUB_OUTPUT
+          echo "commit_tag=$COMMIT_TAG" >> $GITHUB_OUTPUT
 
           if [[ "$REF_NAME" =~ ^release/((0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*))$ ]]; then
             merged_pr_number=$(gh api \
@@ -138,13 +159,21 @@ jobs:
             build_args+=(--build-arg "SOURCE_REVISION_ID=$SOURCE_REVISION_ID")
           fi
 
-          docker build "${build_args[@]}" -t ${{ steps.image-tag.outputs.image }} \
+          docker build "${build_args[@]}" -t ${{ steps.image-tag.outputs.repository }}:${{ steps.image-tag.outputs.image_tag }} \
             --target runtime \
             .
 
       - name: Push Docker image to GHCR
+        id: image-digest
         run: |
-          docker push ${{ steps.image-tag.outputs.image }}
+          docker push ${{ steps.image-tag.outputs.repository }}:${{ steps.image-tag.outputs.image_tag }}
+          docker tag ${{ steps.image-tag.outputs.repository }}:${{ steps.image-tag.outputs.image_tag }} \
+            ${{ steps.image-tag.outputs.repository }}:${{ steps.image-tag.outputs.commit_tag }}
+          docker push ${{ steps.image-tag.outputs.repository }}:${{ steps.image-tag.outputs.commit_tag }}
+          digest=$(docker buildx imagetools inspect \
+            ${{ steps.image-tag.outputs.repository }}:${{ steps.image-tag.outputs.commit_tag }} \
+            --format '{{.Digest}}')
+          echo "image=${{ steps.image-tag.outputs.repository }}@$digest" >> "$GITHUB_OUTPUT"
 
       - name: Tag and push additional tags
         if: github.ref == 'refs/heads/main'
@@ -165,13 +194,19 @@ jobs:
   deploy:
     name: Deploy to Azure Container Apps
     needs: [setup, build-and-push]
-    if: ${{ !failure() && !cancelled() && github.ref != 'refs/heads/main' }}
+    if: ${{ !failure() && !cancelled() && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')) }}
     runs-on: ubuntu-latest
     environment: dev
+    concurrency:
+      group: permanent-container-app-${{ needs.setup.outputs.target }}
+      queue: max
     outputs:
       fqdn: ${{ steps.deploy-app.outputs.fqdn }}
 
     steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
       - name: Login to Azure with OIDC
         uses: azure/login@v3
         with:
@@ -185,6 +220,7 @@ jobs:
           RESOURCE_GROUP="${{ vars.RESOURCE_GROUP }}"
           IMAGE="${{ needs.build-and-push.outputs.image }}"
           CONTAINER_APP_NAME="${{ needs.setup.outputs.container_app_name }}"
+          TARGET_BASE_URL="${{ needs.setup.outputs.base_url }}"
 
           # Discover infrastructure resources from the resource group
           ENV_NAME=$(az containerapp env list --resource-group "$RESOURCE_GROUP" --query "[0].name" -o tsv)
@@ -218,54 +254,36 @@ jobs:
             --query "name" -o tsv 2>/dev/null || echo "")
 
           if [ -z "$EXISTS" ]; then
-            echo "Creating container app '$CONTAINER_APP_NAME'..."
-            az containerapp create \
-              --name "$CONTAINER_APP_NAME" \
-              --resource-group "$RESOURCE_GROUP" \
-              --environment "$ENV_NAME" \
-              --image "$IMAGE" \
-              --target-port 8080 \
-              --ingress external \
-              --user-assigned "$IDENTITY_ID" \
-              --cpu 0.5 \
-              --memory 1.0Gi \
-              --min-replicas 0 \
-              --max-replicas 1 \
-              --env-vars \
-                AZURE_CLIENT_ID="$IDENTITY_CLIENT_ID" \
-                StorageUri="$STORAGE_BLOB_URI" \
-                StorageContainerName=configs \
-                KeyVaultUri="$KEYVAULT_URI" \
-                AuthenticationMode=mi \
-                AzureAd__Instance=https://login.microsoftonline.com/ \
-                AzureAd__TenantId=${{ vars.AZURE_TENANT_ID }} \
-                AzureAd__ClientId=${{ vars.VITE_AZURE_AD_CLIENT_ID }} \
-                AzureAd__Audience=api://${{ vars.VITE_AZURE_AD_CLIENT_ID }} \
-                VITE_AZURE_AD_CLIENT_ID=${{ vars.VITE_AZURE_AD_CLIENT_ID }} \
-                VITE_AZURE_AD_AUTHORITY=${{ vars.VITE_AZURE_AD_AUTHORITY }} \
-                VITE_AZURE_AD_REDIRECT_URI=${{ vars.VITE_AZURE_AD_REDIRECT_URI }}
-          else
-            echo "Updating container app '$CONTAINER_APP_NAME'..."
-            az containerapp update \
-              --name "$CONTAINER_APP_NAME" \
-              --resource-group "$RESOURCE_GROUP" \
-              --image "$IMAGE" \
-              --min-replicas 0 \
-              --max-replicas 1 \
-              --set-env-vars \
-                AZURE_CLIENT_ID="$IDENTITY_CLIENT_ID" \
-                StorageUri="$STORAGE_BLOB_URI" \
-                StorageContainerName=configs \
-                KeyVaultUri="$KEYVAULT_URI" \
-                AuthenticationMode=mi \
-                AzureAd__Instance=https://login.microsoftonline.com/ \
-                AzureAd__TenantId=${{ vars.AZURE_TENANT_ID }} \
-                AzureAd__ClientId=${{ vars.VITE_AZURE_AD_CLIENT_ID }} \
-                AzureAd__Audience=api://${{ vars.VITE_AZURE_AD_CLIENT_ID }} \
-                VITE_AZURE_AD_CLIENT_ID=${{ vars.VITE_AZURE_AD_CLIENT_ID }} \
-                VITE_AZURE_AD_AUTHORITY=${{ vars.VITE_AZURE_AD_AUTHORITY }} \
-                VITE_AZURE_AD_REDIRECT_URI=${{ vars.VITE_AZURE_AD_REDIRECT_URI }}
+            echo "::error::Permanent Container App '$CONTAINER_APP_NAME' is missing. Run maintainer provisioning before CI deployment."
+            exit 1
           fi
+
+          if [[ "$IMAGE" != *@sha256:* ]]; then
+            echo "::error::Expected an immutable container image digest, received '$IMAGE'."
+            exit 1
+          fi
+
+          echo "Updating permanent Container App '$CONTAINER_APP_NAME'..."
+          az containerapp update \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --image "$IMAGE" \
+            --min-replicas 1 \
+            --max-replicas 1 \
+            --set-env-vars \
+              AZURE_CLIENT_ID="$IDENTITY_CLIENT_ID" \
+              StorageUri="$STORAGE_BLOB_URI" \
+              StorageContainerName=configs \
+              KeyVaultUri="$KEYVAULT_URI" \
+              AuthenticationMode=mi \
+              AzureAd__Instance=https://login.microsoftonline.com/ \
+              AzureAd__TenantId=${{ vars.AZURE_TENANT_ID }} \
+              AzureAd__ClientId=${{ vars.VITE_AZURE_AD_CLIENT_ID }} \
+              AzureAd__Audience=api://${{ vars.VITE_AZURE_AD_CLIENT_ID }} \
+              VITE_AZURE_AD_CLIENT_ID=${{ vars.VITE_AZURE_AD_CLIENT_ID }} \
+              VITE_AZURE_AD_AUTHORITY=${{ vars.VITE_AZURE_AD_AUTHORITY }} \
+              VITE_AZURE_AD_REDIRECT_URI="$TARGET_BASE_URL" \
+              VITE_API_BASE_URL="$TARGET_BASE_URL"
 
           # Display deployed app URL
           FQDN=$(az containerapp show \
@@ -274,3 +292,54 @@ jobs:
             --query "properties.configuration.ingress.fqdn" -o tsv)
           echo "✅ Container app deployed successfully: https://$FQDN"
           echo "fqdn=$FQDN" >> "$GITHUB_OUTPUT"
+
+      - name: Wait for permanent target
+        env:
+          BASE_URL: ${{ needs.setup.outputs.base_url }}
+        run: |
+          set -euo pipefail
+          for attempt in $(seq 1 30); do
+            if curl --fail --silent --show-error "$BASE_URL/healthz" >/dev/null; then
+              exit 0
+            fi
+            sleep 10
+          done
+          echo "::error::Container App did not become healthy: $BASE_URL"
+          exit 1
+
+      - name: Get hosted E2E access token
+        id: token
+        run: |
+          set -euo pipefail
+          token=$(az account get-access-token --scope "api://${{ vars.VITE_AZURE_AD_CLIENT_ID }}/.default" --query accessToken --output tsv)
+          echo "::add-mask::$token"
+          echo "access_token=$token" >> "$GITHUB_OUTPUT"
+
+      - name: Setup Node.js
+        uses: actions/setup-node@v7
+        with:
+          node-version: '22'
+          cache: npm
+          cache-dependency-path: Eklee.KeyVault.UI/package-lock.json
+
+      - name: Run hosted Playwright tests
+        working-directory: Eklee.KeyVault.UI
+        env:
+          E2E_BASE_URL: ${{ needs.setup.outputs.base_url }}
+          E2E_CLIENT_ID: ${{ vars.VITE_AZURE_AD_CLIENT_ID }}
+          E2E_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
+          E2E_ACCESS_TOKEN: ${{ steps.token.outputs.access_token }}
+        run: |
+          npm ci
+          npx playwright install --with-deps chromium
+          npx playwright test
+
+      - name: Upload Playwright results
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: hosted-playwright-results-${{ needs.setup.outputs.target }}-${{ github.run_id }}
+          path: |
+            Eklee.KeyVault.UI/playwright-report/
+            Eklee.KeyVault.UI/test-results/
+          retention-days: 7

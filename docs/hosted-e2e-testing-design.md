@@ -28,12 +28,10 @@ estimated_reading_time: 4
 
 ## Status
 
-Partially implemented. Successful `CI/CD` runs for `release/**` branches run
-the hosted workflow automatically, and merged same-repository `release/**` pull
-requests targeting `main` run it against the release branch's deployed Container
-App. Direct development-branch merges into `main` are rejected by the
-release-promotion check and do not trigger hosted E2E. Ordinary branch CI
-completions do not trigger hosted E2E.
+Partially implemented. Successful `CI/CD` runs for `main` and `release/**`
+deploy their matching permanent Container App and run hosted E2E under the same
+target-scoped FIFO queue. Ordinary feature and bugfix branch CI completions
+publish an immutable image but do not deploy or run hosted E2E automatically.
 
 The repository implementation enforces the dev-only application identity
 boundary described below. GitHub Environment protection and Microsoft Entra
@@ -43,10 +41,11 @@ the hosted identity is used.
 ## Decision Summary
 
 GitHub-hosted automation uses the maintainer-owned `dev` deployment GitHub
-Actions OIDC service principal to resolve the per-ref Container App and run the
-hosted Playwright suite against its HTTPS URL. It receives `E2E.Tester` only for
-the isolated dev API registration. The hosted workflow is separate from
-deployment so branch deployments are not tested automatically on every commit.
+Actions OIDC service principal to update the fixed main or release Container App
+with an immutable image and run the hosted Playwright suite against that target's
+configured HTTPS URL. It receives `E2E.Tester` only for the isolated dev API
+registration. Feature and bugfix branch deployment remains a local maintainer
+operation against the fixed branch target.
 
 The Container App's existing managed identity remains dedicated to the
 application. It authenticates the application to Key Vault, Blob Storage, and
@@ -119,21 +118,18 @@ network access to that environment.
 
 ## Test Workflow
 
-1. Build and deploy a release image or a PR source-branch image to its
-  dedicated Container App.
-2. Let a successful `CI/CD` run for a `release/**` branch, or a merged
-  same-repository `release/**` pull request targeting `main`, trigger hosted
-  E2E.
-3. Run only after the release branch has crossed the repository's protected
-  release trust boundary.
+1. Build and publish an immutable commit image for every pushed branch.
+2. For `main` and `release/**`, update the matching pre-provisioned Container
+  App with that image and retain its target-scoped queue through testing.
+3. Wait for `/healthz` at the configured custom HTTPS domain.
 4. Log in to Azure from the GitHub runner with the dedicated dev E2E OIDC
   identity.
-5. Resolve the same deterministic dev Container App name used by deployment.
-6. Wait for `/healthz` to respond successfully.
-7. Verify the live Container App accepts the dedicated dev API client ID.
-8. Acquire an application token for `api://<dev-api-client-id>/.default`.
-9. Run the authenticated Playwright browser test against the resolved HTTPS URL
+5. Acquire an application token for `api://<dev-api-client-id>/.default`.
+6. Run the authenticated Playwright browser test against the configured HTTPS URL
   and upload a report that does not contain bearer tokens.
+7. When the successful `main` deployment SHA is the merge commit of a
+  `release/MAJOR.MINOR.PATCH` pull request, promote the exact merge SHA to a
+  semantic image tag, Git tag, and GitHub Release.
 
 ## Browser Test Boundary
 
@@ -149,7 +145,8 @@ design does not require enabling Container Apps Easy Auth.
 ## References
 
 * [Environment and Deployment Design](environment-deployment-design.md)
-* [Hosted Playwright workflow](../.github/workflows/hosted-e2e.yml)
-* [Container App cleanup workflow](../.github/workflows/cleanup-container-app.yml)
+* [CI/CD workflow](../.github/workflows/cicd.yml)
+* [Release promotion workflow](../.github/workflows/release-promotion.yml)
+* [GHCR image cleanup workflow](../.github/workflows/cleanup-container-app.yml)
 * [Azure Container Apps managed identities](https://learn.microsoft.com/azure/container-apps/managed-identity)
 * [Container Apps application-to-application authentication](https://learn.microsoft.com/azure/container-apps/authentication-entra#configure-client-apps-to-access-your-container-app)

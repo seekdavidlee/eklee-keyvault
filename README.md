@@ -99,22 +99,17 @@ To target a different project file:
 1. Deploy infrastructure by running `gh workflow run deploy-infra.yml -f environment=dev`
 
 1. The infrastructure workflow uses Azure CLI directly and does not run azd hooks. Run `Deployment/assign-mi-rbac.ps1` to assign RBAC roles to the managed identity.
-1. Push to a non-`main` branch to trigger the **CI/CD** workflow (`cicd.yml`), which builds and deploys a temporary dev Container App. A push to `main` builds and publishes the `latest` image and a short-SHA image tag without deploying to Azure; the customer deployment process performs production updates.
-1. After CI deploys a branch Container App, run
-  `./Scripts/Update-BranchRedirectUri.ps1` as a user who can update the
-  resource group and the SPA app registration.
-
-  The script prompts for an azd environment, reads its resource group and SPA
-  client ID, and derives the branch Container App name from the checked-out
-  Git branch. It discovers the deployed FQDN, adds its URL to the SPA redirect
-  URI list without removing existing entries, and configures the Container App
-  to use that URL at runtime. Pass `-EnvironmentName <name>` to avoid the
-  prompt, or pass `-ResourceGroupName`, `-ContainerAppName`, and
-  `-SpaAppClientId` explicitly for recovery scenarios.
+1. Run `Setup-Dev.ps1` for the repository maintainer dev environment. It provisions the permanent main, release, and branch Container Apps; binds their custom HTTPS domains; and reconciles the three SPA redirect URLs locally.
+1. Push to `main` or `release/*` to trigger **CI/CD** deployment and hosted E2E for the matching permanent target. Other branches publish a commit-addressable GHCR image but do not deploy automatically. To deploy and test a feature or bugfix commit, run `./Scripts/Invoke-HostedE2E.ps1 -Current` from that checkout.
 
 1. Perform user role assignments per [Post Deployment RBAC](#post-deployment-rbac).
 
-When a same-repository pull request is merged into a `release/*` branch, the cleanup workflow deletes the matching temporary Container App and `branch-<normalized-branch>` GHCR image. When a release branch is merged into `main`, it deletes the release Container App and `release-<normalized-version>` GHCR image. The cleanup workflow does not delete the long-lived `main` Container App or `main` image tags.
+When a same-repository pull request is merged into a `release/*` branch, the
+cleanup workflow deletes the matching `branch-<normalized-branch>` GHCR image.
+After a release branch merge has passed the queued main deployment and E2E run,
+release promotion publishes the semantic release artifacts and deletes the
+matching `release-<normalized-version>` GHCR image. No workflow deletes a
+permanent Container App.
 
 The two setup scripts configure the following GitHub environment variables in `dev`:
 

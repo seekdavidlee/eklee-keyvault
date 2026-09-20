@@ -520,15 +520,13 @@ az containerapp show --name ekleekv-dev-app --resource-group eklee-keyvault-dev-
 #### Automated Merge Cleanup
 
 The `cleanup-container-app.yml` workflow runs after same-repository pull requests
-are merged. It removes the temporary Container App and matching public GHCR image:
+are merged into a `release/*` branch. It deletes only the matching
+`branch-<normalized-branch>-<12-char-ref-hash>` GHCR image tag. The release
+promotion workflow deletes the matching `release-<normalized-version>-<12-char-ref-hash>`
+GHCR image after it publishes the semantic release.
 
-- Merging a normal branch into `release/*` deletes its `ekv-branch-*` Container App
-  and `branch-<normalized-branch>-<12-char-ref-hash>` image tag.
-- Merging `release/<version>` into `main` deletes its `ekv-release-*` Container App
-  and `release-<normalized-version>-<12-char-ref-hash>` image tag.
-
-The cleanup is idempotent when either resource is already absent and never targets
-the long-lived `main` Container App or its production image tags.
+The cleanup workflows never authenticate to Azure and never delete or modify the
+permanent main, release, or branch Container Apps.
 
 #### Delete Individual Resources
 ```powershell

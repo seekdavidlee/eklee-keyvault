@@ -12,6 +12,15 @@
     "containerImage": {
       "value": "${CONTAINER_IMAGE}"
     },
+    "customDevDomainName": {
+      "value": "${CUSTOM_DEV_DOMAIN_NAME}"
+    },
+    "customReleaseDomainName": {
+      "value": "${CUSTOM_RELEASE_DOMAIN_NAME}"
+    },
+    "customBranchDomainName": {
+      "value": "${CUSTOM_BRANCH_DOMAIN_NAME}"
+    },
     "miseSidecarImage": {
       "value": "${MISE_SIDECAR_IMAGE}"
     },
@@ -36,8 +45,14 @@
     "existingContainerAppEnvironmentName": {
       "value": "${EXISTING_CONTAINER_APP_ENVIRONMENT_NAME}"
     },
-    "existingContainerAppName": {
-      "value": "${EXISTING_CONTAINER_APP_NAME}"
+    "existingDevContainerAppName": {
+      "value": "${EXISTING_DEV_CONTAINER_APP_NAME}"
+    },
+    "existingReleaseContainerAppName": {
+      "value": "${EXISTING_RELEASE_CONTAINER_APP_NAME}"
+    },
+    "existingBranchContainerAppName": {
+      "value": "${EXISTING_BRANCH_CONTAINER_APP_NAME}"
     },
     "existingVirtualNetworkName": {
       "value": "${EXISTING_VIRTUAL_NETWORK_NAME}"

@@ -1,4 +1,6 @@
 #!/usr/bin/env pwsh
+# Copyright (c) 2026 Microsoft Corporation. All rights reserved.
+# SPDX-License-Identifier: MIT
 #Requires -Version 7.4
 
 <#
@@ -135,7 +137,9 @@ function Get-RoleDefinitions {
         [pscustomobject]@{ Role = 'log-analytics-workspace'; ResourceId = 'app-log-analytics-workspace'; Type = 'Microsoft.OperationalInsights/workspaces'; EnvironmentVariable = 'EXISTING_LOG_ANALYTICS_WORKSPACE_NAME'; RequiresPrivateNetworking = $false }
         [pscustomobject]@{ Role = 'managed-identity'; ResourceId = 'app-managed-identity'; Type = 'Microsoft.ManagedIdentity/userAssignedIdentities'; EnvironmentVariable = 'EXISTING_MANAGED_IDENTITY_NAME'; RequiresPrivateNetworking = $false }
         [pscustomobject]@{ Role = 'container-app-environment'; ResourceId = 'app-container-app-environment'; Type = 'Microsoft.App/managedEnvironments'; EnvironmentVariable = 'EXISTING_CONTAINER_APP_ENVIRONMENT_NAME'; RequiresPrivateNetworking = $false }
-        [pscustomobject]@{ Role = 'container-app'; ResourceId = 'app-container-app'; Type = 'Microsoft.App/containerApps'; EnvironmentVariable = 'EXISTING_CONTAINER_APP_NAME'; RequiresPrivateNetworking = $false }
+        [pscustomobject]@{ Role = 'container-app-dev'; ResourceId = 'app-container-app'; Type = 'Microsoft.App/containerApps'; EnvironmentVariable = 'EXISTING_DEV_CONTAINER_APP_NAME'; ContainerAppTarget = 'dev'; RequiresPrivateNetworking = $false }
+        [pscustomobject]@{ Role = 'container-app-release'; ResourceId = 'app-container-app-release'; Type = 'Microsoft.App/containerApps'; EnvironmentVariable = 'EXISTING_RELEASE_CONTAINER_APP_NAME'; ContainerAppTarget = 'release'; RequiresPrivateNetworking = $false }
+        [pscustomobject]@{ Role = 'container-app-branch'; ResourceId = 'app-container-app-branch'; Type = 'Microsoft.App/containerApps'; EnvironmentVariable = 'EXISTING_BRANCH_CONTAINER_APP_NAME'; ContainerAppTarget = 'branch'; RequiresPrivateNetworking = $false }
         [pscustomobject]@{ Role = 'virtual-network'; ResourceId = 'app-virtual-network'; Type = 'Microsoft.Network/virtualNetworks'; EnvironmentVariable = 'EXISTING_VIRTUAL_NETWORK_NAME'; RequiresPrivateNetworking = $true }
         [pscustomobject]@{ Role = 'container-app-network-security-group'; ResourceId = 'app-container-app-network-security-group'; Type = 'Microsoft.Network/networkSecurityGroups'; EnvironmentVariable = 'EXISTING_CONTAINER_APP_NSG_NAME'; RequiresPrivateNetworking = $true }
         [pscustomobject]@{ Role = 'resource-network-security-group'; ResourceId = 'app-resource-network-security-group'; Type = 'Microsoft.Network/networkSecurityGroups'; EnvironmentVariable = 'EXISTING_RESOURCE_NSG_NAME'; RequiresPrivateNetworking = $true }
@@ -339,6 +343,208 @@ function Get-ResourceTagValue {
     return $null
 }
 
+function Get-TaggedResources {
+    [CmdletBinding()]
+    [OutputType([object[]])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [object[]]$Resources,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$ResourceId
+    )
+
+    return @($Resources | Where-Object {
+            (Get-ResourceTagValue -Resource $_ -TagKey 'resource-id') -eq $ResourceId
+        })
+}
+
+function Resolve-TaggedResourceName {
+    [CmdletBinding()]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [object[]]$Resources,
+
+        [Parameter(Mandatory = $true)]
+        [object]$RoleDefinition
+    )
+
+    $expectedTagValue = $RoleDefinition.ResourceId
+    $taggedResources = @(Get-TaggedResources -Resources $Resources -ResourceId $expectedTagValue)
+
+    if ($taggedResources.Count -eq 0) {
+        Set-AzdEnvironmentValue -Name $RoleDefinition.EnvironmentVariable -Value ''
+        Write-Host "No resource found for '$expectedTagValue'; Bicep will use its generated name." -ForegroundColor Yellow
+        return
+    }
+
+    if ($taggedResources.Count -ne 1) {
+        throw "Tag '$expectedTagValue' matched $($taggedResources.Count) resources. Each role must have exactly one resource in the target group."
+    }
+
+    $resource = $taggedResources[0]
+    if ($resource.type -ne $RoleDefinition.Type) {
+        throw "Tag '$expectedTagValue' is on resource '$($resource.name)' of type '$($resource.type)', not expected type '$($RoleDefinition.Type)'."
+    }
+
+    $exactNameProperty = $RoleDefinition.PSObject.Properties['ExactName']
+    if ($exactNameProperty -and $resource.name -ne $exactNameProperty.Value) {
+        throw "Tag '$expectedTagValue' is on private DNS zone '$($resource.name)', not required zone '$($exactNameProperty.Value)'."
+    }
+
+    Set-AzdEnvironmentValue -Name $RoleDefinition.EnvironmentVariable -Value $resource.name
+    Write-Host "Resolved '$expectedTagValue' to '$($resource.name)'." -ForegroundColor Green
+}
+
+function Resolve-LegacyContainerAppNames {
+    [CmdletBinding()]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [object[]]$Resources,
+
+        [Parameter(Mandatory = $true)]
+        [object[]]$RoleDefinitions
+    )
+
+    $legacyResourceId = 'app-container-app'
+    $legacyResources = @(Get-TaggedResources -Resources $Resources -ResourceId $legacyResourceId)
+    if ($legacyResources.Count -eq 0) {
+        foreach ($roleDefinition in $RoleDefinitions) {
+            Set-AzdEnvironmentValue -Name $roleDefinition.EnvironmentVariable -Value ''
+            Write-Host "No resource found for '$($roleDefinition.ResourceId)'; Bicep will use its generated name." -ForegroundColor Yellow
+        }
+
+        return
+    }
+
+    $unexpectedResource = @($legacyResources | Where-Object { $_.type -ne 'Microsoft.App/containerApps' } | Select-Object -First 1)
+    if ($unexpectedResource.Count -gt 0) {
+        throw "Legacy tag '$legacyResourceId' is on resource '$($unexpectedResource[0].name)' of type '$($unexpectedResource[0].type)', not expected type 'Microsoft.App/containerApps'."
+    }
+
+    $baseCandidates = @($legacyResources | Where-Object {
+            $_.name -notlike '*-release' -and $_.name -notlike '*-branch'
+        })
+    if ($baseCandidates.Count -ne 1) {
+        throw "Legacy tag '$legacyResourceId' must identify exactly one base Container App name."
+    }
+
+    $baseName = [string]$baseCandidates[0].name
+    $expectedTargetNames = @{
+        dev = $baseName
+        release = "$baseName-release"
+        branch = "$baseName-branch"
+    }
+    $resourcesByName = @{}
+    foreach ($legacyResource in $legacyResources) {
+        if ($resourcesByName.ContainsKey($legacyResource.name)) {
+            throw "Legacy tag '$legacyResourceId' has duplicate Container App name '$($legacyResource.name)'."
+        }
+
+        $resourcesByName[$legacyResource.name] = $legacyResource
+    }
+
+    if ($legacyResources.Count -eq 1) {
+        Set-AzdEnvironmentValue -Name 'EXISTING_DEV_CONTAINER_APP_NAME' -Value $baseName
+        Set-AzdEnvironmentValue -Name 'EXISTING_RELEASE_CONTAINER_APP_NAME' -Value ''
+        Set-AzdEnvironmentValue -Name 'EXISTING_BRANCH_CONTAINER_APP_NAME' -Value ''
+        Write-Host "Resolved legacy '$legacyResourceId' to '$baseName' for the development target." -ForegroundColor Yellow
+        return
+    }
+
+    if ($legacyResources.Count -ne $RoleDefinitions.Count) {
+        throw "Legacy tag '$legacyResourceId' must identify either one base Container App or the complete '$baseName', '$baseName-release', '$baseName-branch' target set."
+    }
+
+    foreach ($roleDefinition in $RoleDefinitions) {
+        $expectedName = $expectedTargetNames[$roleDefinition.ContainerAppTarget]
+        if (-not $resourcesByName.ContainsKey($expectedName)) {
+            throw "Legacy tag '$legacyResourceId' does not contain expected Container App '$expectedName'."
+        }
+
+        Set-AzdEnvironmentValue -Name $roleDefinition.EnvironmentVariable -Value $expectedName
+        Write-Host "Resolved legacy '$legacyResourceId' to '$expectedName' for the $($roleDefinition.ContainerAppTarget) target." -ForegroundColor Yellow
+    }
+}
+
+function Resolve-ContainerAppTargetNames {
+    [CmdletBinding()]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [AllowEmptyCollection()]
+        [object[]]$Resources,
+
+        [Parameter(Mandatory = $true)]
+        [object[]]$RoleDefinitions
+    )
+
+    $currentTargetResources = @{}
+    $devRoleDefinition = @($RoleDefinitions | Where-Object { $_.ContainerAppTarget -eq 'dev' })
+    if ($devRoleDefinition.Count -ne 1) {
+        throw 'Container App target resolution requires exactly one development role.'
+    }
+
+    foreach ($roleDefinition in @($RoleDefinitions | Where-Object { $_.ContainerAppTarget -ne 'dev' })) {
+        $taggedResources = @(Get-TaggedResources -Resources $Resources -ResourceId $roleDefinition.ResourceId)
+        if ($taggedResources.Count -gt 1) {
+            throw "Tag '$($roleDefinition.ResourceId)' matched $($taggedResources.Count) resources. Each role must have exactly one resource in the target group."
+        }
+
+        if ($taggedResources.Count -eq 1) {
+            $resource = $taggedResources[0]
+            if ($resource.type -ne $roleDefinition.Type) {
+                throw "Tag '$($roleDefinition.ResourceId)' is on resource '$($resource.name)' of type '$($resource.type)', not expected type '$($roleDefinition.Type)'."
+            }
+
+            $currentTargetResources[$roleDefinition.Role] = $resource
+        }
+    }
+
+    $devTaggedResources = @(Get-TaggedResources -Resources $Resources -ResourceId $devRoleDefinition[0].ResourceId)
+    if ($devTaggedResources.Count -gt 1) {
+        if ($currentTargetResources.Count -gt 0) {
+            throw "Tag '$($devRoleDefinition[0].ResourceId)' matched $($devTaggedResources.Count) resources. Each role must have exactly one resource in the target group."
+        }
+
+        Resolve-LegacyContainerAppNames -Resources $Resources -RoleDefinitions $RoleDefinitions
+        return
+    }
+
+    if ($devTaggedResources.Count -eq 1) {
+        $devResource = $devTaggedResources[0]
+        if ($devResource.type -ne $devRoleDefinition[0].Type) {
+            throw "Tag '$($devRoleDefinition[0].ResourceId)' is on resource '$($devResource.name)' of type '$($devResource.type)', not expected type '$($devRoleDefinition[0].Type)'."
+        }
+
+        $currentTargetResources[$devRoleDefinition[0].Role] = $devResource
+    }
+
+    if ($currentTargetResources.Count -gt 0) {
+        foreach ($roleDefinition in $RoleDefinitions) {
+            $resource = $currentTargetResources[$roleDefinition.Role]
+            $resolvedName = if ($resource) { [string]$resource.name } else { '' }
+            Set-AzdEnvironmentValue -Name $roleDefinition.EnvironmentVariable -Value $resolvedName
+            if ($resource) {
+                Write-Host "Resolved '$($roleDefinition.ResourceId)' to '$resolvedName'." -ForegroundColor Green
+            }
+            else {
+                Write-Host "No resource found for '$($roleDefinition.ResourceId)'; Bicep will use its generated name." -ForegroundColor Yellow
+            }
+        }
+
+        return
+    }
+
+    Resolve-LegacyContainerAppNames -Resources $Resources -RoleDefinitions $RoleDefinitions
+}
+
 function Resolve-TaggedResourceNames {
     [CmdletBinding()]
     [OutputType([void])]
@@ -351,34 +557,13 @@ function Resolve-TaggedResourceNames {
         [object[]]$RoleDefinitions
     )
 
-    foreach ($roleDefinition in $RoleDefinitions) {
-        $expectedTagValue = $roleDefinition.ResourceId
-        $taggedResources = @($Resources | Where-Object {
-                (Get-ResourceTagValue -Resource $_ -TagKey 'resource-id') -eq $expectedTagValue
-            })
+    $containerAppRoleDefinitions = @($RoleDefinitions | Where-Object { $_.PSObject.Properties['ContainerAppTarget'] })
+    foreach ($roleDefinition in @($RoleDefinitions | Where-Object { -not $_.PSObject.Properties['ContainerAppTarget'] })) {
+        Resolve-TaggedResourceName -Resources $Resources -RoleDefinition $roleDefinition
+    }
 
-        if ($taggedResources.Count -eq 0) {
-            Set-AzdEnvironmentValue -Name $roleDefinition.EnvironmentVariable -Value ''
-            Write-Host "No resource found for '$expectedTagValue'; Bicep will use its generated name." -ForegroundColor Yellow
-            continue
-        }
-
-        if ($taggedResources.Count -ne 1) {
-            throw "Tag '$expectedTagValue' matched $($taggedResources.Count) resources. Each role must have exactly one resource in the target group."
-        }
-
-        $resource = $taggedResources[0]
-        if ($resource.type -ne $roleDefinition.Type) {
-            throw "Tag '$expectedTagValue' is on resource '$($resource.name)' of type '$($resource.type)', not expected type '$($roleDefinition.Type)'."
-        }
-
-        $exactNameProperty = $roleDefinition.PSObject.Properties['ExactName']
-        if ($exactNameProperty -and $resource.name -ne $exactNameProperty.Value) {
-            throw "Tag '$expectedTagValue' is on private DNS zone '$($resource.name)', not required zone '$($exactNameProperty.Value)'."
-        }
-
-        Set-AzdEnvironmentValue -Name $roleDefinition.EnvironmentVariable -Value $resource.name
-        Write-Host "Resolved '$expectedTagValue' to '$($resource.name)'." -ForegroundColor Green
+    if ($containerAppRoleDefinitions.Count -gt 0) {
+        Resolve-ContainerAppTargetNames -Resources $Resources -RoleDefinitions $containerAppRoleDefinitions
     }
 }
 
@@ -404,6 +589,7 @@ function Invoke-ResourceNameResolution {
     }
 
     $enablePrivateNetworking = Get-EnablePrivateNetworking
+    Set-AzdEnvironmentValue -Name 'EXISTING_CONTAINER_APP_NAME' -Value ''
     $roleDefinitions = @(Get-RoleDefinitions)
     $activeRoleDefinitions = @($roleDefinitions | Where-Object {
             $enablePrivateNetworking -or -not $_.RequiresPrivateNetworking

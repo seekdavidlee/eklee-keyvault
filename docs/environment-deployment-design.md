@@ -14,7 +14,7 @@ tags:
   - deployment
   - oidc
 ai_note: Created with AI assistance and requires maintainer review
-summary: Defines the CI environment-routing and temporary Container App lifecycle for branches and releases, including the separation from public GitHub releases.
+summary: Defines CI routing for permanent maintainer Container App targets and their separation from public GitHub releases.
 post_date: 2026-09-18
 author: Eklee KeyVault maintainers
 ms.date: 2026-09-19
@@ -247,10 +247,11 @@ flowchart LR
 Any non-`main` branch push creates a dedicated development Container App, but
 does not trigger hosted E2E unless the branch is `release/**`. The app reuses
 the existing `dev` managed identity and remains available until the branch is
-merged into a release branch, after which the cleanup action removes it. Only a
-same-repository `release/**` pull request merged into `main` triggers hosted
-E2E against its deployed release app. A release validation app follows the
-same lifecycle and is removed after the release is merged into `main`.
+merged into a release branch, after which the cleanup action removes its branch
+GHCR image. Main and `release/*` pushes update the corresponding permanent
+Container App by immutable digest, then run hosted E2E under a target-scoped
+FIFO queue. A feature or bugfix branch image is deployed only when a maintainer
+runs `Invoke-HostedE2E.ps1 -Current` locally against the permanent branch app.
 
 Use a semantic GHCR version or digest to identify a public release; do not infer
 that identity from the mutable GHCR `latest` tag.
@@ -262,17 +263,18 @@ for those changes.
 
 ## Verification Checklist
 
-* Confirm a non-`main` branch selects the `dev` GitHub Environment.
-* Confirm each branch deployment creates a distinct Container App.
-* Confirm branch Container Apps reuse the existing `dev` managed identity.
-* Confirm the cleanup action deletes a branch Container App after merge and leaves
-  the managed identity and shared infrastructure intact.
-* Confirm a `main` push does not select a GitHub Environment or deploy Azure
-  resources.
+* Confirm `Setup-Dev.ps1` configures the main, release, and branch custom domains
+  and reconciles all three redirect URLs.
+* Confirm `main` and `release/*` runs select the `dev` GitHub Environment, deploy
+  only their matching permanent target, and complete E2E before their target queue advances.
+* Confirm a feature or bugfix CI run publishes an immutable commit image without
+  selecting a GitHub Environment or deploying Azure resources.
+* Confirm the local branch command verifies its approved origin and commit digest
+  before updating only the permanent branch app.
 * Confirm the customer deployment process selects an immutable main image tag or
   digest before updating production.
-* Confirm a release deployment creates a distinct Container App and the cleanup
-  action deletes it after the release is merged into `main`.
+* Confirm a release merge publishes semantic release artifacts only after the
+  successful main deployment and E2E run for that exact merge SHA.
 * Confirm the configured dev OIDC subject and GitHub Environment protections
   match the setup model.
 * Confirm the dev E2E OIDC principal is distinct from deployment identities and
@@ -285,8 +287,8 @@ for those changes.
 ## References
 
 * [CI/CD workflow](../.github/workflows/cicd.yml)
-* [Hosted Playwright workflow](../.github/workflows/hosted-e2e.yml)
-* [Container App cleanup workflow](../.github/workflows/cleanup-container-app.yml)
+* [Release promotion workflow](../.github/workflows/release-promotion.yml)
+* [GHCR image cleanup workflow](../.github/workflows/cleanup-container-app.yml)
 * [Infrastructure deployment workflow](../.github/workflows/deploy-infra.yml)
 * [Bicep environment parameter](../Deployment/main.bicep)
 * [GitHub deployment setup](../Scripts/setup-gh-deploy.ps1)

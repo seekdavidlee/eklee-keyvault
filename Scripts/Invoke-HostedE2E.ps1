@@ -8,17 +8,13 @@
     Runs Playwright E2E tests against a deployed Container App.
 
 .DESCRIPTION
-    Resolves the deployed Container App and API authentication settings from
-    an azd environment, obtains an access token for the signed-in Azure CLI
-    identity, waits for the app to become healthy, and runs the local
-    Playwright tests against its HTTPS ingress URL.
+    Updates the permanent maintainer branch Container App with the immutable
+    image published for the checked-out feature or bugfix commit, waits for its
+    configured HTTPS URL to become healthy, and runs local Playwright tests.
 
 .PARAMETER Current
-    Targets the temporary Container App for the checked-out non-main branch.
-
-.PARAMETER Release
-    Targets the temporary Container App for the checked-out release branch.
-    The branch must use the release/MAJOR.MINOR.PATCH convention.
+    Updates and tests the permanent branch Container App from the checked-out
+    non-main, non-release branch.
 
 .PARAMETER ProfilePath
     Path to the maintainer profile used by Setup-Dev.ps1. Its environmentName
@@ -36,9 +32,6 @@
 .EXAMPLE
     ./Scripts/Invoke-HostedE2E.ps1 -Current
 
-.EXAMPLE
-    ./Scripts/Invoke-HostedE2E.ps1 -Release -Filter secrets-crud -Headed
-
 .NOTES
     Requires Azure CLI, Azure Developer CLI, Node.js, npm, and an authenticated
     Azure CLI identity with access to the deployed API.
@@ -46,11 +39,8 @@
 
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true, ParameterSetName = 'Current')]
+    [Parameter(Mandatory = $false)]
     [switch]$Current,
-
-    [Parameter(Mandatory = $true, ParameterSetName = 'Release')]
-    [switch]$Release,
 
     [Parameter(Mandatory = $false)]
     [ValidateNotNullOrEmpty()]
@@ -135,21 +125,25 @@ function Get-MaintainerDevTarget {
         throw "Maintainer profile '$Path' must contain one target object, not a target catalog."
     }
 
-    $environmentName = $target.PSObject.Properties['environmentName']
-    if ($null -eq $environmentName -or [string]::IsNullOrWhiteSpace([string]$environmentName.Value)) {
-        throw "Maintainer profile '$Path' requires a non-empty 'environmentName' property."
+    foreach ($propertyName in @(
+            'environmentName', 'subscriptionId', 'customBranchDomainName', 'approvedGitHubRepository'
+        )) {
+        $property = $target.PSObject.Properties[$propertyName]
+        if ($null -eq $property -or [string]::IsNullOrWhiteSpace([string]$property.Value)) {
+            throw "Maintainer profile '$Path' requires a non-empty '$propertyName' property. Run Setup-Dev.ps1 before hosted E2E."
+        }
     }
 
     return $target
 }
 
-function Get-BranchContainerAppName {
+function Get-BranchDeploymentIdentity {
     [CmdletBinding()]
-    [OutputType([string])]
+    [OutputType([psobject])]
     param(
         [Parameter(Mandatory = $true)]
-        [ValidateSet('Current', 'Release')]
-        [string]$TargetMode
+        [ValidatePattern('^[^/\s]+/[^/\s]+$')]
+        [string]$ApprovedGitHubRepository
     )
 
     $branchName = (& git branch --show-current 2>$null | Out-String).Trim()
@@ -157,30 +151,70 @@ function Get-BranchContainerAppName {
         throw 'Unable to determine the current Git branch. Check out a branch before running hosted E2E.'
     }
 
-    if ($branchName -eq 'main') {
-        throw 'Hosted E2E cannot target main. Check out the branch or release deployment to test.'
+    if ($branchName -eq 'main' -or $branchName -like 'release/*') {
+        throw "Hosted E2E only updates the permanent branch target. Check out a non-main, non-release branch instead of '$branchName'."
     }
 
-    if ($TargetMode -eq 'Release' -and $branchName -notmatch '^release/(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') {
-        throw "Release mode requires a release/MAJOR.MINOR.PATCH branch. Current branch is '$branchName'."
+    $commitSha = (& git rev-parse HEAD 2>$null | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0 -or $commitSha -notmatch '^[a-fA-F0-9]{40}$') {
+        throw 'Unable to resolve the current 40-character Git commit SHA.'
     }
 
-    $kind = if ($branchName -like 'release/*') { 'release' } else { 'branch' }
-    $normalizedName = ($branchName.ToLowerInvariant() -replace '[^a-z0-9]+', '-').Trim('-')
-    if ([string]::IsNullOrWhiteSpace($normalizedName)) {
-        throw "Current Git branch '$branchName' cannot be converted to a Container App name."
+    $originUrl = (& git remote get-url origin 2>$null | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Unable to resolve the Git origin remote.'
     }
 
-    $hash = [System.Convert]::ToHexString(
-        [System.Security.Cryptography.SHA256]::HashData([System.Text.Encoding]::UTF8.GetBytes($branchName))
-    ).Substring(0, 7).ToLowerInvariant()
-    $slug = $normalizedName.Substring(0, [Math]::Min(12, $normalizedName.Length)).TrimEnd('-')
-    $containerAppName = "ekv-$kind-$slug-$hash"
-    if ($containerAppName.Length -gt 32) {
-        throw "Derived Container App name '$containerAppName' exceeds Azure's 32-character limit."
+    $originMatch = [regex]::Match(
+        $originUrl,
+        '^(?:https://|ssh://git@|git@)github\.com(?::|/)(?<owner>[^/\s]+)/(?<repository>[^/\s]+?)(?:\.git)?/?$'
+    )
+    if (-not $originMatch.Success) {
+        throw "Git remote '$originUrl' is not a supported GitHub origin URL."
     }
 
-    return $containerAppName
+    $repository = "$($originMatch.Groups['owner'].Value)/$($originMatch.Groups['repository'].Value)"
+    if (-not [string]::Equals($repository, $ApprovedGitHubRepository, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Git origin '$repository' does not match the maintainer-approved repository '$ApprovedGitHubRepository'."
+    }
+
+    return [pscustomobject]@{
+        BranchName = $branchName
+        CommitSha  = $commitSha.ToLowerInvariant()
+        Repository = $repository
+    }
+}
+
+function Get-ImmutableGitHubContainerImage {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidatePattern('^[^/\s]+/[^/\s]+$')]
+        [string]$GitHubRepository,
+
+        [Parameter(Mandatory = $true)]
+        [ValidatePattern('^[a-f0-9]{40}$')]
+        [string]$CommitSha
+    )
+
+    $resolvedRepository = (& gh api "repos/$GitHubRepository" --jq '.full_name' 2>$null | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0 -or -not [string]::Equals($resolvedRepository, $GitHubRepository, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Unable to verify the approved GitHub repository '$GitHubRepository'."
+    }
+
+    $resolvedCommit = (& gh api "repos/$GitHubRepository/commits/$CommitSha" --jq '.sha' 2>$null | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0 -or -not [string]::Equals($resolvedCommit, $CommitSha, [System.StringComparison]::OrdinalIgnoreCase)) {
+        throw "Commit '$CommitSha' is not available in approved GitHub repository '$GitHubRepository'."
+    }
+
+    $imageTag = "ghcr.io/$($GitHubRepository.ToLowerInvariant()):sha-$CommitSha"
+    $digest = (& docker buildx imagetools inspect $imageTag --format '{{.Digest}}' 2>$null | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0 -or $digest -notmatch '^sha256:[a-f0-9]{64}$') {
+        throw "No immutable GHCR image digest was found for '$imageTag'. Wait for CI to publish this commit."
+    }
+
+    return "ghcr.io/$($GitHubRepository.ToLowerInvariant())@$digest"
 }
 
 function Get-CurrentAzureValue {
@@ -219,29 +253,121 @@ function Get-HostedTarget {
 
         [Parameter(Mandatory = $true)]
         [ValidateNotNullOrEmpty()]
-        [string]$SubscriptionId
+        [string]$SubscriptionId,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$ExpectedBaseUrl
     )
 
-    $fqdn = & az containerapp show `
+    $containerApp = & az containerapp show `
         --name $ContainerAppName `
         --resource-group $ResourceGroupName `
         --subscription $SubscriptionId `
-        --query properties.configuration.ingress.fqdn `
         --only-show-errors `
-        --output tsv 2>$null
-    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($fqdn)) {
+        --output json 2>$null | ConvertFrom-Json
+    if ($LASTEXITCODE -ne 0 -or $null -eq $containerApp) {
         throw "Unable to resolve Container App '$ContainerAppName' in resource group '$ResourceGroupName'."
     }
 
-    $baseUrl = "https://$(($fqdn | Out-String).Trim())".TrimEnd('/')
     $parsedUri = $null
-    if (-not [System.Uri]::TryCreate($baseUrl, [System.UriKind]::Absolute, [ref]$parsedUri) -or $parsedUri.Scheme -ne 'https') {
-        throw "Container App '$ContainerAppName' returned an invalid HTTPS ingress URL."
+    if (-not [System.Uri]::TryCreate($ExpectedBaseUrl, [System.UriKind]::Absolute, [ref]$parsedUri) -or $parsedUri.Scheme -ne 'https') {
+        throw "Configured branch target URL '$ExpectedBaseUrl' is not an HTTPS URL."
+    }
+
+    $customDomainNames = @($containerApp.properties.configuration.ingress.customDomains | ForEach-Object { [string]$_.name })
+    if ($customDomainNames -notcontains $parsedUri.Host) {
+        throw "Container App '$ContainerAppName' does not include configured custom domain '$($parsedUri.Host)'. Run Setup-Dev.ps1 to reconcile permanent target domains."
     }
 
     return [pscustomobject]@{
-        BaseUrl = $baseUrl
+        BaseUrl = $parsedUri.AbsoluteUri.TrimEnd('/')
         Fqdn    = $parsedUri.Host
+    }
+}
+
+function Get-BranchRuntimeConfiguration {
+    [CmdletBinding()]
+    [OutputType([psobject])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$ResourceGroupName,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$SubscriptionId
+    )
+
+    $identityClientId = Get-CurrentAzureValue -Arguments @('identity', 'list', '--resource-group', $ResourceGroupName, '--subscription', $SubscriptionId, '--query', '[0].clientId')
+    $keyVaultUri = Get-CurrentAzureValue -Arguments @('keyvault', 'list', '--resource-group', $ResourceGroupName, '--subscription', $SubscriptionId, '--query', '[0].properties.vaultUri')
+    $storageBlobUri = Get-CurrentAzureValue -Arguments @('storage', 'account', 'list', '--resource-group', $ResourceGroupName, '--subscription', $SubscriptionId, '--query', '[0].primaryEndpoints.blob')
+    if ([string]::IsNullOrWhiteSpace($identityClientId) -or
+        [string]::IsNullOrWhiteSpace($keyVaultUri) -or
+        [string]::IsNullOrWhiteSpace($storageBlobUri)) {
+        throw "Unable to resolve complete branch runtime configuration in resource group '$ResourceGroupName'."
+    }
+
+    return [pscustomobject]@{
+        IdentityClientId = $identityClientId
+        KeyVaultUri      = $keyVaultUri
+        StorageBlobUri   = $storageBlobUri
+    }
+}
+
+function Update-BranchContainerApp {
+    [CmdletBinding()]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$ResourceGroupName,
+
+        [Parameter(Mandatory = $true)]
+        [string]$SubscriptionId,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ContainerAppName,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Image,
+
+        [Parameter(Mandatory = $true)]
+        [string]$BaseUrl,
+
+        [Parameter(Mandatory = $true)]
+        [string]$TenantId,
+
+        [Parameter(Mandatory = $true)]
+        [string]$ClientId,
+
+        [Parameter(Mandatory = $true)]
+        [psobject]$RuntimeConfiguration
+    )
+
+    & az containerapp update `
+        --name $ContainerAppName `
+        --resource-group $ResourceGroupName `
+        --subscription $SubscriptionId `
+        --image $Image `
+        --min-replicas 1 `
+        --max-replicas 1 `
+        --set-env-vars `
+        "AZURE_CLIENT_ID=$($RuntimeConfiguration.IdentityClientId)" `
+        "StorageUri=$($RuntimeConfiguration.StorageBlobUri)" `
+        'StorageContainerName=configs' `
+        "KeyVaultUri=$($RuntimeConfiguration.KeyVaultUri)" `
+        'AuthenticationMode=mi' `
+        'AzureAd__Instance=https://login.microsoftonline.com/' `
+        "AzureAd__TenantId=$TenantId" `
+        "AzureAd__ClientId=$ClientId" `
+        "AzureAd__Audience=api://$ClientId" `
+        "VITE_AZURE_AD_CLIENT_ID=$ClientId" `
+        "VITE_AZURE_AD_AUTHORITY=https://login.microsoftonline.com/$TenantId" `
+        "VITE_AZURE_AD_REDIRECT_URI=$BaseUrl" `
+        "VITE_API_BASE_URL=$BaseUrl" `
+        --only-show-errors
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to update permanent branch Container App '$ContainerAppName'."
     }
 }
 
@@ -292,8 +418,15 @@ if ($MyInvocation.InvocationName -ne '.') {
     )
 
     try {
+        if (-not $Current) {
+            throw 'Supply -Current to update and test the permanent branch target.'
+        }
+
         Test-CommandAvailable -CommandName 'az'
         Test-CommandAvailable -CommandName 'azd'
+        Test-CommandAvailable -CommandName 'docker'
+        Test-CommandAvailable -CommandName 'gh'
+        Test-CommandAvailable -CommandName 'git'
         Test-CommandAvailable -CommandName 'node'
         Test-CommandAvailable -CommandName 'npm'
 
@@ -304,16 +437,7 @@ if ($MyInvocation.InvocationName -ne '.') {
 
         $maintainerTarget = Get-MaintainerDevTarget -Path $ProfilePath
         $environmentName = [string]$maintainerTarget.environmentName
-        if ($Current) {
-            $targetMode = 'Current'
-        }
-        elseif ($Release) {
-            $targetMode = 'Release'
-        }
-        else {
-            throw 'Select either -Current or -Release.'
-        }
-        $containerAppName = Get-BranchContainerAppName -TargetMode $targetMode
+        $branchIdentity = Get-BranchDeploymentIdentity -ApprovedGitHubRepository ([string]$maintainerTarget.approvedGitHubRepository)
 
         $resourceGroupName = Get-AzdEnvironmentValue -EnvironmentName $environmentName -Name 'resourceGroupName'
         if ([string]::IsNullOrWhiteSpace($resourceGroupName)) {
@@ -327,30 +451,64 @@ if ($MyInvocation.InvocationName -ne '.') {
 
         $tenantId = Get-AzdEnvironmentValue -EnvironmentName $environmentName -Name 'AZURE_TENANT_ID'
         if ([string]::IsNullOrWhiteSpace($tenantId)) {
-            $tenantId = Get-CurrentAzureValue -Arguments @('account', 'show', '--query', 'tenantId')
-        }
-        if ([string]::IsNullOrWhiteSpace($tenantId)) {
             throw "Unable to resolve the Azure tenant for azd environment '$environmentName'."
         }
 
         $subscriptionId = Get-AzdEnvironmentValue -EnvironmentName $environmentName -Name 'AZURE_SUBSCRIPTION_ID'
         if ([string]::IsNullOrWhiteSpace($subscriptionId)) {
-            $subscriptionId = Get-CurrentAzureValue -Arguments @('account', 'show', '--query', 'id')
-        }
-        if ([string]::IsNullOrWhiteSpace($subscriptionId)) {
             throw "Unable to resolve the Azure subscription for azd environment '$environmentName'."
         }
+        if (-not [string]::Equals($subscriptionId, [string]$maintainerTarget.subscriptionId, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "azd environment '$environmentName' subscription '$subscriptionId' does not match the maintainer profile subscription."
+        }
+
+        $activeSubscriptionId = Get-CurrentAzureValue -Arguments @('account', 'show', '--query', 'id')
+        if (-not [string]::Equals($activeSubscriptionId, $subscriptionId, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "Azure CLI is using subscription '$activeSubscriptionId', not maintainer subscription '$subscriptionId'."
+        }
+
+        $containerAppName = Get-AzdEnvironmentValue -EnvironmentName $environmentName -Name 'branchContainerAppName'
+        $branchBaseUrl = Get-AzdEnvironmentValue -EnvironmentName $environmentName -Name 'branchContainerAppUrl'
+        if ([string]::IsNullOrWhiteSpace($containerAppName) -or [string]::IsNullOrWhiteSpace($branchBaseUrl)) {
+            throw "azd environment '$environmentName' does not define the permanent branch target. Run Setup-Dev.ps1 first."
+        }
+
+        $branchUri = $null
+        if (-not [System.Uri]::TryCreate($branchBaseUrl, [System.UriKind]::Absolute, [ref]$branchUri) -or
+            $branchUri.Scheme -ne 'https' -or
+            -not [string]::Equals($branchUri.Host, [string]$maintainerTarget.customBranchDomainName, [System.StringComparison]::OrdinalIgnoreCase)) {
+            throw "azd branch target URL '$branchBaseUrl' does not match configured HTTPS branch domain '$($maintainerTarget.customBranchDomainName)'."
+        }
+
+        $image = Get-ImmutableGitHubContainerImage `
+            -GitHubRepository $branchIdentity.Repository `
+            -CommitSha $branchIdentity.CommitSha
 
         Write-Host "Environment     : $environmentName" -ForegroundColor Cyan
-        Write-Host "Branch          : $((& git branch --show-current 2>$null | Out-String).Trim())" -ForegroundColor Cyan
+        Write-Host "Branch          : $($branchIdentity.BranchName)" -ForegroundColor Cyan
+        Write-Host "Commit          : $($branchIdentity.CommitSha)" -ForegroundColor Cyan
         Write-Host "Resource group  : $resourceGroupName" -ForegroundColor Cyan
         Write-Host "Container App   : $containerAppName" -ForegroundColor Cyan
 
         $target = Get-HostedTarget `
             -ResourceGroupName $resourceGroupName `
             -ContainerAppName $containerAppName `
-            -SubscriptionId $subscriptionId
+            -SubscriptionId $subscriptionId `
+            -ExpectedBaseUrl $branchBaseUrl
         Write-Host "Target URL      : $($target.BaseUrl)" -ForegroundColor Green
+
+        $runtimeConfiguration = Get-BranchRuntimeConfiguration `
+            -ResourceGroupName $resourceGroupName `
+            -SubscriptionId $subscriptionId
+        Update-BranchContainerApp `
+            -ResourceGroupName $resourceGroupName `
+            -SubscriptionId $subscriptionId `
+            -ContainerAppName $containerAppName `
+            -Image $image `
+            -BaseUrl $target.BaseUrl `
+            -TenantId $tenantId `
+            -ClientId $clientId `
+            -RuntimeConfiguration $runtimeConfiguration
 
         Wait-ForHostedApp -BaseUrl $target.BaseUrl
 

@@ -35,6 +35,15 @@ param clientId string = ''
 @description('The full container image reference including digest (set by preprovision hook)')
 param containerImage string
 
+@description('Custom HTTPS domain for the stable main development target')
+param customDevDomainName string = ''
+
+@description('Custom HTTPS domain for the stable release target')
+param customReleaseDomainName string = ''
+
+@description('Custom HTTPS domain for the stable branch target')
+param customBranchDomainName string = ''
+
 @description('The full immutable Microsoft Entra ID Auth SDK sidecar image reference')
 param miseSidecarImage string = ''
 
@@ -59,8 +68,14 @@ param existingManagedIdentityName string = ''
 @description('Existing Container Apps environment name resolved from its resource-id tag')
 param existingContainerAppEnvironmentName string = ''
 
-@description('Existing Container App name resolved from its resource-id tag')
-param existingContainerAppName string = ''
+@description('Existing main development Container App name resolved from its resource-id tag')
+param existingDevContainerAppName string = ''
+
+@description('Existing release Container App name resolved from its resource-id tag')
+param existingReleaseContainerAppName string = ''
+
+@description('Existing branch Container App name resolved from its resource-id tag')
+param existingBranchContainerAppName string = ''
 
 @description('Existing virtual network name resolved from its resource-id tag')
 param existingVirtualNetworkName string = ''
@@ -128,6 +143,9 @@ module resources 'azd-resources.bicep' = {
     tenantId: tenantId
     clientId: clientId
     containerImage: containerImage
+    customDevDomainName: customDevDomainName
+    customReleaseDomainName: customReleaseDomainName
+    customBranchDomainName: customBranchDomainName
     miseSidecarImage: miseSidecarImage
     enableMiseSidecar: enableMiseSidecar
     enablePrivateNetworking: enablePrivateNetworking
@@ -136,7 +154,9 @@ module resources 'azd-resources.bicep' = {
     existingLogAnalyticsWorkspaceName: existingLogAnalyticsWorkspaceName
     existingManagedIdentityName: existingManagedIdentityName
     existingContainerAppEnvironmentName: existingContainerAppEnvironmentName
-    existingContainerAppName: existingContainerAppName
+    existingDevContainerAppName: existingDevContainerAppName
+    existingReleaseContainerAppName: existingReleaseContainerAppName
+    existingBranchContainerAppName: existingBranchContainerAppName
     existingVirtualNetworkName: existingVirtualNetworkName
     existingContainerAppNsgName: existingContainerAppNsgName
     existingResourceNsgName: existingResourceNsgName
@@ -188,3 +208,21 @@ output containerAppFqdn string = resources.outputs.containerAppFqdn
 
 @description('The full URL of the Container App')
 output containerAppUrl string = resources.outputs.containerAppUrl
+
+@description('The name of the stable main development Container App')
+output devContainerAppName string = resources.outputs.devContainerAppName
+
+@description('The full URL of the stable main development Container App')
+output devContainerAppUrl string = resources.outputs.devContainerAppUrl
+
+@description('The name of the stable release Container App')
+output releaseContainerAppName string = resources.outputs.releaseContainerAppName
+
+@description('The full URL of the stable release Container App')
+output releaseContainerAppUrl string = resources.outputs.releaseContainerAppUrl
+
+@description('The name of the stable branch Container App')
+output branchContainerAppName string = resources.outputs.branchContainerAppName
+
+@description('The full URL of the stable branch Container App')
+output branchContainerAppUrl string = resources.outputs.branchContainerAppUrl
