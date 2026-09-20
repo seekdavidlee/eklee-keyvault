@@ -44,6 +44,11 @@ export interface SecretGenerationResponse {
   value: string;
 }
 
+/** Problem-details response returned for a failed API request. */
+export interface ApiProblemDetails {
+  detail?: string;
+}
+
 /** Authorization role for a user in the application. */
 export type UserRole = 'Admin' | 'User';
 

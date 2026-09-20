@@ -76,7 +76,14 @@ test.describe('Secrets CRUD', () => {
     await page.getByRole('button', { name: /create secret/i }).click();
     await page.getByLabel(/secret name/i).fill(secretName);
     await page.getByRole('button', { name: /advanced settings/i }).click();
+    await page.getByLabel(/total length/i).fill('4');
+    await page.getByRole('button', { name: /generate secret/i }).click();
+    const secretDialog = page.getByRole('dialog');
+    await expect(secretDialog.getByRole('alert')).toHaveText(
+      'The sum of character category minimums cannot exceed the total length.'
+    );
     await page.getByLabel(/total length/i).fill('24');
+    await expect(secretDialog.getByRole('alert')).not.toBeVisible();
     await page.getByLabel(/minimum alphabetic characters/i).fill('7');
     await page.getByLabel(/minimum numeric characters/i).fill('5');
     await page.getByLabel(/minimum special characters/i).fill('4');

@@ -1,4 +1,5 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { isAxiosError } from 'axios';
 import {
   Accordion,
   AccordionDetails,
@@ -39,7 +40,7 @@ import { DataGrid, type GridColDef } from '@mui/x-data-grid';
 import { deleteSecret, generateSecret, getSecrets, getSecretValue, setSecret } from '../services/secretsService';
 import { getMetadata, updateMetadata } from '../services/metadataService';
 import { useUser } from '../auth/UserContext';
-import type { SecretGenerationRequest, SecretItemMetaList, SecretItemView } from '../types';
+import type { ApiProblemDetails, SecretGenerationRequest, SecretItemMetaList, SecretItemView } from '../types';
 
 /** Placeholder text shown instead of the actual secret value. */
 const PLACEHOLDER_VALUE = '***';
@@ -50,6 +51,14 @@ const DEFAULT_SECRET_GENERATION_POLICY: SecretGenerationRequest = {
   minimumNumericCharacters: 1,
   minimumSpecialCharacters: 3,
 };
+
+function getSecretGenerationErrorMessage(error: unknown): string {
+  if (isAxiosError<ApiProblemDetails>(error) && error.response?.data.detail) {
+    return error.response.data.detail;
+  }
+
+  return error instanceof Error ? error.message : 'Failed to generate secret.';
+}
 
 /** Extended view model with mutable client-side state for display name editing and secret reveal. */
 interface SecretRow extends SecretItemView {
@@ -80,6 +89,7 @@ export function Dashboard() {
   const [secretDialogValue, setSecretDialogValue] = useState('');
   const [secretDialogSaving, setSecretDialogSaving] = useState(false);
   const [secretDialogGenerating, setSecretDialogGenerating] = useState(false);
+  const [secretGenerationError, setSecretGenerationError] = useState<string | null>(null);
   const [secretGenerationPolicy, setSecretGenerationPolicy] = useState<SecretGenerationRequest>(
     DEFAULT_SECRET_GENERATION_POLICY
   );
@@ -301,6 +311,7 @@ export function Dashboard() {
     setSecretDialogMode('create');
     setSecretDialogName('');
     setSecretDialogValue('');
+    setSecretGenerationError(null);
     setSecretGenerationPolicy(DEFAULT_SECRET_GENERATION_POLICY);
     secretGenerationInProgress.current = false;
     setSecretDialogGenerating(false);
@@ -311,6 +322,7 @@ export function Dashboard() {
     setSecretDialogMode('update');
     setSecretDialogName(row.name);
     setSecretDialogValue('');
+    setSecretGenerationError(null);
     setSecretGenerationPolicy(DEFAULT_SECRET_GENERATION_POLICY);
     secretGenerationInProgress.current = false;
     setSecretDialogGenerating(false);
@@ -325,12 +337,14 @@ export function Dashboard() {
     setSecretDialogOpen(false);
     setSecretDialogName('');
     setSecretDialogValue('');
+    setSecretGenerationError(null);
     setSecretGenerationPolicy(DEFAULT_SECRET_GENERATION_POLICY);
   }, []);
 
   const handleGenerateSecret = useCallback(async () => {
     setError(null);
     setSuccess(null);
+    setSecretGenerationError(null);
     secretGenerationInProgress.current = true;
     setSecretDialogGenerating(true);
 
@@ -338,7 +352,7 @@ export function Dashboard() {
       const generatedValue = await generateSecret(secretGenerationPolicy);
       setSecretDialogValue(generatedValue);
     } catch (err) {
-      setError(err instanceof Error ? err.message : 'Failed to generate secret.');
+      setSecretGenerationError(getSecretGenerationErrorMessage(err));
     } finally {
       secretGenerationInProgress.current = false;
       setSecretDialogGenerating(false);
@@ -348,6 +362,7 @@ export function Dashboard() {
   const handleSecretGenerationPolicyChange = useCallback(
     (field: keyof SecretGenerationRequest, value: string) => {
       const numericValue = Number(value);
+      setSecretGenerationError(null);
       setSecretGenerationPolicy((currentPolicy) => ({
         ...currentPolicy,
         [field]: Number.isFinite(numericValue) ? numericValue : 0,
@@ -630,6 +645,11 @@ export function Dashboard() {
           {secretDialogMode === 'create' ? 'Create Secret' : 'Update Secret Value'}
         </DialogTitle>
         <DialogContent>
+          {secretGenerationError && (
+            <Alert severity="error" sx={{ mt: 1 }}>
+              {secretGenerationError}
+            </Alert>
+          )}
           <TextField
             label="Secret Name"
             fullWidth
