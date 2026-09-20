@@ -1,4 +1,4 @@
-import { test, expect } from '@playwright/test';
+import { test, expect, type Page } from '@playwright/test';
 import { seedMsalSession } from './helpers/msal-seed';
 
 const clientId = process.env.E2E_CLIENT_ID ?? '';
@@ -8,6 +8,15 @@ const specialCharacters = '!@#$%^&*_-+=';
 
 function countSpecialCharacters(value: string): number {
   return Array.from(value).filter((character) => specialCharacters.includes(character)).length;
+}
+
+async function generateSecretValue(page: Page): Promise<string> {
+  const secretValueField = page.getByRole('textbox', { name: /secret value/i });
+
+  await page.getByRole('button', { name: /generate secret/i }).click();
+  await expect(secretValueField).toHaveValue(/.+/, { timeout: 15_000 });
+
+  return secretValueField.inputValue();
 }
 
 test.describe('Secrets CRUD', () => {
@@ -65,8 +74,7 @@ test.describe('Secrets CRUD', () => {
 
     // Generating then cancelling must not persist a new secret.
     await page.getByLabel(/secret name/i).fill(cancelledSecretName);
-    await page.getByRole('button', { name: /generate secret/i }).click();
-    const cancelledCreateValue = await page.getByRole('textbox', { name: /secret value/i }).inputValue();
+    const cancelledCreateValue = await generateSecretValue(page);
     expect(cancelledCreateValue).toHaveLength(15);
     expect(countSpecialCharacters(cancelledCreateValue)).toBeGreaterThanOrEqual(3);
     await page.getByRole('button', { name: /^cancel$/i }).click();
@@ -87,8 +95,7 @@ test.describe('Secrets CRUD', () => {
     await page.getByLabel(/minimum alphabetic characters/i).fill('7');
     await page.getByLabel(/minimum numeric characters/i).fill('5');
     await page.getByLabel(/minimum special characters/i).fill('4');
-    await page.getByRole('button', { name: /generate secret/i }).click();
-    const createdSecretValue = await page.getByRole('textbox', { name: /secret value/i }).inputValue();
+    const createdSecretValue = await generateSecretValue(page);
     expect(createdSecretValue).toHaveLength(24);
     expect(Array.from(createdSecretValue).filter((character) => /[A-Za-z]/.test(character)).length).toBeGreaterThanOrEqual(7);
     expect(Array.from(createdSecretValue).filter((character) => /\d/.test(character)).length).toBeGreaterThanOrEqual(5);
@@ -121,8 +128,7 @@ test.describe('Secrets CRUD', () => {
     await expect(page.getByLabel(/secret name/i)).toBeDisabled();
 
     // Generating then cancelling must retain the persisted value.
-    await page.getByRole('button', { name: /generate secret/i }).click();
-    const cancelledUpdateValue = await page.getByRole('textbox', { name: /secret value/i }).inputValue();
+    const cancelledUpdateValue = await generateSecretValue(page);
     expect(cancelledUpdateValue).toHaveLength(15);
     expect(countSpecialCharacters(cancelledUpdateValue)).toBeGreaterThanOrEqual(3);
     await page.getByRole('button', { name: /^cancel$/i }).click();
@@ -131,8 +137,7 @@ test.describe('Secrets CRUD', () => {
 
     // Generate the default value and save it using the existing update action.
     await secretRow.getByRole('button', { name: /update secret value/i }).click();
-    await page.getByRole('button', { name: /generate secret/i }).click();
-    const updatedSecretValue = await page.getByRole('textbox', { name: /secret value/i }).inputValue();
+    const updatedSecretValue = await generateSecretValue(page);
     expect(updatedSecretValue).toHaveLength(15);
     expect(countSpecialCharacters(updatedSecretValue)).toBeGreaterThanOrEqual(3);
     await page.getByRole('button', { name: /^update$/i }).click();
