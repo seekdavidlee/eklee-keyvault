@@ -23,7 +23,7 @@ function addTestUrlAnnotation(testInfo: TestInfo): void {
 
 export const test = base.extend<ReportUrlFixture>({
   reportTestUrl: [
-    async (_fixtures, use, testInfo) => {
+    async ({}, use, testInfo) => {
       addTestUrlAnnotation(testInfo);
       await use();
     },
