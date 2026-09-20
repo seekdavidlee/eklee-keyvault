@@ -172,7 +172,7 @@ jobs:
           docker push ${{ steps.image-tag.outputs.repository }}:${{ steps.image-tag.outputs.commit_tag }}
           digest=$(docker buildx imagetools inspect \
             ${{ steps.image-tag.outputs.repository }}:${{ steps.image-tag.outputs.commit_tag }} \
-            --format '{{.Digest}}')
+              --format '{{.Manifest.Digest}}')
           echo "image=${{ steps.image-tag.outputs.repository }}@$digest" >> "$GITHUB_OUTPUT"
 
       - name: Tag and push additional tags
