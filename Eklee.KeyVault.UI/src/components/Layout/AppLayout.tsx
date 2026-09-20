@@ -33,7 +33,7 @@ export function AppLayout({ children }: AppLayoutProps) {
   const displayName = accounts[0]?.name ?? 'Unknown';
 
   const header = 'KeyVault Client';
-  const footer = 'KeyVault Client 2024';
+  const footer = `KeyVault Client ${new Date().getFullYear()}`;
 
   const handleSignOut = () => {
     instance.logoutRedirect();
