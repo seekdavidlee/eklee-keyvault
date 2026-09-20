@@ -1,4 +1,5 @@
-import { test, expect, type Page } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import { test, expect } from './fixtures';
 import { seedMsalSession } from './helpers/msal-seed';
 
 const clientId = process.env.E2E_CLIENT_ID ?? '';
