@@ -101,7 +101,8 @@ az deployment group create `
 
 # Assign managed identity RBAC roles (required after a direct Azure CLI deployment)
 .\assign-mi-rbac.ps1 `
-  -ResourceGroup $resourceGroup
+  -ResourceGroup $resourceGroup `
+  -SubscriptionId <subscription-id>
 ```
 
 > **Note:** Set `enablePrivateNetworking` to `true` (default in the GitHub Actions workflow) to deploy with a VNET, private endpoints for Storage and Key Vault, and disabled public network access. Set to `false` for public network access.
@@ -124,7 +125,8 @@ az deployment group create `
 
 # Assign managed identity RBAC roles (required after a direct Azure CLI deployment)
 .\assign-mi-rbac.ps1 `
-  -ResourceGroup $resourceGroup
+  -ResourceGroup $resourceGroup `
+  -SubscriptionId <subscription-id>
 ```
 
 ### Deploy with What-If Analysis
@@ -157,7 +159,8 @@ RBAC role assignments are managed outside of Bicep to:
 ```powershell
 # Run the RBAC assignment script after a direct Azure CLI deployment
 .\assign-mi-rbac.ps1 `
-  -ResourceGroup eklee-keyvault-dev-rg
+  -ResourceGroup eklee-keyvault-dev-rg `
+  -SubscriptionId <subscription-id>
 ```
 
 The script assigns these roles to the managed identity:
@@ -356,7 +359,7 @@ Quick commands for common operations with your deployed infrastructure.
 #### Assign Roles to Managed Identity
 ```powershell
 # Assign all required roles at once
-.\assign-mi-rbac.ps1 -ResourceGroup eklee-keyvault-dev-rg
+.\assign-mi-rbac.ps1 -ResourceGroup eklee-keyvault-dev-rg -SubscriptionId <subscription-id>
 ```
 
 #### Verify Role Assignments

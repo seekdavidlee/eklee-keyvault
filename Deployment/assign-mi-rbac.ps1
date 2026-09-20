@@ -12,17 +12,25 @@
 .PARAMETER ResourceGroup
     The name of the Azure resource group containing the deployed infrastructure.
 
-.EXAMPLE
-    .\assign-mi-rbac.ps1 -ResourceGroup eklee-keyvault-dev-rg
+.PARAMETER SubscriptionId
+    The Azure subscription ID containing the deployed infrastructure.
 
 .EXAMPLE
-    .\assign-mi-rbac.ps1 -ResourceGroup eklee-keyvault-prod-rg
+    .\assign-mi-rbac.ps1 -ResourceGroup eklee-keyvault-dev-rg -SubscriptionId <subscription-id>
+
+.EXAMPLE
+    .\assign-mi-rbac.ps1 -ResourceGroup eklee-keyvault-prod-rg -SubscriptionId <subscription-id>
 #>
 
 [CmdletBinding()]
 param(
     [Parameter(Mandatory = $true)]
-    [string]$ResourceGroup
+    [ValidateNotNullOrEmpty()]
+    [string]$ResourceGroup,
+
+    [Parameter(Mandatory = $true)]
+    [ValidatePattern('^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$')]
+    [string]$SubscriptionId
 )
 
 # ============================================================================
@@ -62,7 +70,8 @@ function Test-RoleAssignment {
     param(
         [string]$PrincipalId,
         [string]$RoleDefinitionName,
-        [string]$Scope
+        [string]$Scope,
+        [string]$SubscriptionId
     )
     
     try {
@@ -70,6 +79,7 @@ function Test-RoleAssignment {
             --assignee $PrincipalId `
             --role $RoleDefinitionName `
             --scope $Scope `
+            --subscription $SubscriptionId `
             --output json 2>$null | ConvertFrom-Json
         
         return $null -ne $existing -and $existing.Count -gt 0
@@ -84,12 +94,13 @@ function New-RoleAssignment {
         [string]$PrincipalId,
         [string]$RoleDefinitionName,
         [string]$Scope,
+        [string]$SubscriptionId,
         [string]$Description
     )
     
     Write-Step "Assigning '$RoleDefinitionName' role..."
     
-    if (Test-RoleAssignment -PrincipalId $PrincipalId -RoleDefinitionName $RoleDefinitionName -Scope $Scope) {
+    if (Test-RoleAssignment -PrincipalId $PrincipalId -RoleDefinitionName $RoleDefinitionName -Scope $Scope -SubscriptionId $SubscriptionId) {
         Write-Success "Role already assigned: $RoleDefinitionName"
         return $true
     }
@@ -99,6 +110,7 @@ function New-RoleAssignment {
             --assignee $PrincipalId `
             --role $RoleDefinitionName `
             --scope $Scope `
+            --subscription $SubscriptionId `
             --output none
         
         if ($LASTEXITCODE -eq 0) {
@@ -124,7 +136,7 @@ Write-Header "RBAC Role Assignment - Eklee KeyVault Infrastructure"
 
 # Check if resource group exists
 Write-Step "Checking resource group '$ResourceGroup'..."
-$rgExists = az group exists --name $ResourceGroup
+$rgExists = az group exists --name $ResourceGroup --subscription $SubscriptionId
 if ($rgExists -ne 'true') {
     Write-Error "Resource group '$ResourceGroup' does not exist"
     exit 1
@@ -141,6 +153,7 @@ Write-Header "Discovering Resources"
 Write-Step "Looking up managed identity..."
 $identities = az identity list `
     --resource-group $ResourceGroup `
+    --subscription $SubscriptionId `
     --output json | ConvertFrom-Json
 
 if (-not $identities -or $identities.Count -eq 0) {
@@ -162,6 +175,7 @@ Write-Success "Found managed identity: $managedIdentityName"
 Write-Step "Looking up Key Vault..."
 $keyVaults = az keyvault list `
     --resource-group $ResourceGroup `
+    --subscription $SubscriptionId `
     --output json | ConvertFrom-Json
 
 if (-not $keyVaults -or $keyVaults.Count -eq 0) {
@@ -180,6 +194,7 @@ Write-Success "Found Key Vault: $keyVaultName"
 Write-Step "Looking up Storage Account..."
 $storageAccounts = az storage account list `
     --resource-group $ResourceGroup `
+    --subscription $SubscriptionId `
     --output json | ConvertFrom-Json
 
 if (-not $storageAccounts -or $storageAccounts.Count -eq 0) {
@@ -202,13 +217,9 @@ Write-Information "`nTarget Resources:"
 Write-Information "  Key Vault:    $keyVaultName"
 Write-Information "  Storage:      $storageAccountName"
 
-# Get current subscription
-$subscription = az account show --output json | ConvertFrom-Json
-$subscriptionId = $subscription.id
-
 # Build resource scopes
-$keyVaultScope = "/subscriptions/$subscriptionId/resourceGroups/$ResourceGroup/providers/Microsoft.KeyVault/vaults/$keyVaultName"
-$storageScope = "/subscriptions/$subscriptionId/resourceGroups/$ResourceGroup/providers/Microsoft.Storage/storageAccounts/$storageAccountName"
+$keyVaultScope = "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroup/providers/Microsoft.KeyVault/vaults/$keyVaultName"
+$storageScope = "/subscriptions/$SubscriptionId/resourceGroups/$ResourceGroup/providers/Microsoft.Storage/storageAccounts/$storageAccountName"
 
 # ============================================================================
 # Assign RBAC Roles
@@ -225,6 +236,7 @@ if (New-RoleAssignment `
     -PrincipalId $managedIdentityPrincipalId `
     -RoleDefinitionName "Key Vault Secrets Officer" `
     -Scope $keyVaultScope `
+    -SubscriptionId $SubscriptionId `
     -Description "Read, write, and delete secrets in Key Vault") {
     $successCount++
 }
@@ -235,6 +247,7 @@ if (New-RoleAssignment `
     -PrincipalId $managedIdentityPrincipalId `
     -RoleDefinitionName "Storage Blob Data Contributor" `
     -Scope $storageScope `
+    -SubscriptionId $SubscriptionId `
     -Description "Access blob storage data") {
     $successCount++
 }
@@ -254,7 +267,7 @@ if ($successCount -eq $totalRoles) {
     
     Write-Header "Verification"
     Write-Information "To verify the role assignments, run:"
-    Write-Information "  az role assignment list --assignee $managedIdentityPrincipalId --output table"
+    Write-Information "  az role assignment list --assignee $managedIdentityPrincipalId --subscription $SubscriptionId --output table"
     
     Write-Header "Next Steps"
     Write-Information "1. The managed identity is now ready to use"
@@ -269,7 +282,7 @@ else {
     Write-Information "`nYou may need to:"
     Write-Information "1. Ensure you have 'User Access Administrator' or 'Owner' role"
     Write-Information "2. Check if the resources exist and are accessible"
-    Write-Information "3. Verify the managed identity exists: az identity show --name $managedIdentityName --resource-group $ResourceGroup"
+    Write-Information "3. Verify the managed identity exists: az identity show --name $managedIdentityName --resource-group $ResourceGroup --subscription $SubscriptionId"
     exit 1
 }
 

@@ -143,8 +143,8 @@ each provisioning to:
 
 The same hook then runs [assign-mi-rbac.ps1](Deployment/assign-mi-rbac.ps1) to
 assign the managed identity its Key Vault and Storage roles. It reads the azd
-`resourceGroupName` value and fails provisioning when that value cannot be resolved
-or either required role assignment fails.
+`resourceGroupName` and `AZURE_SUBSCRIPTION_ID` values and fails provisioning when
+either value cannot be resolved or either required role assignment fails.
 
 The `postdeploy` hook also adds `https://<custom-domain>` to the app registration
 SPA redirect URIs.

@@ -239,7 +239,7 @@ continues to require the same script after infrastructure deployment:
 
 ```powershell
 cd Deployment
-.\assign-mi-rbac.ps1 -ResourceGroup <resource-group-name>
+.\assign-mi-rbac.ps1 -ResourceGroup <resource-group-name> -SubscriptionId <subscription-id>
 ```
 
 See [Deployment/README.md](Deployment/README.md) for detailed instructions.
