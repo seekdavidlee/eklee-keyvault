@@ -19,7 +19,7 @@
 FROM node:22-alpine AS frontend-build
 WORKDIR /app
 
-COPY Eklee.KeyVault.UI/package.json Eklee.KeyVault.UI/package-lock.json* ./
+COPY Eklee.KeyVault.UI/package.json Eklee.KeyVault.UI/package-lock.json* Eklee.KeyVault.UI/.npmrc ./
 RUN npm ci
 
 COPY Eklee.KeyVault.UI/ .
