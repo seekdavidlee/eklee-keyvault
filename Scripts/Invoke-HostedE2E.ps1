@@ -13,8 +13,16 @@
     identity, waits for the app to become healthy, and runs the local
     Playwright tests against its HTTPS ingress URL.
 
-.PARAMETER EnvironmentName
-    The azd environment containing the deployed Container App.
+.PARAMETER Current
+    Targets the temporary Container App for the checked-out non-main branch.
+
+.PARAMETER Release
+    Targets the temporary Container App for the checked-out release branch.
+    The branch must use the release/MAJOR.MINOR.PATCH convention.
+
+.PARAMETER ProfilePath
+    Path to the maintainer profile used by Setup-Dev.ps1. Its environmentName
+    determines the azd environment that provides the dev resource settings.
 
 .PARAMETER Filter
     Optional test file or grep filter. Defaults to login.spec.ts.
@@ -26,10 +34,10 @@
     Skips npm and Playwright dependency installation.
 
 .EXAMPLE
-    ./Scripts/Invoke-HostedE2E.ps1 -EnvironmentName dev
+    ./Scripts/Invoke-HostedE2E.ps1 -Current
 
 .EXAMPLE
-    ./Scripts/Invoke-HostedE2E.ps1 -EnvironmentName dev -Filter secrets-crud -Headed
+    ./Scripts/Invoke-HostedE2E.ps1 -Release -Filter secrets-crud -Headed
 
 .NOTES
     Requires Azure CLI, Azure Developer CLI, Node.js, npm, and an authenticated
@@ -38,9 +46,15 @@
 
 [CmdletBinding()]
 param(
-    [Parameter(Mandatory = $true)]
+    [Parameter(Mandatory = $true, ParameterSetName = 'Current')]
+    [switch]$Current,
+
+    [Parameter(Mandatory = $true, ParameterSetName = 'Release')]
+    [switch]$Release,
+
+    [Parameter(Mandatory = $false)]
     [ValidateNotNullOrEmpty()]
-    [string]$EnvironmentName,
+    [string]$ProfilePath = (Join-Path $HOME '.eklee-keyvault\setup-dev.json'),
 
     [Parameter(Mandatory = $false)]
     [ValidateNotNullOrEmpty()]
@@ -95,6 +109,78 @@ function Get-AzdEnvironmentValue {
     }
 
     return $result
+}
+
+function Get-MaintainerDevTarget {
+    [CmdletBinding()]
+    [OutputType([psobject])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Path
+    )
+
+    if (-not (Test-Path -LiteralPath $Path -PathType Leaf)) {
+        throw "Maintainer profile '$Path' was not found. Run Setup-Dev.ps1 or provide its profile path."
+    }
+
+    try {
+        $target = Get-Content -LiteralPath $Path -Raw | ConvertFrom-Json
+    }
+    catch {
+        throw "Could not read maintainer profile '$Path': $($_.Exception.Message)"
+    }
+
+    if ($target.PSObject.Properties['targets']) {
+        throw "Maintainer profile '$Path' must contain one target object, not a target catalog."
+    }
+
+    $environmentName = $target.PSObject.Properties['environmentName']
+    if ($null -eq $environmentName -or [string]::IsNullOrWhiteSpace([string]$environmentName.Value)) {
+        throw "Maintainer profile '$Path' requires a non-empty 'environmentName' property."
+    }
+
+    return $target
+}
+
+function Get-BranchContainerAppName {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateSet('Current', 'Release')]
+        [string]$TargetMode
+    )
+
+    $branchName = (& git branch --show-current 2>$null | Out-String).Trim()
+    if ($LASTEXITCODE -ne 0 -or [string]::IsNullOrWhiteSpace($branchName)) {
+        throw 'Unable to determine the current Git branch. Check out a branch before running hosted E2E.'
+    }
+
+    if ($branchName -eq 'main') {
+        throw 'Hosted E2E cannot target main. Check out the branch or release deployment to test.'
+    }
+
+    if ($TargetMode -eq 'Release' -and $branchName -notmatch '^release/(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*)$') {
+        throw "Release mode requires a release/MAJOR.MINOR.PATCH branch. Current branch is '$branchName'."
+    }
+
+    $kind = if ($branchName -like 'release/*') { 'release' } else { 'branch' }
+    $normalizedName = ($branchName.ToLowerInvariant() -replace '[^a-z0-9]+', '-').Trim('-')
+    if ([string]::IsNullOrWhiteSpace($normalizedName)) {
+        throw "Current Git branch '$branchName' cannot be converted to a Container App name."
+    }
+
+    $hash = [System.Convert]::ToHexString(
+        [System.Security.Cryptography.SHA256]::HashData([System.Text.Encoding]::UTF8.GetBytes($branchName))
+    ).Substring(0, 7).ToLowerInvariant()
+    $slug = $normalizedName.Substring(0, [Math]::Min(12, $normalizedName.Length)).TrimEnd('-')
+    $containerAppName = "ekv-$kind-$slug-$hash"
+    if ($containerAppName.Length -gt 32) {
+        throw "Derived Container App name '$containerAppName' exceeds Azure's 32-character limit."
+    }
+
+    return $containerAppName
 }
 
 function Get-CurrentAzureValue {
@@ -216,38 +302,47 @@ if ($MyInvocation.InvocationName -ne '.') {
             throw 'Azure CLI is not authenticated. Run az login first.'
         }
 
-        $resourceGroupName = Get-AzdEnvironmentValue -EnvironmentName $EnvironmentName -Name 'resourceGroupName'
+        $maintainerTarget = Get-MaintainerDevTarget -Path $ProfilePath
+        $environmentName = [string]$maintainerTarget.environmentName
+        if ($Current) {
+            $targetMode = 'Current'
+        }
+        elseif ($Release) {
+            $targetMode = 'Release'
+        }
+        else {
+            throw 'Select either -Current or -Release.'
+        }
+        $containerAppName = Get-BranchContainerAppName -TargetMode $targetMode
+
+        $resourceGroupName = Get-AzdEnvironmentValue -EnvironmentName $environmentName -Name 'resourceGroupName'
         if ([string]::IsNullOrWhiteSpace($resourceGroupName)) {
-            throw "azd environment '$EnvironmentName' does not define resourceGroupName."
+            throw "azd environment '$environmentName' does not define resourceGroupName."
         }
 
-        $containerAppName = Get-AzdEnvironmentValue -EnvironmentName $EnvironmentName -Name 'containerAppName'
-        if ([string]::IsNullOrWhiteSpace($containerAppName)) {
-            throw "azd environment '$EnvironmentName' does not define containerAppName. Deploy the environment first."
-        }
-
-        $clientId = Get-AzdEnvironmentValue -EnvironmentName $EnvironmentName -Name 'APP_CLIENT_ID'
+        $clientId = Get-AzdEnvironmentValue -EnvironmentName $environmentName -Name 'APP_CLIENT_ID'
         if ([string]::IsNullOrWhiteSpace($clientId)) {
-            throw "azd environment '$EnvironmentName' does not define APP_CLIENT_ID."
+            throw "azd environment '$environmentName' does not define APP_CLIENT_ID."
         }
 
-        $tenantId = Get-AzdEnvironmentValue -EnvironmentName $EnvironmentName -Name 'AZURE_TENANT_ID'
+        $tenantId = Get-AzdEnvironmentValue -EnvironmentName $environmentName -Name 'AZURE_TENANT_ID'
         if ([string]::IsNullOrWhiteSpace($tenantId)) {
             $tenantId = Get-CurrentAzureValue -Arguments @('account', 'show', '--query', 'tenantId')
         }
         if ([string]::IsNullOrWhiteSpace($tenantId)) {
-            throw "Unable to resolve the Azure tenant for azd environment '$EnvironmentName'."
+            throw "Unable to resolve the Azure tenant for azd environment '$environmentName'."
         }
 
-        $subscriptionId = Get-AzdEnvironmentValue -EnvironmentName $EnvironmentName -Name 'AZURE_SUBSCRIPTION_ID'
+        $subscriptionId = Get-AzdEnvironmentValue -EnvironmentName $environmentName -Name 'AZURE_SUBSCRIPTION_ID'
         if ([string]::IsNullOrWhiteSpace($subscriptionId)) {
             $subscriptionId = Get-CurrentAzureValue -Arguments @('account', 'show', '--query', 'id')
         }
         if ([string]::IsNullOrWhiteSpace($subscriptionId)) {
-            throw "Unable to resolve the Azure subscription for azd environment '$EnvironmentName'."
+            throw "Unable to resolve the Azure subscription for azd environment '$environmentName'."
         }
 
-        Write-Host "Environment     : $EnvironmentName" -ForegroundColor Cyan
+        Write-Host "Environment     : $environmentName" -ForegroundColor Cyan
+        Write-Host "Branch          : $((& git branch --show-current 2>$null | Out-String).Trim())" -ForegroundColor Cyan
         Write-Host "Resource group  : $resourceGroupName" -ForegroundColor Cyan
         Write-Host "Container App   : $containerAppName" -ForegroundColor Cyan
 
