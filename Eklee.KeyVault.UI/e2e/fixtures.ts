@@ -23,6 +23,8 @@ function addTestUrlAnnotation(testInfo: TestInfo): void {
 
 export const test = base.extend<ReportUrlFixture>({
   reportTestUrl: [
+    // Playwright requires object destructuring to identify fixture dependencies.
+    // eslint-disable-next-line no-empty-pattern
     async ({}, use, testInfo) => {
       addTestUrlAnnotation(testInfo);
       await use();
