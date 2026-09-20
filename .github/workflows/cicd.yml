@@ -12,6 +12,7 @@ permissions:
   id-token: write
   contents: read
   packages: write
+  pull-requests: read
 
 concurrency:
   group: cicd-${{ github.ref }}
@@ -98,15 +99,42 @@ jobs:
 
       - name: Set image tag
         id: image-tag
+        env:
+          GH_TOKEN: ${{ github.token }}
         run: |
+          set -euo pipefail
+
           REF_NAME="${GITHUB_REF_NAME}"
           TAG=$(REF_NAME="$REF_NAME" bash .github/scripts/resolve-image-tag.sh)
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "image=ghcr.io/${{ github.repository }}:$TAG" >> $GITHUB_OUTPUT
 
+          if [[ "$REF_NAME" =~ ^release/((0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*))$ ]]; then
+            merged_pr_number=$(gh api \
+              "repos/${GITHUB_REPOSITORY}/commits/${GITHUB_SHA}/pulls" \
+              --jq ".[] | select(.merged_at != null and .base.ref == \"$REF_NAME\" and .merge_commit_sha == \"$GITHUB_SHA\") | .number" \
+              | head -n 1)
+
+            if [[ -n "$merged_pr_number" ]]; then
+              echo "release_version=${BASH_REMATCH[1]}" >> $GITHUB_OUTPUT
+              echo "source_revision_id=${GITHUB_SHA}" >> $GITHUB_OUTPUT
+            else
+              echo "Release branch push is not an associated merged pull request; omitting stable release metadata."
+            fi
+          fi
+
       - name: Build Docker image
+        env:
+          RELEASE_VERSION: ${{ steps.image-tag.outputs.release_version }}
+          SOURCE_REVISION_ID: ${{ steps.image-tag.outputs.source_revision_id }}
         run: |
-          docker build -t ${{ steps.image-tag.outputs.image }} \
+          build_args=()
+          if [[ -n "$RELEASE_VERSION" && -n "$SOURCE_REVISION_ID" ]]; then
+            build_args+=(--build-arg "RELEASE_VERSION=$RELEASE_VERSION")
+            build_args+=(--build-arg "SOURCE_REVISION_ID=$SOURCE_REVISION_ID")
+          fi
+
+          docker build "${build_args[@]}" -t ${{ steps.image-tag.outputs.image }} \
             --target runtime \
             .
 
