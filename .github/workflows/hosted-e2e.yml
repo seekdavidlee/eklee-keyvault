@@ -71,6 +71,11 @@ jobs:
 
           echo "container_app_name=$container_app_name" >> "$GITHUB_OUTPUT"
           echo "base_url=https://$fqdn" >> "$GITHUB_OUTPUT"
+          {
+            echo "## Hosted E2E target"
+            echo
+            echo "* **Target URL:** \`https://$fqdn\`"
+          } >> "$GITHUB_STEP_SUMMARY"
 
       - name: Wait for Container App
         env:
@@ -120,6 +125,15 @@ jobs:
           E2E_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
           E2E_ACCESS_TOKEN: ${{ steps.token.outputs.access_token }}
         run: npx playwright test
+
+      - name: Record hosted E2E target metadata
+        if: always()
+        working-directory: Eklee.KeyVault.UI
+        env:
+          BASE_URL: ${{ steps.target.outputs.base_url }}
+        run: |
+          set -euo pipefail
+          node -e "const fs = require('node:fs'); fs.mkdirSync('test-results', { recursive: true }); fs.writeFileSync('test-results/hosted-e2e-metadata.json', JSON.stringify({ base_url: process.env.BASE_URL }) + '\\n');"
 
       - name: Upload Playwright results
         if: always()
