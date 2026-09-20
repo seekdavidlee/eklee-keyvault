@@ -11,7 +11,7 @@ The infrastructure includes:
 - **Azure Storage Account** - For application data and blob storage
 - **Azure Key Vault** - For secure secrets and key management
 - **Log Analytics Workspace** - For application monitoring and logging
-- **RBAC Role Assignments** - Managed via the [direct-user script](../Scripts/assign-mi-rbac.ps1)
+- **RBAC Role Assignments** - Applied by the azd post-provision [deployment script](assign-mi-rbac.ps1)
 - **(Optional) Virtual Network** - VNET with subnets for Container Apps and private endpoints
 - **(Optional) Private Endpoints** - Secure connectivity to Storage Account and Key Vault
 
@@ -23,7 +23,7 @@ graph TB
     B[User-Assigned Managed Identity] 
     C[Key Vault]
     D[Storage Account]
-    G[Scripts/assign-mi-rbac.ps1] -.Assigns Permissions.-> B
+    G[Deployment/assign-mi-rbac.ps1] -.Assigns Permissions.-> B
     G -.Secrets User.-> C
     G -.Blob Contributor.-> D
     
@@ -34,7 +34,7 @@ graph TB
     style G fill:#e3e3e3,stroke:#333,stroke-width:2px,color:#000
 ```
 
-> **Note:** This deployment prepares the infrastructure foundation. Azure RBAC roles are assigned via the [Scripts/assign-mi-rbac.ps1](../Scripts/assign-mi-rbac.ps1) script after deployment. The Container App itself will be deployed separately using the pre-configured managed identity and public GHCR image.
+> **Note:** When you run `azd provision` or `azd up`, the post-provision hook runs [assign-mi-rbac.ps1](assign-mi-rbac.ps1) after infrastructure provisioning and fails the command if the required assignments do not succeed. Direct `az deployment group create` commands do not run azd hooks, so their examples invoke the same script explicitly. The Container App itself is deployed separately using the pre-configured managed identity and public GHCR image.
 
 ## 📂 Files
 
@@ -42,6 +42,7 @@ graph TB
 |------|-------------|
 | `main.bicep` | Main infrastructure template |
 | `networking.bicep` | Private networking module (VNET, NSGs, DNS zones, private endpoints) |
+| `assign-mi-rbac.ps1` | Idempotently assigns the managed identity its Key Vault and Storage RBAC roles after azd provisioning |
 | `README.md` | This file |
 
 ## 🚀 Prerequisites
@@ -98,9 +99,10 @@ az deployment group create `
   --name "eklee-keyvault-deployment-$(Get-Date -Format 'yyyyMMdd-HHmmss')" `
   --parameters enablePrivateNetworking=true
 
-# Assign managed identity RBAC roles (required after deployment)
-..\Scripts\assign-mi-rbac.ps1 `
-  -ResourceGroup $resourceGroup
+# Assign managed identity RBAC roles (required after a direct Azure CLI deployment)
+.\assign-mi-rbac.ps1 `
+  -ResourceGroup $resourceGroup `
+  -SubscriptionId <subscription-id>
 ```
 
 > **Note:** Set `enablePrivateNetworking` to `true` (default in the GitHub Actions workflow) to deploy with a VNET, private endpoints for Storage and Key Vault, and disabled public network access. Set to `false` for public network access.
@@ -121,9 +123,10 @@ az deployment group create `
   --template-file main.bicep `
   --name "eklee-keyvault-deployment-$(Get-Date -Format 'yyyyMMdd-HHmmss')"
 
-# Assign managed identity RBAC roles (required after deployment)
-..\Scripts\assign-mi-rbac.ps1 `
-  -ResourceGroup $resourceGroup
+# Assign managed identity RBAC roles (required after a direct Azure CLI deployment)
+.\assign-mi-rbac.ps1 `
+  -ResourceGroup $resourceGroup `
+  -SubscriptionId <subscription-id>
 ```
 
 ### Deploy with What-If Analysis
@@ -136,11 +139,14 @@ az deployment group what-if `
   --template-file main.bicep
 ```
 
-## 🔐 Assign RBAC Roles
+## 🔐 Assign RBAC Roles for Direct Azure CLI Deployments
 
-After deploying the infrastructure, you must assign RBAC roles to the managed identity. This is handled by a separate PowerShell script.
+`azd provision` and `azd up` run the RBAC assignment script automatically from the
+`postprovision` hook after infrastructure provisioning succeeds. When you deploy directly
+with Azure CLI, run the same script after the deployment because direct Azure CLI commands do
+not run azd hooks.
 
-### Why Separate RBAC Assignment?
+### Why Keep RBAC Assignment Outside Bicep?
 
 RBAC role assignments are managed outside of Bicep to:
 - Provide finer control over permissions timing
@@ -151,9 +157,10 @@ RBAC role assignments are managed outside of Bicep to:
 ### Assign Roles
 
 ```powershell
-# Run the RBAC assignment script
-..\Scripts\assign-mi-rbac.ps1 `
-  -ResourceGroup eklee-keyvault-dev-rg
+# Run the RBAC assignment script after a direct Azure CLI deployment
+.\assign-mi-rbac.ps1 `
+  -ResourceGroup eklee-keyvault-dev-rg `
+  -SubscriptionId <subscription-id>
 ```
 
 The script assigns these roles to the managed identity:
@@ -176,10 +183,10 @@ The deployment implements several security best practices:
 - Passwordless authentication to Azure services
 - No credentials in configuration or code
 
-### ✅ RBAC Assignments (via PowerShell Script)
+### ✅ RBAC Assignments (via azd Post-Provision Script)
 - **Key Vault Secrets Officer** - Read and manage secrets in Key Vault
 - **Storage Blob Data Contributor** - Access blob storage
-- Assigned separately for better control and troubleshooting
+- Applied automatically after `azd` infrastructure provisioning
 
 ### ✅ Network Security
 - HTTPS-only traffic enforced
@@ -352,7 +359,7 @@ Quick commands for common operations with your deployed infrastructure.
 #### Assign Roles to Managed Identity
 ```powershell
 # Assign all required roles at once
-..\Scripts\assign-mi-rbac.ps1 -ResourceGroup eklee-keyvault-dev-rg
+.\assign-mi-rbac.ps1 -ResourceGroup eklee-keyvault-dev-rg -SubscriptionId <subscription-id>
 ```
 
 #### Verify Role Assignments

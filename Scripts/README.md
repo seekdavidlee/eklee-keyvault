@@ -18,7 +18,6 @@ folder, which contains infrastructure-as-code and CI/CD deployment helpers.
 
 | Script | Purpose |
 | --- | --- |
-| [`assign-mi-rbac.ps1`](assign-mi-rbac.ps1) | Assigns the deployed managed identity its Key Vault and Storage RBAC roles. |
 | [`copy-keyvault-secrets.ps1`](copy-keyvault-secrets.ps1) | Copies enabled secrets from an Azure Key Vault into the Eklee KeyVault API without overwriting existing secrets. |
 | [`../Setup-Dev.ps1`](../Setup-Dev.ps1) | Deploys the single maintainer dev profile with `azd` and configures its dedicated API registration and Reader-scoped GitHub OIDC E2E identity. |
 | [`Update-BranchRedirectUri.ps1`](Update-BranchRedirectUri.ps1) | Registers a deployed branch Container App URL in the Microsoft Entra SPA app registration and configures the Container App runtime redirect URI. |
