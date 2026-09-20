@@ -74,6 +74,10 @@ jobs:
         working-directory: Eklee.KeyVault.UI
         run: npm ci
 
+      - name: Lint UI
+        working-directory: Eklee.KeyVault.UI
+        run: npm run lint
+
       - name: Build UI
         working-directory: Eklee.KeyVault.UI
         run: npm run build
