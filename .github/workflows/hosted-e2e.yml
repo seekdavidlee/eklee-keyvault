@@ -209,7 +209,12 @@ jobs:
           fi
 
           if [[ "$image_exists" == false ]]; then
-            docker build --target runtime --tag "$IMAGE:$version" .
+            docker build \
+              --build-arg "RELEASE_VERSION=$version" \
+              --build-arg "SOURCE_REVISION_ID=$MERGE_SHA" \
+              --target runtime \
+              --tag "$IMAGE:$version" \
+              .
             docker push "$IMAGE:$version"
           fi
 

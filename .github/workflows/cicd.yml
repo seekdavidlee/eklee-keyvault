@@ -104,9 +104,23 @@ jobs:
           echo "tag=$TAG" >> $GITHUB_OUTPUT
           echo "image=ghcr.io/${{ github.repository }}:$TAG" >> $GITHUB_OUTPUT
 
+          if [[ "$REF_NAME" =~ ^release/((0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*))$ ]]; then
+            echo "release_version=${BASH_REMATCH[1]}" >> $GITHUB_OUTPUT
+            echo "source_revision_id=${GITHUB_SHA}" >> $GITHUB_OUTPUT
+          fi
+
       - name: Build Docker image
+        env:
+          RELEASE_VERSION: ${{ steps.image-tag.outputs.release_version }}
+          SOURCE_REVISION_ID: ${{ steps.image-tag.outputs.source_revision_id }}
         run: |
-          docker build -t ${{ steps.image-tag.outputs.image }} \
+          build_args=()
+          if [[ -n "$RELEASE_VERSION" && -n "$SOURCE_REVISION_ID" ]]; then
+            build_args+=(--build-arg "RELEASE_VERSION=$RELEASE_VERSION")
+            build_args+=(--build-arg "SOURCE_REVISION_ID=$SOURCE_REVISION_ID")
+          fi
+
+          docker build "${build_args[@]}" -t ${{ steps.image-tag.outputs.image }} \
             --target runtime \
             .
 
