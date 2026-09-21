@@ -179,7 +179,7 @@ jobs:
         if: github.ref == 'refs/heads/main'
         run: |
           # Retain an immutable companion tag for the mutable latest tag.
-          docker tag ${{ steps.image-tag.outputs.image }} \
+          docker tag ${{ steps.image-tag.outputs.repository }}:${{ steps.image-tag.outputs.image_tag }} \
             ghcr.io/${{ github.repository }}:${GITHUB_SHA::8}
           docker push ghcr.io/${{ github.repository }}:${GITHUB_SHA::8}
 
