@@ -267,6 +267,7 @@ jobs:
           az containerapp update \
             --name "$CONTAINER_APP_NAME" \
             --resource-group "$RESOURCE_GROUP" \
+            --container-name eklee-keyvault \
             --image "$IMAGE" \
             --min-replicas 1 \
             --max-replicas 1 \
