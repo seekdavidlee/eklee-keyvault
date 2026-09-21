@@ -1,14 +1,28 @@
-import { test, expect } from '@playwright/test';
+import type { Page } from '@playwright/test';
+import { test, expect } from './fixtures';
 import { seedMsalSession } from './helpers/msal-seed';
 
 const clientId = process.env.E2E_CLIENT_ID ?? '';
 const tenantId = process.env.E2E_TENANT_ID ?? '';
 const accessToken = process.env.E2E_ACCESS_TOKEN ?? '';
+const specialCharacters = '!@#$%^&*_-+=';
+
+function countSpecialCharacters(value: string): number {
+  return Array.from(value).filter((character) => specialCharacters.includes(character)).length;
+}
+
+async function generateSecretValue(page: Page): Promise<string> {
+  const secretValueField = page.getByRole('textbox', { name: /secret value/i });
+
+  await page.getByRole('button', { name: /generate secret/i }).click();
+  await expect(secretValueField).toHaveValue(/.+/, { timeout: 15_000 });
+
+  return secretValueField.inputValue();
+}
 
 test.describe('Secrets CRUD', () => {
   const secretName = `e2e-test-secret-${Date.now()}`;
-  const secretValue = 'initial-secret-value';
-  const updatedSecretValue = 'updated-secret-value';
+  const cancelledSecretName = `${secretName}-cancelled`;
 
   test.beforeEach(async ({ page, request }) => {
     test.skip(
@@ -59,9 +73,34 @@ test.describe('Secrets CRUD', () => {
     // --- CREATE ---
     await page.getByRole('button', { name: /create secret/i }).click();
 
-    // Fill out the create dialog
+    // Generating then cancelling must not persist a new secret.
+    await page.getByLabel(/secret name/i).fill(cancelledSecretName);
+    const cancelledCreateValue = await generateSecretValue(page);
+    expect(cancelledCreateValue).toHaveLength(15);
+    expect(countSpecialCharacters(cancelledCreateValue)).toBeGreaterThanOrEqual(3);
+    await page.getByRole('button', { name: /^cancel$/i }).click();
+    await page.getByRole('textbox', { name: /search secrets/i }).fill(cancelledSecretName);
+    await expect(page.getByRole('gridcell', { name: cancelledSecretName })).not.toBeVisible();
+
+    await page.getByRole('button', { name: /create secret/i }).click();
     await page.getByLabel(/secret name/i).fill(secretName);
-    await page.getByRole('textbox', { name: /secret value/i }).fill(secretValue);
+    await page.getByRole('button', { name: /advanced settings/i }).click();
+    await page.getByLabel(/total length/i).fill('4');
+    await page.getByRole('button', { name: /generate secret/i }).click();
+    const secretDialog = page.getByRole('dialog');
+    await expect(secretDialog.getByRole('alert')).toHaveText(
+      'The sum of character category minimums cannot exceed the total length.'
+    );
+    await page.getByLabel(/total length/i).fill('24');
+    await expect(secretDialog.getByRole('alert')).not.toBeVisible();
+    await page.getByLabel(/minimum alphabetic characters/i).fill('7');
+    await page.getByLabel(/minimum numeric characters/i).fill('5');
+    await page.getByLabel(/minimum special characters/i).fill('4');
+    const createdSecretValue = await generateSecretValue(page);
+    expect(createdSecretValue).toHaveLength(24);
+    expect(Array.from(createdSecretValue).filter((character) => /[A-Za-z]/.test(character)).length).toBeGreaterThanOrEqual(7);
+    expect(Array.from(createdSecretValue).filter((character) => /\d/.test(character)).length).toBeGreaterThanOrEqual(5);
+    expect(countSpecialCharacters(createdSecretValue)).toBeGreaterThanOrEqual(4);
     await page.getByRole('button', { name: /^create$/i }).click();
 
     // Wait for the success snackbar
@@ -81,7 +120,7 @@ test.describe('Secrets CRUD', () => {
     await secretRow.getByRole('button', { name: /show secret/i }).click();
 
     // The revealed value should appear in the row
-    await expect(secretRow.getByText(secretValue)).toBeVisible({ timeout: 10_000 });
+    await expect(secretRow.getByText(createdSecretValue)).toBeVisible({ timeout: 10_000 });
 
     // --- UPDATE ---
     await secretRow.getByRole('button', { name: /update secret value/i }).click();
@@ -89,8 +128,19 @@ test.describe('Secrets CRUD', () => {
     // The update dialog should show the secret name as disabled
     await expect(page.getByLabel(/secret name/i)).toBeDisabled();
 
-    // Fill in the new value and save
-    await page.getByRole('textbox', { name: /secret value/i }).fill(updatedSecretValue);
+    // Generating then cancelling must retain the persisted value.
+    const cancelledUpdateValue = await generateSecretValue(page);
+    expect(cancelledUpdateValue).toHaveLength(15);
+    expect(countSpecialCharacters(cancelledUpdateValue)).toBeGreaterThanOrEqual(3);
+    await page.getByRole('button', { name: /^cancel$/i }).click();
+    await secretRow.getByRole('button', { name: /show secret/i }).click();
+    await expect(secretRow.getByText(createdSecretValue)).toBeVisible({ timeout: 10_000 });
+
+    // Generate the default value and save it using the existing update action.
+    await secretRow.getByRole('button', { name: /update secret value/i }).click();
+    const updatedSecretValue = await generateSecretValue(page);
+    expect(updatedSecretValue).toHaveLength(15);
+    expect(countSpecialCharacters(updatedSecretValue)).toBeGreaterThanOrEqual(3);
     await page.getByRole('button', { name: /^update$/i }).click();
 
     // Wait for the success snackbar

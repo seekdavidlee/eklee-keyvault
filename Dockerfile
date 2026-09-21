@@ -19,7 +19,7 @@
 FROM node:22-alpine AS frontend-build
 WORKDIR /app
 
-COPY Eklee.KeyVault.UI/package.json Eklee.KeyVault.UI/package-lock.json* ./
+COPY Eklee.KeyVault.UI/package.json Eklee.KeyVault.UI/package-lock.json* Eklee.KeyVault.UI/.npmrc ./
 RUN npm ci
 
 COPY Eklee.KeyVault.UI/ .
@@ -37,7 +37,15 @@ RUN dotnet restore Eklee.KeyVault.Api/Eklee.KeyVault.Api.csproj
 
 COPY Eklee.KeyVault.Api/ Eklee.KeyVault.Api/
 WORKDIR /src/Eklee.KeyVault.Api
-RUN dotnet publish -c Release -o /app/publish
+ARG RELEASE_VERSION
+ARG SOURCE_REVISION_ID
+RUN if [ -n "$RELEASE_VERSION" ] && [ -n "$SOURCE_REVISION_ID" ]; then \
+			dotnet publish -c Release -o /app/publish \
+				-p:Version="$RELEASE_VERSION" \
+				-p:SourceRevisionId="$SOURCE_REVISION_ID"; \
+		else \
+			dotnet publish -c Release -o /app/publish; \
+		fi
 
 # ---------------------------------------------------------------------------
 # Stage 3: Runtime — ASP.NET serves the API and the React SPA from wwwroot/

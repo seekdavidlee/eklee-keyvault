@@ -90,6 +90,99 @@ param(
 
 $ErrorActionPreference = 'Stop'
 
+function Read-MaintainerCustomDomainName {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Prompt
+    )
+
+    while ($true) {
+        $value = (Read-Host -Prompt $Prompt).Trim().TrimEnd('/')
+        $uriCandidate = if ($value -match '^[a-z][a-z0-9+.-]*://') { $value } else { "https://$value" }
+        $uri = $null
+        if ([uri]::TryCreate($uriCandidate, [UriKind]::Absolute, [ref]$uri) -and
+            $uri.Scheme -eq 'https' -and
+            -not [string]::IsNullOrWhiteSpace($uri.Host)) {
+            return $uri.Host
+        }
+
+        Write-Warning 'Enter a valid HTTPS hostname, such as app.example.com.'
+    }
+}
+
+function Complete-MaintainerDevTargetDomains {
+    [CmdletBinding()]
+    [OutputType([psobject])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [psobject]$Target,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Path
+    )
+
+    $domainPrompts = @(
+        [pscustomobject]@{ PropertyName = 'customDevDomainName'; Prompt = 'Permanent main/dev Container App hostname' }
+        [pscustomobject]@{ PropertyName = 'customReleaseDomainName'; Prompt = 'Permanent release Container App hostname' }
+        [pscustomobject]@{ PropertyName = 'customBranchDomainName'; Prompt = 'Permanent branch Container App hostname' }
+    )
+    $wasUpdated = $false
+
+    foreach ($domainPrompt in $domainPrompts) {
+        $property = $Target.PSObject.Properties[$domainPrompt.PropertyName]
+        if ($property -and -not [string]::IsNullOrWhiteSpace([string]$property.Value)) {
+            continue
+        }
+
+        $value = Read-MaintainerCustomDomainName -Prompt $domainPrompt.Prompt
+        if ($property) {
+            $property.Value = $value
+        }
+        else {
+            $Target | Add-Member -NotePropertyName $domainPrompt.PropertyName -NotePropertyValue $value
+        }
+
+        $wasUpdated = $true
+    }
+
+    if ($wasUpdated) {
+        $Target | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $Path -Encoding utf8NoBOM
+        Write-Host "Saved permanent Container App domains to maintainer profile '$Path'." -ForegroundColor Green
+    }
+
+    return $Target
+}
+
+function Set-MaintainerApprovedGitHubRepository {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [psobject]$Target,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Path,
+
+        [Parameter(Mandatory = $true)]
+        [ValidatePattern('^[^/\s]+/[^/\s]+$')]
+        [string]$Repository
+    )
+
+    $property = $Target.PSObject.Properties['approvedGitHubRepository']
+    if ($property) {
+        $property.Value = $Repository
+    }
+    else {
+        $Target | Add-Member -NotePropertyName 'approvedGitHubRepository' -NotePropertyValue $Repository
+    }
+
+    $Target | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $Path -Encoding utf8NoBOM
+}
+
 function Get-MaintainerDevTarget {
     [CmdletBinding()]
     [OutputType([psobject])]
@@ -114,9 +207,12 @@ function Get-MaintainerDevTarget {
         throw "Maintainer profile '$Path' must contain one target object, not a target catalog."
     }
 
+    $target = Complete-MaintainerDevTargetDomains -Target $target -Path $Path
+
     foreach ($propertyName in @(
             'displayName', 'tenantId', 'subscriptionId', 'environmentName',
-            'location', 'prefix', 'resourceGroupName', 'appRegistrationName'
+            'location', 'prefix', 'resourceGroupName', 'appRegistrationName',
+            'customDevDomainName', 'customReleaseDomainName', 'customBranchDomainName'
         )) {
         $property = $target.PSObject.Properties[$propertyName]
         if (-not $property -or [string]::IsNullOrWhiteSpace([string]$property.Value)) {
@@ -533,6 +629,81 @@ function Get-GitHubEnvironmentVariable {
     return $value
 }
 
+function Get-AzdEnvironmentValue {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$Name
+    )
+
+    $output = & azd env get-value $Name 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to get azd environment value '$Name': $($output -join ' ')"
+    }
+
+    $value = (($output | Out-String) -split 'Update available:', 2)[0].Trim()
+    if ([string]::IsNullOrWhiteSpace($value) -or $value -match '^ERROR') {
+        throw "azd environment value '$Name' is empty. Provision the permanent dev targets before configuring GitHub Environment values."
+    }
+
+    return $value
+}
+
+function Set-GitHubPermanentTargetVariables {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Repository,
+
+        [Parameter(Mandatory = $true)]
+        [string]$Environment
+    )
+
+    $targetVariables = @(
+        [pscustomobject]@{ NameOutput = 'devContainerAppName'; UrlOutput = 'devContainerAppUrl'; NameVariable = 'DEV_CONTAINER_APP_NAME'; UrlVariable = 'DEV_E2E_BASE_URL' }
+        [pscustomobject]@{ NameOutput = 'releaseContainerAppName'; UrlOutput = 'releaseContainerAppUrl'; NameVariable = 'RELEASE_CONTAINER_APP_NAME'; UrlVariable = 'RELEASE_E2E_BASE_URL' }
+        [pscustomobject]@{ NameOutput = 'branchContainerAppName'; UrlOutput = 'branchContainerAppUrl'; NameVariable = 'BRANCH_CONTAINER_APP_NAME'; UrlVariable = 'BRANCH_E2E_BASE_URL' }
+    )
+
+    foreach ($targetVariable in $targetVariables) {
+        $containerAppName = Get-AzdEnvironmentValue -Name $targetVariable.NameOutput
+        $containerAppUrl = Get-AzdEnvironmentValue -Name $targetVariable.UrlOutput
+        if ($containerAppUrl -notmatch '^https://') {
+            throw "azd environment value '$($targetVariable.UrlOutput)' must be an HTTPS URL."
+        }
+
+        Set-GitHubEnvironmentVariable -Repository $Repository -Environment $Environment -Name $targetVariable.NameVariable -Value $containerAppName
+        Set-GitHubEnvironmentVariable -Repository $Repository -Environment $Environment -Name $targetVariable.UrlVariable -Value $containerAppUrl
+    }
+}
+
+function Set-MaintainerDevAzdEnvironment {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [psobject]$Target,
+
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$RepositoryPath
+    )
+
+    Set-AzdEnvironment -Target $Target -RepositoryPath $RepositoryPath
+
+    $domainEnvironmentValues = @(
+        [pscustomobject]@{ ProfileProperty = 'customDevDomainName'; EnvironmentName = 'CUSTOM_DEV_DOMAIN_NAME' }
+        [pscustomobject]@{ ProfileProperty = 'customReleaseDomainName'; EnvironmentName = 'CUSTOM_RELEASE_DOMAIN_NAME' }
+        [pscustomobject]@{ ProfileProperty = 'customBranchDomainName'; EnvironmentName = 'CUSTOM_BRANCH_DOMAIN_NAME' }
+    )
+    foreach ($domainEnvironmentValue in $domainEnvironmentValues) {
+        Invoke-ExternalCommand -CommandName 'azd' -Arguments @(
+            'env', 'set', $domainEnvironmentValue.EnvironmentName, ([string]$Target.$($domainEnvironmentValue.ProfileProperty))
+        )
+    }
+}
+
 function Invoke-LegacyE2ERemediation {
     [CmdletBinding()]
     param(
@@ -592,12 +763,19 @@ if (-not (Test-Path -LiteralPath $setupScriptPath)) {
 $maintainerProfilePath = $ProfilePath
 . $setupScriptPath -ProfilePath $CustomerProfilePath
 $ProfilePath = $maintainerProfilePath
+foreach ($domainPropertyName in @('customDevDomainName', 'customReleaseDomainName', 'customBranchDomainName')) {
+    $maintainerTarget.$domainPropertyName = ConvertTo-CustomDomainName -Value ([string]$maintainerTarget.$domainPropertyName)
+}
 $githubRepository = Resolve-GitHubRepository `
     -Organization $GitHubOrganization `
     -RepositoryName $GitHubRepoName `
     -RepositoryPath $PSScriptRoot
 $GitHubOrganization = $githubRepository.Organization
 $GitHubRepoName = $githubRepository.Repository
+Set-MaintainerApprovedGitHubRepository `
+    -Target $maintainerTarget `
+    -Path $ProfilePath `
+    -Repository "$GitHubOrganization/$GitHubRepoName"
 
 foreach ($command in @('az', 'azd', 'gh', 'git')) {
     if ($null -eq (Get-Command $command -ErrorAction SilentlyContinue)) {
@@ -613,7 +791,7 @@ if ($WhatIfPreference) {
 Push-Location $PSScriptRoot
 try {
     Connect-ToTarget -Target $maintainerTarget
-    Set-AzdEnvironment -Target $maintainerTarget -RepositoryPath $PSScriptRoot
+    Set-MaintainerDevAzdEnvironment -Target $maintainerTarget -RepositoryPath $PSScriptRoot
 
     if (-not $PSCmdlet.ShouldProcess("azd environment '$($maintainerTarget.environmentName)'", 'Run azd up')) {
         return
@@ -662,6 +840,7 @@ $output = & gh api --method PUT "repos/$repository/environments/dev" --silent 2>
 if ($LASTEXITCODE -ne 0) {
     throw "Failed to ensure GitHub Environment 'dev': $($output -join ' ')"
 }
+Set-GitHubPermanentTargetVariables -Repository $repository -Environment 'dev'
 $deploymentClientId = Get-GitHubEnvironmentVariable -Repository $repository -Environment 'dev' -Name 'AZURE_CLIENT_ID'
 $deploymentServicePrincipal = Get-ExistingServicePrincipal -ApplicationId $deploymentClientId
 Set-E2eApplicationRole -ApiApplication $apiApplication -CallerServicePrincipal $deploymentServicePrincipal -ApiServicePrincipal $apiServicePrincipal

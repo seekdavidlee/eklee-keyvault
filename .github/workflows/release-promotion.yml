@@ -1,0 +1,172 @@
+name: Release Promotion
+
+on:
+  workflow_run:
+    workflows: ['CI/CD']
+    types: [completed]
+    branches:
+      - main
+
+permissions:
+  contents: write
+  packages: write
+  pull-requests: read
+
+jobs:
+  resolve-release:
+    name: Resolve tested release merge
+    if: ${{ github.event.workflow_run.conclusion == 'success' }}
+    runs-on: ubuntu-latest
+    outputs:
+      should_publish: ${{ steps.release.outputs.should_publish }}
+      version: ${{ steps.release.outputs.version }}
+      release_branch: ${{ steps.release.outputs.release_branch }}
+      merge_sha: ${{ steps.release.outputs.merge_sha }}
+    steps:
+      - id: release
+        name: Find merged release pull request
+        env:
+          GH_TOKEN: ${{ github.token }}
+          MERGE_SHA: ${{ github.event.workflow_run.head_sha }}
+        run: |
+          set -euo pipefail
+
+          release_branch=$(gh api "repos/${GITHUB_REPOSITORY}/commits/${MERGE_SHA}/pulls" --paginate \
+            --jq ".[] | select(.merged_at != null and .base.ref == \"main\" and (.head.ref | startswith(\"release/\")) and .merge_commit_sha == \"${MERGE_SHA}\") | .head.ref" \
+            | head -n 1)
+
+          if [[ -z "$release_branch" ]]; then
+            echo 'should_publish=false' >> "$GITHUB_OUTPUT"
+            echo 'No merged release pull request is associated with this successful CI run.'
+            exit 0
+          fi
+
+          if [[ ! "$release_branch" =~ ^release/((0|[1-9][0-9]*)\.(0|[1-9][0-9]*)\.(0|[1-9][0-9]*))$ ]]; then
+            echo "::error::Release branch '$release_branch' must use release/MAJOR.MINOR.PATCH."
+            exit 1
+          fi
+
+          echo 'should_publish=true' >> "$GITHUB_OUTPUT"
+          echo "version=${BASH_REMATCH[1]}" >> "$GITHUB_OUTPUT"
+          echo "release_branch=$release_branch" >> "$GITHUB_OUTPUT"
+          echo "merge_sha=$MERGE_SHA" >> "$GITHUB_OUTPUT"
+
+  publish-release:
+    name: Publish semantic release image
+    needs: resolve-release
+    if: ${{ needs.resolve-release.outputs.should_publish == 'true' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout tested merge
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ needs.resolve-release.outputs.merge_sha }}
+          fetch-depth: 0
+
+      - name: Publish immutable release artifacts
+        env:
+          GH_TOKEN: ${{ github.token }}
+          IMAGE: ghcr.io/${{ github.repository }}
+          MERGE_SHA: ${{ needs.resolve-release.outputs.merge_sha }}
+          VERSION: ${{ needs.resolve-release.outputs.version }}
+        run: |
+          set -euo pipefail
+
+          if ! git merge-base --is-ancestor "$MERGE_SHA" origin/main; then
+            echo "::error::Release merge commit '$MERGE_SHA' is not reachable from origin/main."
+            exit 1
+          fi
+
+          tag_exists=false
+          if git ls-remote --exit-code --tags origin "refs/tags/$VERSION" >/dev/null 2>&1; then
+            tag_exists=true
+            git fetch --no-tags origin "refs/tags/$VERSION:refs/tags/$VERSION"
+            tag_commit=$(git rev-parse "$VERSION^{commit}")
+            if [[ "$tag_commit" != "$MERGE_SHA" ]]; then
+              echo "::error::Existing tag '$VERSION' identifies '$tag_commit', not '$MERGE_SHA'."
+              exit 1
+            fi
+          fi
+
+          gh release view "$VERSION" --json targetCommitish >/dev/null 2>&1 && release_exists=true || release_exists=false
+          if [[ "$release_exists" == true ]]; then
+            release_target=$(gh release view "$VERSION" --json targetCommitish --jq .targetCommitish)
+            if [[ "$release_target" != "$MERGE_SHA" ]]; then
+              echo "::error::Existing GitHub Release '$VERSION' identifies '$release_target', not '$MERGE_SHA'."
+              exit 1
+            fi
+          fi
+
+          docker login ghcr.io --username "$GITHUB_ACTOR" --password "$GH_TOKEN"
+          docker manifest inspect "$IMAGE:$VERSION" >/dev/null 2>&1 && image_exists=true || image_exists=false
+
+          if [[ "$tag_exists" == false && ( "$release_exists" == true || "$image_exists" == true ) ]]; then
+            echo "::error::Release artifacts exist for '$VERSION' without its Git tag. Refusing to overwrite or adopt them."
+            exit 1
+          fi
+
+          if [[ "$tag_exists" == false ]]; then
+            git config user.name 'github-actions[bot]'
+            git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+            git tag --annotate "$VERSION" "$MERGE_SHA" --message "Release $VERSION"
+            git push origin "refs/tags/$VERSION"
+          fi
+
+          if [[ "$image_exists" == false ]]; then
+            docker build \
+              --build-arg "RELEASE_VERSION=$VERSION" \
+              --build-arg "SOURCE_REVISION_ID=$MERGE_SHA" \
+              --target runtime \
+              --tag "$IMAGE:$VERSION" \
+              .
+            docker push "$IMAGE:$VERSION"
+          fi
+
+          if [[ "$release_exists" == false ]]; then
+            gh release create "$VERSION" --target "$MERGE_SHA" --title "$VERSION" --generate-notes
+          fi
+
+  cleanup-release-image:
+    name: Delete release branch image
+    needs: [resolve-release, publish-release]
+    if: ${{ needs.publish-release.result == 'success' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Delete merged release GHCR image
+        env:
+          BRANCH_NAME: ${{ needs.resolve-release.outputs.release_branch }}
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+
+          package_owner="${GITHUB_REPOSITORY%%/*}"
+          package_name="${GITHUB_REPOSITORY#*/}"
+          package_name=$(printf '%s' "$package_name" | tr '[:upper:]' '[:lower:]')
+          image_tag=$(REF_NAME="$BRANCH_NAME" bash .github/scripts/resolve-image-tag.sh)
+
+          owner_type=$(gh api "/users/${package_owner}" --jq '.type')
+          if [[ "$owner_type" == 'Organization' ]]; then
+            versions_endpoint="/orgs/${package_owner}/packages/container/${package_name}/versions"
+            delete_endpoint="$versions_endpoint"
+          else
+            versions_endpoint="/users/${package_owner}/packages/container/${package_name}/versions"
+            delete_endpoint="/user/packages/container/${package_name}/versions"
+          fi
+
+          version_ids=$(IMAGE_TAG="$image_tag" gh api --paginate \
+            "${versions_endpoint}?per_page=100" \
+            --jq '.[] | select((.metadata.container.tags // []) | index(env.IMAGE_TAG)) | .id')
+
+          if [[ -z "$version_ids" ]]; then
+            echo "GHCR image tag '$image_tag' is already absent."
+            exit 0
+          fi
+
+          while IFS= read -r version_id; do
+            [[ -z "$version_id" ]] && continue
+            gh api --method DELETE --silent "${delete_endpoint}/${version_id}"
+            echo "Deleted GHCR image tag '$image_tag' (package version ${version_id})."
+          done <<< "$version_ids"

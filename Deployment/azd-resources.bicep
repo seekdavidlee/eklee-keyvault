@@ -25,6 +25,15 @@ param clientId string
 @description('The full container image reference including digest (set by preprovision hook)')
 param containerImage string
 
+@description('Custom HTTPS domain for the stable main development target')
+param customDevDomainName string = ''
+
+@description('Custom HTTPS domain for the stable release target')
+param customReleaseDomainName string = ''
+
+@description('Custom HTTPS domain for the stable branch target')
+param customBranchDomainName string = ''
+
 @description('The full immutable Microsoft Entra ID Auth SDK sidecar image reference')
 param miseSidecarImage string = ''
 
@@ -49,8 +58,14 @@ param existingManagedIdentityName string = ''
 @description('Existing Container Apps environment name resolved from its resource-id tag')
 param existingContainerAppEnvironmentName string = ''
 
-@description('Existing Container App name resolved from its resource-id tag')
-param existingContainerAppName string = ''
+@description('Existing main development Container App name resolved from its resource-id tag')
+param existingDevContainerAppName string = ''
+
+@description('Existing release Container App name resolved from its resource-id tag')
+param existingReleaseContainerAppName string = ''
+
+@description('Existing branch Container App name resolved from its resource-id tag')
+param existingBranchContainerAppName string = ''
 
 @description('Existing virtual network name resolved from its resource-id tag')
 param existingVirtualNetworkName string = ''
@@ -96,7 +111,7 @@ var uniqueSuffix = uniqueString(resourceGroup().id, prefix)
 var storageAccountName = !empty(existingStorageAccountName) ? existingStorageAccountName : toLower('${prefix}${take(uniqueSuffix, 10)}sa')
 var keyVaultName = !empty(existingKeyVaultName) ? existingKeyVaultName : toLower('${prefix}-${take(uniqueSuffix, 6)}-kv')
 var containerAppEnvName = !empty(existingContainerAppEnvironmentName) ? existingContainerAppEnvironmentName : '${prefix}-env'
-var containerAppName = !empty(existingContainerAppName) ? existingContainerAppName : '${prefix}-app'
+var mainContainerAppName = !empty(existingDevContainerAppName) ? existingDevContainerAppName : '${prefix}-app'
 var managedIdentityName = !empty(existingManagedIdentityName) ? existingManagedIdentityName : '${prefix}-identity'
 var logAnalyticsWorkspaceName = !empty(existingLogAnalyticsWorkspaceName) ? existingLogAnalyticsWorkspaceName : '${prefix}-logs'
 var logAnalyticsWorkspaceTags = union(tags, { 'resource-id': 'app-log-analytics-workspace' })
@@ -104,7 +119,6 @@ var storageAccountTags = union(tags, { 'resource-id': 'app-storage-account' })
 var keyVaultTags = union(tags, { 'resource-id': 'app-key-vault' })
 var managedIdentityTags = union(tags, { 'resource-id': 'app-managed-identity' })
 var containerAppEnvironmentTags = union(tags, { 'resource-id': 'app-container-app-environment' })
-var containerAppTags = union(tags, { 'resource-id': 'app-container-app' })
 var resolvedContainerImage = contains(containerImage, '@sha256:')
   ? containerImage
   : fail('containerImage must use an immutable sha256 digest.')
@@ -113,6 +127,35 @@ var resolvedMiseSidecarImage = enableMiseSidecar
       ? miseSidecarImage
       : fail('miseSidecarImage must use an immutable sha256 digest when enableMiseSidecar is true.'))
   : ''
+var permanentTargetsEnabled = !empty(customDevDomainName) && !empty(customReleaseDomainName) && !empty(customBranchDomainName)
+var mainContainerAppUrl = permanentTargetsEnabled
+  ? 'https://${customDevDomainName}'
+  : 'https://${mainContainerAppName}.${containerAppEnvironment.properties.defaultDomain}'
+var releaseContainerAppName = !empty(existingReleaseContainerAppName) ? existingReleaseContainerAppName : '${mainContainerAppName}-release'
+var branchContainerAppName = !empty(existingBranchContainerAppName) ? existingBranchContainerAppName : '${mainContainerAppName}-branch'
+var containerAppTargets = [
+  {
+    name: mainContainerAppName
+    target: 'main'
+    resourceId: 'app-container-app'
+    customDomainName: customDevDomainName
+    enabled: true
+  }
+  {
+    name: releaseContainerAppName
+    target: 'release'
+    resourceId: 'app-container-app-release'
+    customDomainName: customReleaseDomainName
+    enabled: permanentTargetsEnabled
+  }
+  {
+    name: branchContainerAppName
+    target: 'branch'
+    resourceId: 'app-container-app-branch'
+    customDomainName: customBranchDomainName
+    enabled: permanentTargetsEnabled
+  }
+]
 
 // Well-known RBAC role definition IDs
 var keyVaultSecretsOfficerRoleId = subscriptionResourceId(
@@ -321,13 +364,13 @@ resource containerAppEnvironment 'Microsoft.App/managedEnvironments@2025-01-01' 
 }
 
 // ============================================================================
-// CONTAINER APP — Eklee KeyVault API + UI
+// CONTAINER APPS — Eklee KeyVault API + UI
 // ============================================================================
 
-resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
-  name: containerAppName
+resource containerApps 'Microsoft.App/containerApps@2025-01-01' = [for target in containerAppTargets: if (target.enabled) {
+  name: target.name
   location: location
-  tags: containerAppTags
+  tags: union(tags, { 'resource-id': target.resourceId, DeploymentTarget: target.target })
   identity: {
     type: 'UserAssigned'
     userAssignedIdentities: {
@@ -409,11 +452,15 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
             }
             {
               name: 'VITE_AZURE_AD_REDIRECT_URI'
-              value: 'https://${containerAppName}.${containerAppEnvironment.properties.defaultDomain}'
+              value: !empty(target.customDomainName)
+                ? 'https://${target.customDomainName}'
+                : 'https://${target.name}.${containerAppEnvironment.properties.defaultDomain}'
             }
             {
               name: 'VITE_API_BASE_URL'
-              value: 'https://${containerAppName}.${containerAppEnvironment.properties.defaultDomain}'
+              value: !empty(target.customDomainName)
+                ? 'https://${target.customDomainName}'
+                : 'https://${target.name}.${containerAppEnvironment.properties.defaultDomain}'
             }
           ]
           probes: [
@@ -497,12 +544,12 @@ resource containerApp 'Microsoft.App/containerApps@2025-01-01' = {
         }
       ] : [])
       scale: {
-        minReplicas: 0
+        minReplicas: permanentTargetsEnabled ? 1 : 0
         maxReplicas: 1
       }
     }
   }
-}
+}]
 
 // ============================================================================
 // OUTPUTS
@@ -529,11 +576,32 @@ output managedIdentityPrincipalId string = managedIdentity.properties.principalI
 @description('The client ID of the user-assigned managed identity')
 output managedIdentityClientId string = managedIdentity.properties.clientId
 
-@description('The name of the Container App')
-output containerAppName string = containerApp.name
+@description('The name of the stable main development Container App')
+output devContainerAppName string = containerApps[0]!.name
 
-@description('The FQDN of the Container App (update VITE_AZURE_AD_REDIRECT_URI and app registration redirect URI with this value)')
-output containerAppFqdn string = containerApp.properties.configuration.ingress.fqdn
+@description('The FQDN of the stable main development Container App')
+output devContainerAppFqdn string = containerApps[0]!.properties.configuration.ingress.fqdn
 
-@description('The full URL of the Container App')
-output containerAppUrl string = 'https://${containerApp.properties.configuration.ingress.fqdn}'
+@description('The custom HTTPS URL of the stable main development Container App')
+output devContainerAppUrl string = mainContainerAppUrl
+
+@description('The name of the stable release Container App')
+output releaseContainerAppName string = releaseContainerAppName
+
+@description('The custom HTTPS URL of the stable release Container App')
+output releaseContainerAppUrl string = permanentTargetsEnabled ? 'https://${customReleaseDomainName}' : ''
+
+@description('The name of the stable branch Container App')
+output branchContainerAppName string = branchContainerAppName
+
+@description('The custom HTTPS URL of the stable branch Container App')
+output branchContainerAppUrl string = permanentTargetsEnabled ? 'https://${customBranchDomainName}' : ''
+
+@description('The name of the main Container App retained for existing azd consumers')
+output containerAppName string = containerApps[0]!.name
+
+@description('The FQDN of the main Container App retained for existing azd consumers')
+output containerAppFqdn string = containerApps[0]!.properties.configuration.ingress.fqdn
+
+@description('The URL of the main Container App retained for existing azd consumers')
+output containerAppUrl string = mainContainerAppUrl

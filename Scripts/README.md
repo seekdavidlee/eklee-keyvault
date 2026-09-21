@@ -18,51 +18,65 @@ folder, which contains infrastructure-as-code and CI/CD deployment helpers.
 
 | Script | Purpose |
 | --- | --- |
-| [`assign-mi-rbac.ps1`](assign-mi-rbac.ps1) | Assigns the deployed managed identity its Key Vault and Storage RBAC roles. |
 | [`copy-keyvault-secrets.ps1`](copy-keyvault-secrets.ps1) | Copies enabled secrets from an Azure Key Vault into the Eklee KeyVault API without overwriting existing secrets. |
 | [`../Setup-Dev.ps1`](../Setup-Dev.ps1) | Deploys the single maintainer dev profile with `azd` and configures its dedicated API registration and Reader-scoped GitHub OIDC E2E identity. |
-| [`Update-BranchRedirectUri.ps1`](Update-BranchRedirectUri.ps1) | Registers a deployed branch Container App URL in the Microsoft Entra SPA app registration and configures the Container App runtime redirect URI. |
-| [`Invoke-HostedE2E.ps1`](Invoke-HostedE2E.ps1) | Runs local Playwright tests against a deployed Container App using the signed-in Azure CLI identity. |
+| [`Invoke-HostedE2E.ps1`](Invoke-HostedE2E.ps1) | Updates the permanent branch Container App from the checked-out feature or bugfix commit, then runs local Playwright tests. |
 | [`setup-gh-deploy.ps1`](setup-gh-deploy.ps1) | Creates the GitHub Actions OIDC deployment identity, resource groups, role assignments, and environment variables. |
-| [`Tag-ExistingStackResources.ps1`](Tag-ExistingStackResources.ps1) | Reports or applies stable `resource-id` tags to an existing Eklee KeyVault stack. |
+| [`Tag-ExistingStackResources.ps1`](Tag-ExistingStackResources.ps1) | Reports or applies stable `resource-id` tags to an existing Eklee KeyVault stack, including the three permanent development Container App targets. |
 
-## Update Branch Redirect URI
+## Container App Resource Tags
 
-Run this script after the CI/CD workflow deploys a branch Container App. It
-lists local azd environments and prompts for the environment to use:
+The maintainer development environment can contain three permanent Container
+Apps: the main/dev app, its `-release` app, and its `-branch` app. Each uses a
+target-specific `resource-id` tag so `azd` can safely adopt it:
+
+- `app-container-app` for the main/dev app
+- `app-container-app-release`
+- `app-container-app-branch`
+
+`Deployment/resolve-resource-names.ps1` also recognizes the legacy shared
+`app-container-app` tag only when it identifies either one main/dev app or the
+exact three-app target set. It rejects partial, extra, duplicate, or wrong-type
+matches rather than selecting an app heuristically.
+
+For a valid legacy set, the next `azd` deployment retains the resolved names,
+keeps `app-container-app` on the main/dev app, and replaces the release and
+branch tags with their target-specific values.
+Review the planned changes before applying them:
 
 ```powershell
-./Scripts/Update-BranchRedirectUri.ps1
+azd provision --preview
+azd up
 ```
 
-The script reads `resourceGroupName` and `APP_CLIENT_ID` from the selected azd
-environment and derives the branch Container App name from the checked-out Git
-branch using the same convention as CI. Use `-EnvironmentName <name>` to avoid
-the prompt. For a detached checkout or recovery scenario, pass
-`-ResourceGroupName`, `-ContainerAppName`, and `-SpaAppClientId` explicitly.
+For a pre-existing three-app stack, preview the explicit tag migration before
+applying it:
 
-Before running it:
-
-1. Install the Azure CLI.
-2. Sign in with `az login` and select the subscription containing the Container App.
-3. Confirm that your user can update the Container App and the Microsoft Entra SPA app registration.
-
-The script uses the signed-in Azure CLI user identity. It does not require GitHub
-Actions to have Microsoft Graph application-management permissions and does not
-store or print access tokens.
+```powershell
+./Scripts/Tag-ExistingStackResources.ps1 -ResourceGroupName <resource-group>
+./Scripts/Tag-ExistingStackResources.ps1 -ResourceGroupName <resource-group> -Apply
+```
 
 ## Hosted E2E Tests
 
-Run the local Playwright authentication test against a deployed environment:
+Run the local Playwright authentication test from a checked-out feature or
+bugfix branch after its CI image has been published:
 
 ```powershell
-./Scripts/Invoke-HostedE2E.ps1 -EnvironmentName dev
+./Scripts/Invoke-HostedE2E.ps1 -Current
 ```
 
-The script reads the resource group, Container App name, API client ID, tenant,
-and subscription from the selected azd environment. It resolves the live HTTPS
-ingress URL, waits for `/healthz`, acquires an API token through the signed-in
-Azure CLI identity, and runs `login.spec.ts`.
+The command reads the single maintainer profile at
+`$HOME/.eklee-keyvault/setup-dev.json`, which is configured by
+[`../Setup-Dev.ps1`](../Setup-Dev.ps1). Its `environmentName` identifies the
+azd environment that supplies the resource group, API client ID, tenant, and
+subscription. It verifies the approved GitHub origin and active subscription,
+resolves the CI image tagged for the exact checked-out commit to an immutable
+digest, updates only the permanent branch app, waits for `/healthz`, acquires
+an API token through the signed-in Azure CLI identity, and runs `login.spec.ts`.
+It rejects detached checkouts, `main`, and `release/*` before any Azure update.
+The permanent redirects are registered by `Setup-Dev.ps1`; this command never
+modifies Microsoft Entra redirect URIs.
 
 Use `-Filter secrets-crud` for the Admin CRUD test or `-Headed` to show the
 browser. Use `-NoDeps` when the UI dependencies and Chromium are already
@@ -74,6 +88,12 @@ Use [`../Setup-Dev.ps1`](../Setup-Dev.ps1) only for the repository maintainer's
 isolated dev environment. It reads one target from
 `$HOME/.eklee-keyvault/setup-dev.json`, deploys it with `azd`, and requires its
 `appRegistrationName` to differ from customer registrations in the same tenant.
+On the first run after the permanent Container App targets are introduced, it
+prompts for and persists the HTTPS hostnames for the main/dev, release, and
+branch apps as `customDevDomainName`, `customReleaseDomainName`, and
+`customBranchDomainName`. These fields are maintainer-only and are not part of
+the customer `Setup.ps1` profile contract. It also records the approved GitHub
+repository used by the local branch deployment command.
 Supplying both `-LegacyApiClientId` and `-LegacyCallerAppId` inspects that exact
 legacy role assignment without changing it. Removal requires
 `-RemoveLegacyE2ERole` and `-ConfirmLegacyRemoval` in addition to both IDs.

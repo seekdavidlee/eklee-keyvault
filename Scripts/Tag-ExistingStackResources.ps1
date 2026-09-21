@@ -1,4 +1,6 @@
 #!/usr/bin/env pwsh
+# Copyright (c) 2026 Microsoft Corporation. All rights reserved.
+# SPDX-License-Identifier: MIT
 #Requires -Version 7.4
 
 <#
@@ -249,7 +251,9 @@ function Get-RoleDefinitions {
         [pscustomobject]@{ Role = 'log-analytics-workspace'; ResourceId = 'app-log-analytics-workspace'; Type = 'Microsoft.OperationalInsights/workspaces'; NameSuffix = $null; ExactName = $null }
         [pscustomobject]@{ Role = 'managed-identity'; ResourceId = 'app-managed-identity'; Type = 'Microsoft.ManagedIdentity/userAssignedIdentities'; NameSuffix = $null; ExactName = $null }
         [pscustomobject]@{ Role = 'container-app-environment'; ResourceId = 'app-container-app-environment'; Type = 'Microsoft.App/managedEnvironments'; NameSuffix = $null; ExactName = $null }
-        [pscustomobject]@{ Role = 'container-app'; ResourceId = 'app-container-app'; Type = 'Microsoft.App/containerApps'; NameSuffix = $null; ExactName = $null }
+        [pscustomobject]@{ Role = 'container-app-dev'; ResourceId = 'app-container-app'; Type = 'Microsoft.App/containerApps'; NameSuffix = $null; ExactName = $null; ContainerAppTarget = 'dev' }
+        [pscustomobject]@{ Role = 'container-app-release'; ResourceId = 'app-container-app-release'; Type = 'Microsoft.App/containerApps'; NameSuffix = $null; ExactName = $null; ContainerAppTarget = 'release' }
+        [pscustomobject]@{ Role = 'container-app-branch'; ResourceId = 'app-container-app-branch'; Type = 'Microsoft.App/containerApps'; NameSuffix = $null; ExactName = $null; ContainerAppTarget = 'branch' }
     )) {
         $roleDefinitions.Add($roleDefinition)
     }
@@ -305,6 +309,33 @@ function Get-RoleCandidates {
     )
 
     $candidates = @($Resources | Where-Object { $_.type -eq $RoleDefinition.Type })
+    $containerAppTargetProperty = $RoleDefinition.PSObject.Properties['ContainerAppTarget']
+    if ($containerAppTargetProperty) {
+        $baseCandidates = @($candidates | Where-Object {
+                $_.name -notlike '*-release' -and $_.name -notlike '*-branch'
+            })
+        $matchingBaseNames = @($baseCandidates | Where-Object {
+                $baseName = [string]$_.name
+                $expectedTargetNames = @($baseName, "$baseName-release", "$baseName-branch")
+                $candidates.Count -eq $expectedTargetNames.Count -and
+                @($candidates | Where-Object { $_.name -in $expectedTargetNames }).Count -eq $expectedTargetNames.Count
+            })
+
+        if ($matchingBaseNames.Count -eq 1) {
+            $baseName = [string]$matchingBaseNames[0].name
+            $targetName = switch ($containerAppTargetProperty.Value) {
+                'dev' { $baseName }
+                'release' { "$baseName-release" }
+                'branch' { "$baseName-branch" }
+                default { throw "Unsupported Container App target '$($containerAppTargetProperty.Value)'." }
+            }
+
+            return @($candidates | Where-Object { $_.name -eq $targetName })
+        }
+
+        return $candidates
+    }
+
     if ($RoleDefinition.ExactName) {
         return @($candidates | Where-Object { $_.name -eq $RoleDefinition.ExactName })
     }

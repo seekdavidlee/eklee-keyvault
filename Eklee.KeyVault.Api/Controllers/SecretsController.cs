@@ -12,7 +12,11 @@ namespace Eklee.KeyVault.Api.Controllers;
 [ApiController]
 [Route("api/[controller]")]
 [Authorize(Roles = "Admin,User")]
-public partial class SecretsController(KeyVaultService keyVaultService, BlobService blobService, ILogger<SecretsController> logger) : ControllerBase
+public partial class SecretsController(
+    KeyVaultService keyVaultService,
+    BlobService blobService,
+    SecretGenerationService secretGenerationService,
+    ILogger<SecretsController> logger) : ControllerBase
 {
     /// <summary>
     /// Lists all Key Vault secrets combined with their user-defined display metadata.
@@ -107,6 +111,32 @@ public partial class SecretsController(KeyVaultService keyVaultService, BlobServ
                 detail: "You do not have permission to modify secrets in Key Vault.",
                 statusCode: StatusCodes.Status403Forbidden);
         }
+    }
+
+    /// <summary>
+    /// Generates a candidate secret value without persisting it. Only users with the Admin role can call this endpoint.
+    /// </summary>
+    /// <param name="request">The character policy for the candidate value.</param>
+    /// <returns>A generated secret candidate for administrator review.</returns>
+    /// <response code="200">Returns a generated candidate value.</response>
+    /// <response code="400">The requested generation policy is invalid.</response>
+    /// <response code="403">The caller does not have the Admin role.</response>
+    [HttpPost("generate")]
+    [Authorize(Roles = "Admin")]
+    [ProducesResponseType(typeof(SecretGenerationResponse), StatusCodes.Status200OK)]
+    [ProducesResponseType(typeof(ProblemDetails), StatusCodes.Status400BadRequest)]
+    [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    public IActionResult GenerateSecret([FromBody] SecretGenerationRequest request)
+    {
+        if (!secretGenerationService.TryGenerate(request, out var response, out var validationError))
+        {
+            return Problem(
+                title: "Invalid Generation Policy",
+                detail: validationError,
+                statusCode: StatusCodes.Status400BadRequest);
+        }
+
+        return Ok(response);
     }
 
     /// <summary>

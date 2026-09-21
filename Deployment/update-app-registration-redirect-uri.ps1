@@ -134,9 +134,19 @@ $localhostRedirectUri = Normalize-RedirectUri -UriValue "http://localhost:5173"
 $redirectUriMap[$localhostRedirectUri.ToLowerInvariant()] = $localhostRedirectUri
 $redirectUriMap[$containerAppUrl.ToLowerInvariant()] = $containerAppUrl
 
-# Include custom domain redirect URI if configured
-$customDomain = Get-AzdEnvValue -Name "CUSTOM_DOMAIN_NAME"
-if ($customDomain) {
+# Include every configured custom-domain redirect URI.
+$customDomainEnvironmentNames = @(
+    'CUSTOM_DOMAIN_NAME'
+    'CUSTOM_DEV_DOMAIN_NAME'
+    'CUSTOM_RELEASE_DOMAIN_NAME'
+    'CUSTOM_BRANCH_DOMAIN_NAME'
+)
+foreach ($customDomainEnvironmentName in $customDomainEnvironmentNames) {
+    $customDomain = Get-AzdEnvValue -Name $customDomainEnvironmentName
+    if (-not $customDomain) {
+        continue
+    }
+
     $customDomainUri = Normalize-RedirectUri -UriValue "https://$customDomain"
     if ($customDomainUri) {
         $redirectUriMap[$customDomainUri.ToLowerInvariant()] = $customDomainUri
