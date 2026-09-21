@@ -333,6 +333,12 @@ jobs:
         run: |
           npm ci
           npx playwright install --with-deps chromium
+          echo "::notice title=Hosted E2E target::Running Playwright against $E2E_BASE_URL"
+          {
+            echo "## Hosted E2E target"
+            echo
+            echo "Running Playwright against: \`$E2E_BASE_URL\`"
+          } >> "$GITHUB_STEP_SUMMARY"
           npx playwright test
 
       - name: Upload Playwright results
