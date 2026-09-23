@@ -513,6 +513,10 @@ resource containerApps 'Microsoft.App/containerApps@2025-01-01' = [for target in
               name: 'AzureAd__Audience'
               value: clientId
             }
+            {
+              name: 'AzureAd__Scopes'
+              value: 'access_as_user'
+            }
           ]
           probes: [
             {
