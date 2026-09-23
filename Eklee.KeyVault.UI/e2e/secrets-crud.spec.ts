@@ -53,13 +53,16 @@ test.describe('Secrets CRUD', () => {
       'E2E test user is not registered for access. Use a fresh environment or register the user as Admin.'
     );
 
-    if (meResponse.ok()) {
-      const me = await meResponse.json();
-      test.skip(
-        me.role !== 'Admin',
-        'E2E test user must have the Admin role for secrets CRUD operations.'
-      );
-    }
+    expect(
+      meResponse.status(),
+      `Expected authenticated E2E user; received ${meResponse.status()}`
+    ).toBe(200);
+
+    const me = await meResponse.json();
+    test.skip(
+      me.role !== 'Admin',
+      'E2E test user must have the Admin role for secrets CRUD operations.'
+    );
   });
 
   test('create, read, update, and delete a secret', async ({ page }) => {
