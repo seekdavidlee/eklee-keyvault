@@ -1,5 +1,4 @@
 #!/usr/bin/env bash
-# Copyright (c) 2026 Microsoft Corporation. All rights reserved.
 # SPDX-License-Identifier: MIT
 #
 # Resolve a Git ref to a bounded, collision-resistant container image tag.
