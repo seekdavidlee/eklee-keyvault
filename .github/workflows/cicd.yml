@@ -343,6 +343,25 @@ jobs:
           E2E_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
           E2E_ACCESS_TOKEN: ${{ steps.token.outputs.access_token }}
         run: |
+          node --input-type=module <<'NODE'
+          const claims = JSON.parse(Buffer.from(process.env.E2E_ACCESS_TOKEN.split('.')[1], 'base64url').toString('utf8'));
+          const clientId = process.env.E2E_CLIENT_ID;
+          const errors = [];
+          if (![clientId, `api://${clientId}`].includes(claims.aud)) {
+            errors.push('Token audience does not match E2E_CLIENT_ID. Check the target API registration.');
+          }
+          if (claims.tid !== process.env.E2E_TENANT_ID) {
+            errors.push('Token tenant does not match E2E_TENANT_ID. Check the Azure login tenant.');
+          }
+          if (!Number.isFinite(claims.exp) || claims.exp <= Date.now() / 1000) {
+            errors.push('The hosted E2E token is expired or has no expiry. Acquire a fresh token.');
+          }
+          if (!Array.isArray(claims.roles) || !claims.roles.includes('E2E.Tester')) {
+            errors.push('Token is missing E2E.Tester. Run Setup-Dev.ps1 for this dev target and verify that the CI deployment principal has the role on the API registration identified by E2E_CLIENT_ID. Then acquire a fresh token.');
+          }
+          for (const error of errors) console.error(`::error::${error}`);
+          if (errors.length) process.exit(1);
+          NODE
           npm ci
           npx playwright install --with-deps chromium
           echo "::notice title=Hosted E2E target::Running Playwright against $E2E_BASE_URL"

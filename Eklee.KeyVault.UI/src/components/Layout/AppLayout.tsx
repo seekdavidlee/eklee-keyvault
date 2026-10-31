@@ -94,7 +94,6 @@ export function AppLayout({ children }: AppLayoutProps) {
 
       {/* Main content area */}
       <Box
-        component="main"
         sx={{
           flexGrow: 1,
           minWidth: 0,
@@ -108,7 +107,7 @@ export function AppLayout({ children }: AppLayoutProps) {
         {/* Mobile navigation dropdown — shown on small screens */}
         {showSidebar && isMobile && <MobileNav />}
 
-        <Box sx={{ flexGrow: 1, p: 3, overflowX: 'auto' }}>{children}</Box>
+        <Box component="main" sx={{ flexGrow: 1, p: 3, overflowX: 'auto' }}>{children}</Box>
 
         {/* Footer */}
         {footer && (
