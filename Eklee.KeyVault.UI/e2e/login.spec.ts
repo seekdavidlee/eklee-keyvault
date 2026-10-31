@@ -41,5 +41,21 @@ test.describe('Authentication', () => {
 
     // The app title is visible in the header
     await expect(page.getByText('KeyVault Client').first()).toBeVisible();
+
+    for (const viewport of [{ width: 1280, height: 900 }, { width: 375, height: 812 }]) {
+      await page.setViewportSize(viewport);
+      const footer = page.getByRole('contentinfo');
+      await footer.scrollIntoViewIfNeeded();
+      await expect(footer).toBeVisible();
+      const version = footer.getByText(/^Version /);
+      await expect(version).toBeVisible();
+      if (process.env.E2E_APP_VERSION) {
+        await expect(version).toHaveText(`Version ${process.env.E2E_APP_VERSION}`);
+      }
+      const bounds = await version.boundingBox();
+      expect(bounds).not.toBeNull();
+      expect(bounds!.x).toBeGreaterThanOrEqual(0);
+      expect(bounds!.x + bounds!.width).toBeLessThanOrEqual(viewport.width);
+    }
   });
 });

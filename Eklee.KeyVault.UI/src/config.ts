@@ -10,6 +10,7 @@
  */
 
 interface RuntimeConfig {
+  APP_VERSION: string;
   AZURE_AD_CLIENT_ID: string;
   AZURE_AD_AUTHORITY: string;
   AZURE_AD_REDIRECT_URI: string;
@@ -25,6 +26,7 @@ declare global {
 function getConfig(): RuntimeConfig {
   const rc = window.__RUNTIME_CONFIG__ ?? {};
   return {
+    APP_VERSION: import.meta.env.VITE_APP_VERSION?.trim() || '',
     AZURE_AD_CLIENT_ID: rc.AZURE_AD_CLIENT_ID || import.meta.env.VITE_AZURE_AD_CLIENT_ID || '',
     AZURE_AD_AUTHORITY: rc.AZURE_AD_AUTHORITY || import.meta.env.VITE_AZURE_AD_AUTHORITY || '',
     AZURE_AD_REDIRECT_URI: rc.AZURE_AD_REDIRECT_URI || import.meta.env.VITE_AZURE_AD_REDIRECT_URI || '',
