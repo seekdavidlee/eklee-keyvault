@@ -197,7 +197,7 @@ jobs:
     name: Deploy to Azure Container Apps
     needs: [setup, build-and-push]
     if: ${{ !failure() && !cancelled() }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     environment: dev
     concurrency:
       group: permanent-container-app-${{ needs.setup.outputs.target }}
