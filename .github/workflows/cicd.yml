@@ -4,9 +4,10 @@ on:
   push:
     branches:
       - '**'
-    paths-ignore:
-      - 'Deployment/**'
-      - '**.md'
+    paths:
+      - 'Eklee.KeyVault.Api/**'
+      - 'Eklee.KeyVault.UI/**'
+      - '!**.md'
 
 permissions:
   id-token: write

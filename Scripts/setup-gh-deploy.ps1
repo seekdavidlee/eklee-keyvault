@@ -24,7 +24,7 @@
 
 .PARAMETER ResourceGroupName
     The base name of the Azure resource group. One resource group will be created:
-    '{ResourceGroupName}-dev'.
+    '{ResourceGroupName}-dev'. Do not include the trailing '-dev' suffix.
 
 .PARAMETER Location
     The Azure region for the resource groups. Defaults to 'eastus2'.
@@ -58,6 +58,12 @@ param(
 
 $ErrorActionPreference = 'Stop'
 $InformationPreference = 'Continue'
+
+if ($ResourceGroupName -match '-dev$') {
+    $baseResourceGroupName = $ResourceGroupName -replace '(-dev)+$', ''
+    Write-Warning "ResourceGroupName '$ResourceGroupName' would produce '${ResourceGroupName}-dev' with a repeated '-dev' suffix. Use -ResourceGroupName '$baseResourceGroupName' instead."
+    exit 1
+}
 
 $appRegistrationName = 'eklee-azkeyvault-viewer-gh-deploy'
 
