@@ -248,6 +248,16 @@ jobs:
             echo "🌐 Private networking: DISABLED (public access)"
           fi
 
+          echo "Deployment resource group: $RESOURCE_GROUP"
+          echo "Deployment Container App: $CONTAINER_APP_NAME"
+          az account show \
+            --query "{subscription:id,tenant:tenantId}" -o json
+
+          az containerapp show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query "{name:name,id:id}" -o json
+
           # Check if container app already exists
           EXISTS=$(az containerapp show \
             --name "$CONTAINER_APP_NAME" \
