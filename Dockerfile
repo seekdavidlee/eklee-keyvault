@@ -24,7 +24,9 @@ RUN npm ci
 
 COPY Eklee.KeyVault.UI/ .
 
-RUN npm run build
+ARG RELEASE_VERSION
+ARG SOURCE_REVISION_ID
+RUN VITE_APP_VERSION="${RELEASE_VERSION:-${SOURCE_REVISION_ID:+sha-$SOURCE_REVISION_ID}}" npm run build
 
 # ---------------------------------------------------------------------------
 # Stage 2: Build the ASP.NET backend

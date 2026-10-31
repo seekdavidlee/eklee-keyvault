@@ -151,12 +151,11 @@ jobs:
       - name: Build Docker image
         env:
           RELEASE_VERSION: ${{ steps.image-tag.outputs.release_version }}
-          SOURCE_REVISION_ID: ${{ steps.image-tag.outputs.source_revision_id }}
+          SOURCE_REVISION_ID: ${{ github.sha }}
         run: |
-          build_args=()
+          build_args=(--build-arg "SOURCE_REVISION_ID=$SOURCE_REVISION_ID")
           if [[ -n "$RELEASE_VERSION" && -n "$SOURCE_REVISION_ID" ]]; then
             build_args+=(--build-arg "RELEASE_VERSION=$RELEASE_VERSION")
-            build_args+=(--build-arg "SOURCE_REVISION_ID=$SOURCE_REVISION_ID")
           fi
 
           docker build "${build_args[@]}" -t ${{ steps.image-tag.outputs.repository }}:${{ steps.image-tag.outputs.image_tag }} \

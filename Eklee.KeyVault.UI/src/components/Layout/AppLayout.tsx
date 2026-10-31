@@ -14,6 +14,7 @@ import { useMsal } from '@azure/msal-react';
 import { useUser } from '../../auth/UserContext';
 import { Sidebar } from './Sidebar';
 import { MobileNav } from './MobileNav';
+import { config } from '../../config';
 
 /** Width of the sidebar navigation drawer in pixels. */
 const DRAWER_WIDTH = 220;
@@ -34,6 +35,7 @@ export function AppLayout({ children }: AppLayoutProps) {
 
   const header = 'KeyVault Client';
   const footer = `KeyVault Client ${new Date().getFullYear()}`;
+  const versionLabel = config.APP_VERSION ? `Version ${config.APP_VERSION}` : 'Version unavailable';
 
   const handleSignOut = () => {
     instance.logoutRedirect();
@@ -122,6 +124,9 @@ export function AppLayout({ children }: AppLayoutProps) {
           >
             <Typography variant="body2" color="text.secondary">
               {footer}
+            </Typography>
+            <Typography variant="body2" color="text.secondary" sx={{ overflowWrap: 'anywhere' }}>
+              {versionLabel}
             </Typography>
           </Box>
         )}
