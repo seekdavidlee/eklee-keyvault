@@ -7,7 +7,6 @@ The Bicep templates ensure when creating Azure Key Vault, we are using Azure rol
 ## Build Status
 
 ![Build status](https://github.com/seekdavidlee/Eklee-KeyVault/actions/workflows/cicd.yml/badge.svg)
-![Infra](https://github.com/seekdavidlee/Eklee-KeyVault/actions/workflows/deploy-infra.yml/badge.svg)
 
 ## Cost
 
@@ -96,9 +95,7 @@ To target a different project file:
 1. Run `Scripts/setup-gh-deploy.ps1` to create the deployment service principal, resource groups, RBAC assignments, and set the deployment-related GitHub environment variables (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `RESOURCE_GROUP`).
 1. Run `Eklee.KeyVault.Api/setup-app-registration.ps1` with the `-GitHubOrganization`, `-GitHubRepoName`, and `-AzureAdRedirectUriDev` parameters to create the maintainer dev app registration and set the SPA-related GitHub environment variables (`VITE_AZURE_AD_CLIENT_ID`, `VITE_AZURE_AD_AUTHORITY`, `VITE_AZURE_AD_REDIRECT_URI`). Customer production registrations are configured by the customer deployment process.
 
-1. Deploy infrastructure by running `gh workflow run deploy-infra.yml -f environment=dev`
-
-1. The infrastructure workflow uses Azure CLI directly and does not run azd hooks. Run `Deployment/assign-mi-rbac.ps1` to assign RBAC roles to the managed identity.
+1. Provision infrastructure locally using the [development infrastructure deployment instructions](Deployment/README.md#development-environment), including the required [managed identity RBAC script](Deployment/assign-mi-rbac.ps1). Infrastructure provisioning is separate from application CI/CD.
 1. Run `Setup-Dev.ps1` for the repository maintainer dev environment. It provisions the permanent main, release, and branch Container Apps; binds their custom HTTPS domains; and reconciles the three SPA redirect URLs locally.
 1. Push to `main` or `release/*` to trigger **CI/CD** deployment and hosted E2E for the matching permanent target. Other branches publish a commit-addressable GHCR image but do not deploy automatically. To deploy and test a feature or bugfix commit, run `./Scripts/Invoke-HostedE2E.ps1 -Current` from that checkout.
 

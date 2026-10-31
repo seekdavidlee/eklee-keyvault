@@ -105,7 +105,7 @@ az deployment group create `
   -SubscriptionId <subscription-id>
 ```
 
-> **Note:** Set `enablePrivateNetworking` to `true` (default in the GitHub Actions workflow) to deploy with a VNET, private endpoints for Storage and Key Vault, and disabled public network access. Set to `false` for public network access.
+> **Note:** The development example sets `enablePrivateNetworking` to `true` to deploy with a VNET, private endpoints for Storage and Key Vault, and disabled public network access. Set to `false` for public network access.
 
 #### Production Environment
 
