@@ -17,7 +17,6 @@ permissions:
 jobs:
   setup:
     name: Resolve Container App Name
-    if: ${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/') }}
     runs-on: ubuntu-latest
     environment: dev
     steps:
@@ -31,6 +30,8 @@ jobs:
           DEV_E2E_BASE_URL: ${{ vars.DEV_E2E_BASE_URL }}
           RELEASE_CONTAINER_APP_NAME: ${{ vars.RELEASE_CONTAINER_APP_NAME }}
           RELEASE_E2E_BASE_URL: ${{ vars.RELEASE_E2E_BASE_URL }}
+          BRANCH_CONTAINER_APP_NAME: ${{ vars.BRANCH_CONTAINER_APP_NAME }}
+          BRANCH_E2E_BASE_URL: ${{ vars.BRANCH_E2E_BASE_URL }}
         run: |
           set -euo pipefail
           container_app_name=$(BRANCH_NAME="${GITHUB_REF_NAME}" bash .github/scripts/resolve-container-app-name.sh)
@@ -44,8 +45,9 @@ jobs:
             echo "target=release" >> "$GITHUB_OUTPUT"
             echo "base_url=${RELEASE_E2E_BASE_URL}" >> "$GITHUB_OUTPUT"
           else
-            echo "::error::Unsupported permanent deployment ref '${GITHUB_REF_NAME}'."
-            exit 1
+            : "${BRANCH_E2E_BASE_URL:?BRANCH_E2E_BASE_URL is required for branch deployments}"
+            echo "target=branch" >> "$GITHUB_OUTPUT"
+            echo "base_url=${BRANCH_E2E_BASE_URL}" >> "$GITHUB_OUTPUT"
           fi
     outputs:
       container_app_name: ${{ steps.setup.outputs.container_app_name }}
@@ -193,7 +195,7 @@ jobs:
   deploy:
     name: Deploy to Azure Container Apps
     needs: [setup, build-and-push]
-    if: ${{ !failure() && !cancelled() && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')) }}
+    if: ${{ !failure() && !cancelled() }}
     runs-on: ubuntu-latest
     environment: dev
     concurrency:
