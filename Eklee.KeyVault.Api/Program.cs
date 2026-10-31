@@ -8,56 +8,35 @@ var builder = WebApplication.CreateBuilder(args);
 // Authentication — JWT Bearer validation via Microsoft Entra ID
 // Accept both "api://<clientId>" and the bare "<clientId>" as valid audiences,
 // because Azure AD may stamp tokens with either form.
-var useMiseAuthentication = builder.Configuration.GetValue<bool>("Mise:Enabled");
-if (useMiseAuthentication)
-{
-    builder.Services.AddHttpClient<MiseTokenValidator>(client =>
+var azureAdSection = builder.Configuration.GetSection("AzureAd");
+var clientId = azureAdSection["ClientId"]!;
+builder.Services.AddMicrosoftIdentityWebApiAuthentication(builder.Configuration, "AzureAd")
+    .EnableTokenAcquisitionToCallDownstreamApi()
+    .AddInMemoryTokenCaches();
+
+builder.Services.Configure<Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerOptions>(
+    Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme,
+    options =>
     {
-        client.BaseAddress = new Uri("http://localhost:5000/");
-        client.Timeout = TimeSpan.FromSeconds(5);
+        options.TokenValidationParameters.ValidAudiences =
+        [
+            $"api://{clientId}",
+            clientId
+        ];
+        options.TokenValidationParameters.RoleClaimType = System.Security.Claims.ClaimTypes.Role;
     });
 
-    builder.Services.AddAuthentication(options =>
-    {
-        options.DefaultAuthenticateScheme = MiseTokenValidator.SchemeName;
-        options.DefaultChallengeScheme = MiseTokenValidator.SchemeName;
-    })
-    .AddScheme<Microsoft.AspNetCore.Authentication.AuthenticationSchemeOptions, MiseAuthenticationHandler>(
-        MiseTokenValidator.SchemeName,
-        _ => { });
-}
-else
-{
-    var azureAdSection = builder.Configuration.GetSection("AzureAd");
-    var clientId = azureAdSection["ClientId"]!;
-    builder.Services.AddMicrosoftIdentityWebApiAuthentication(builder.Configuration, "AzureAd")
-        .EnableTokenAcquisitionToCallDownstreamApi()
-        .AddInMemoryTokenCaches();
+var allowAclAuth = string.Equals(
+    builder.Configuration["ALLOW_ACL_AUTH"], "true", StringComparison.OrdinalIgnoreCase);
 
-    builder.Services.Configure<Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerOptions>(
+if (allowAclAuth)
+{
+    builder.Services.Configure<MicrosoftIdentityOptions>(
         Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme,
         options =>
         {
-            options.TokenValidationParameters.ValidAudiences =
-            [
-                $"api://{clientId}",
-                clientId
-            ];
-            options.TokenValidationParameters.RoleClaimType = System.Security.Claims.ClaimTypes.Role;
+            options.AllowWebApiToBeAuthorizedByACL = true;
         });
-
-    var allowAclAuth = string.Equals(
-        builder.Configuration["ALLOW_ACL_AUTH"], "true", StringComparison.OrdinalIgnoreCase);
-
-    if (allowAclAuth)
-    {
-        builder.Services.Configure<MicrosoftIdentityOptions>(
-            Microsoft.AspNetCore.Authentication.JwtBearer.JwtBearerDefaults.AuthenticationScheme,
-            options =>
-            {
-                options.AllowWebApiToBeAuthorizedByACL = true;
-            });
-    }
 }
 
 builder.Services.AddAuthorization();

@@ -21,12 +21,6 @@
     "customBranchDomainName": {
       "value": "${CUSTOM_BRANCH_DOMAIN_NAME}"
     },
-    "miseSidecarImage": {
-      "value": "${MISE_SIDECAR_IMAGE}"
-    },
-    "enableMiseSidecar": {
-      "value": "${ENABLE_MISE_SIDECAR}"
-    },
     "enablePrivateNetworking": {
       "value": "${ENABLE_PRIVATE_NETWORKING}"
     },

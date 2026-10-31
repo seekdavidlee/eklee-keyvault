@@ -44,12 +44,6 @@ param customReleaseDomainName string = ''
 @description('Custom HTTPS domain for the stable branch target')
 param customBranchDomainName string = ''
 
-@description('The full immutable Microsoft Entra ID Auth SDK sidecar image reference')
-param miseSidecarImage string = ''
-
-@description('Enable the Microsoft Entra ID Auth SDK sidecar for API token validation')
-param enableMiseSidecar bool = false
-
 @description('Enable private networking with a virtual network and private endpoints')
 param enablePrivateNetworking bool = false
 
@@ -146,8 +140,6 @@ module resources 'azd-resources.bicep' = {
     customDevDomainName: customDevDomainName
     customReleaseDomainName: customReleaseDomainName
     customBranchDomainName: customBranchDomainName
-    miseSidecarImage: miseSidecarImage
-    enableMiseSidecar: enableMiseSidecar
     enablePrivateNetworking: enablePrivateNetworking
     existingStorageAccountName: existingStorageAccountName
     existingKeyVaultName: existingKeyVaultName

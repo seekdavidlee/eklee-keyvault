@@ -75,48 +75,6 @@ if ($privateNetworkingValue -notin @('true', 'false')) {
 Write-Host "Private networking: $privateNetworkingValue" -ForegroundColor Green
 
 # ---------------------------------------------------------------------------
-# Default MISE sidecar authentication to disabled unless an operator opts in.
-# This ensures the public GHCR application image can be deployed without a
-# separate MISE sidecar image reference.
-# ---------------------------------------------------------------------------
-$miseSidecarOutput = azd env get-value ENABLE_MISE_SIDECAR 2>$null
-$miseSidecarValue = $null
-if ($LASTEXITCODE -eq 0) {
-    $miseSidecarValue = ($miseSidecarOutput | Out-String).Trim().ToLowerInvariant()
-}
-
-if ([string]::IsNullOrWhiteSpace($miseSidecarValue)) {
-    $miseSidecarValue = 'false'
-    azd env set ENABLE_MISE_SIDECAR $miseSidecarValue
-    if ($LASTEXITCODE -ne 0) {
-        Write-Error 'Failed to set ENABLE_MISE_SIDECAR in the azd environment.'
-        exit 1
-    }
-}
-elseif ($miseSidecarValue -notin @('true', 'false')) {
-    Write-Error 'ENABLE_MISE_SIDECAR must be true or false.'
-    exit 1
-}
-
-Write-Host "MISE sidecar enabled: $miseSidecarValue" -ForegroundColor Green
-
-if ($miseSidecarValue -eq 'false') {
-    $miseSidecarImageOutput = azd env get-value MISE_SIDECAR_IMAGE 2>$null
-    $miseSidecarImageValue = $null
-    if ($LASTEXITCODE -eq 0) {
-        $miseSidecarImageValue = ($miseSidecarImageOutput | Out-String).Trim()
-    }
-
-    if ([string]::IsNullOrWhiteSpace($miseSidecarImageValue)) {
-        azd env set MISE_SIDECAR_IMAGE disabled
-        if ($LASTEXITCODE -ne 0) {
-            Write-Error 'Failed to set the disabled MISE_SIDECAR_IMAGE placeholder in the azd environment.'
-            exit 1
-        }
-    }
-}
-
-# ---------------------------------------------------------------------------
 # Resolve prefix from azd environment if not provided
 # ---------------------------------------------------------------------------
 if (-not $Prefix) {
@@ -409,7 +367,7 @@ if ($verifiedApplication.identifierUris -notcontains $requiredIdentifierUri -or
     $verifiedApplication.api.requestedAccessTokenVersion -ne 2 -or
     -not $verifiedScope -or
     -not $verifiedAzureCliPreAuthorization) {
-    throw "App registration '$clientId' did not meet the required MISE API policy after reconciliation."
+    throw "App registration '$clientId' did not meet the required API policy after reconciliation."
 }
 
 Write-Host 'API registration policy reconciled and verified.' -ForegroundColor Green

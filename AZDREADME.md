@@ -165,7 +165,6 @@ The template deploys the following resources:
   - Storage Blob Data Contributor on the Storage Account
 - **Container Apps Environment**: Consumption workload profile
 - **Container App**: running the selected release image from this repository's GHCR package (pinned by digest)
-- **Optional MISE sidecar**: a private token-validation container when explicitly enabled
 - **Private networking when selected**: VNet integration for Container Apps, private endpoints
    for the Storage Account and Key Vault, and linked private DNS zones
 
@@ -184,31 +183,12 @@ The device code flow displays a URL and a code. Open the URL in your preferred b
 then enter the code to complete authentication. This is recommended over `azd auth login` because
 the default browser login may open in an unintended browser profile.
 
-## Optional MISE Sidecar
+## API Authentication
 
-The default deployment does not use a Microsoft Entra ID Auth SDK (MISE) sidecar. It deploys the
-public GHCR application image and uses the API's built-in Microsoft.Identity.Web JWT validation.
-The preprovision hook persists `ENABLE_MISE_SIDECAR=false` when the setting is absent.
+The API validates bearer tokens using Microsoft.Identity.Web JWT authentication
+inside the application container, which exposes port 8080.
 
-To opt in, set both of the following values before provisioning. The MISE container validates
-bearer tokens on `http://localhost:5000/Validate`; it has no external ingress, while the application
-continues to expose port 8080. The sidecar image is deliberately not embedded in source.
-
-```bash
-azd env set ENABLE_MISE_SIDECAR true
-azd env set MISE_SIDECAR_IMAGE "<approved-registry>/<approved-image>@sha256:<digest>"
-```
-
-To return to the default path, set the flag to `false`; the image value is then ignored and no
-sidecar container is deployed. The preprovision hook supplies a non-image placeholder when the
-sidecar image value is absent, so azd can resolve its parameter file:
-
-```bash
-azd env set ENABLE_MISE_SIDECAR false
-```
-
-Before a separately authorized production deployment, complete the following preflight. When MISE
-is enabled, the Bicep template rejects sidecar image values without `@sha256:`.
+Before a separately authorized production deployment, complete the following preflight:
 
 ```bash
 dotnet build Eklee.KeyVault.sln
@@ -217,17 +197,8 @@ az bicep build --file Deployment/azd.bicep
 azd provision --preview
 ```
 
-After an authorized MISE-enabled deployment, verify that each revision contains both
-`eklee-keyvault` and `mise-sidecar`, then collect sidecar telemetry from the Container Apps Log
-Analytics workspace:
-
-```bash
-az containerapp revision list --name <container-app> --resource-group <resource-group> --query "[].properties.template.containers[].{name:name,image:image}" --output table
-az monitor log-analytics query --workspace <workspace-id> --analytics-query "ContainerAppConsoleLogs_CL | where TimeGenerated > ago(30m) | where ContainerName_s == 'mise-sidecar' | project TimeGenerated, Log_s | order by TimeGenerated desc" --output table
-```
-
-Do not treat a successful provisioning operation as authentication evidence. Record the revision
-container output and corresponding MISE telemetry with the production change approval.
+Do not treat a successful provisioning operation as authentication evidence.
+Verify authenticated requests and rejection of invalid tokens after deployment.
 
 ## Deployment Steps
 

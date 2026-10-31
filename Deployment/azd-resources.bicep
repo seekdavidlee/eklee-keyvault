@@ -34,12 +34,6 @@ param customReleaseDomainName string = ''
 @description('Custom HTTPS domain for the stable branch target')
 param customBranchDomainName string = ''
 
-@description('The full immutable Microsoft Entra ID Auth SDK sidecar image reference')
-param miseSidecarImage string = ''
-
-@description('Enable the Microsoft Entra ID Auth SDK sidecar for API token validation')
-param enableMiseSidecar bool = false
-
 @description('Enable private networking with a virtual network and private endpoints')
 param enablePrivateNetworking bool = false
 
@@ -122,11 +116,6 @@ var containerAppEnvironmentTags = union(tags, { 'resource-id': 'app-container-ap
 var resolvedContainerImage = contains(containerImage, '@sha256:')
   ? containerImage
   : fail('containerImage must use an immutable sha256 digest.')
-var resolvedMiseSidecarImage = enableMiseSidecar
-  ? (contains(miseSidecarImage, '@sha256:')
-      ? miseSidecarImage
-      : fail('miseSidecarImage must use an immutable sha256 digest when enableMiseSidecar is true.'))
-  : ''
 var permanentTargetsEnabled = !empty(customDevDomainName) && !empty(customReleaseDomainName) && !empty(customBranchDomainName)
 var mainContainerAppUrl = permanentTargetsEnabled
   ? 'https://${customDevDomainName}'
@@ -390,7 +379,7 @@ resource containerApps 'Microsoft.App/containerApps@2025-01-01' = [for target in
       }
     }
     template: {
-      containers: concat([
+      containers: [
         {
           name: 'eklee-keyvault'
           image: resolvedContainerImage
@@ -437,10 +426,6 @@ resource containerApps 'Microsoft.App/containerApps@2025-01-01' = [for target in
               name: 'AzureAd__Audience'
               value: 'api://${clientId}'
             }
-            {
-              name: 'Mise__Enabled'
-              value: enableMiseSidecar ? 'true' : 'false'
-            }
             // React frontend runtime configuration (injected by docker-entrypoint.sh)
             {
               name: 'VITE_AZURE_AD_CLIENT_ID'
@@ -484,65 +469,7 @@ resource containerApps 'Microsoft.App/containerApps@2025-01-01' = [for target in
             }
           ]
         }
-      ], enableMiseSidecar ? [
-        {
-          name: 'mise-sidecar'
-          image: resolvedMiseSidecarImage
-          resources: {
-            cpu: json('0.25')
-            memory: '0.5Gi'
-          }
-          env: [
-            {
-              name: 'ASPNETCORE_URLS'
-              value: 'http://+:5000'
-            }
-            {
-              name: 'AzureAd__Instance'
-              value: environment().authentication.loginEndpoint
-            }
-            {
-              name: 'AzureAd__TenantId'
-              value: tenantId
-            }
-            {
-              name: 'AzureAd__ClientId'
-              value: clientId
-            }
-            {
-              name: 'AzureAd__Audience'
-              value: clientId
-            }
-          ]
-          probes: [
-            {
-              type: 'Startup'
-              tcpSocket: {
-                port: 5000
-              }
-              initialDelaySeconds: 5
-              periodSeconds: 10
-              failureThreshold: 30
-            }
-            {
-              type: 'Liveness'
-              tcpSocket: {
-                port: 5000
-              }
-              initialDelaySeconds: 10
-              periodSeconds: 30
-            }
-            {
-              type: 'Readiness'
-              tcpSocket: {
-                port: 5000
-              }
-              initialDelaySeconds: 5
-              periodSeconds: 10
-            }
-          ]
-        }
-      ] : [])
+      ]
       scale: {
         minReplicas: permanentTargetsEnabled ? 1 : 0
         maxReplicas: 1
