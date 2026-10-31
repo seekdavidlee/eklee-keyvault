@@ -6,7 +6,15 @@ on:
       - '**'
     paths:
       - 'Eklee.KeyVault.Api/**'
+      - 'Eklee.KeyVault.Api.Tests/**'
       - 'Eklee.KeyVault.UI/**'
+      - 'Eklee.KeyVault.sln'
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'docker-entrypoint.sh'
+      - '.github/workflows/cicd.yml'
+      - '.github/scripts/resolve-container-app-name.sh'
+      - '.github/scripts/resolve-image-tag.sh'
       - '!**.md'
 
 permissions:
