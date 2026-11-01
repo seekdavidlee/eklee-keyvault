@@ -7,7 +7,7 @@ public sealed class CategoryInitializationService(IServiceScopeFactory scopeFact
     public async Task StartAsync(CancellationToken cancellationToken)
     {
         using var scope = scopeFactory.CreateScope();
-        await scope.ServiceProvider.GetRequiredService<CategoryService>().InitializeAsync();
+        await scope.ServiceProvider.GetRequiredService<CategoryService>().InitializeAsync(cancellationToken);
     }
 
     /// <inheritdoc/>

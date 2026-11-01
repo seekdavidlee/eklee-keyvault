@@ -199,11 +199,21 @@ function npm {
     }
     $ReportArgument = $args | Where-Object { $_ -like '--outputFile=*' } | Select-Object -First 1
     if ($ReportArgument) {
+        $ReportedFiles = if ($null -ne $SkillTestState.TestReportFiles) { $SkillTestState.TestReportFiles } else {
+            @($args | Where-Object { $_ -like '*.test.*' })
+        }
         @{
             success = $true; numTotalTests = $SkillTestState.Passed
             numPassedTests = $SkillTestState.Passed; numFailedTests = 0
             numPendingTests = $SkillTestState.Skipped; numTodoTests = 0
-        } | ConvertTo-Json | Set-Content -LiteralPath $ReportArgument.Substring('--outputFile='.Length)
+            testResults = @($ReportedFiles | ForEach-Object {
+                @{
+                    name = [IO.Path]::GetFullPath($_, (Get-Location).Path).Replace('\', '/')
+                    status = 'passed'
+                    assertionResults = if ($_ -eq $SkillTestState.EmptyReportFile) { @() } else { @(@{ status = 'passed' }) }
+                }
+            })
+        } | ConvertTo-Json -Depth 10 | Set-Content -LiteralPath $ReportArgument.Substring('--outputFile='.Length)
     }
     if ($args[0] -ne 'run') { throw "Unexpected npm invocation: $args" }
     return 'mocked npm check completed'
@@ -562,6 +572,15 @@ if ($MyInvocation.InvocationName -ne '.') {
         Set-Content -LiteralPath (Join-Path $Fixture 'Eklee.KeyVault.UI/node_modules/vitest/package.json') -Value '{}'
         Set-Content -LiteralPath (Join-Path $Fixture 'Eklee.KeyVault.UI/src/example.test.ts') -Value 'fixture'
         Assert-Equal (& $FrontendScript -TestFiles src/example.test.ts -Build -Lint -RepoRoot $Fixture).Status 'Passed' 'frontend run/build/lint reports'
+        Set-Content -LiteralPath (Join-Path $Fixture 'Eklee.KeyVault.UI/src/second.test.ts') -Value 'fixture'
+        $RequestedTests = @('src/example.test.ts', 'src/second.test.ts')
+        Assert-Equal (& $FrontendScript -TestFiles $RequestedTests -RepoRoot $Fixture).Status 'Passed' 'every requested file executes with normalized report paths'
+        $SkillTestState.TestReportFiles = @('src/example.test.ts')
+        Assert-Throws { & $FrontendScript -TestFiles $RequestedTests -RepoRoot $Fixture } '*missing execution for requested file*'
+        $SkillTestState.TestReportFiles = $null
+        $SkillTestState.EmptyReportFile = 'src/second.test.ts'
+        Assert-Throws { & $FrontendScript -TestFiles $RequestedTests -RepoRoot $Fixture } '*no successful execution*requested file*'
+        $SkillTestState.EmptyReportFile = $null
         Assert-Throws { & $FrontendScript -TestFiles e2e/example.test.ts -RepoRoot $Fixture } '*in-project unit-test file*'
         $SkillTestState.Passed = 0
         Assert-Throws { & $FrontendScript -TestFiles src/example.test.ts -RepoRoot $Fixture } '*missing successful execution*'

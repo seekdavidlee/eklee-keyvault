@@ -230,7 +230,14 @@ To target a different project file:
 
 1. Provision infrastructure locally using the [development infrastructure deployment instructions](Deployment/README.md#development-environment), including the required [managed identity RBAC script](Deployment/assign-mi-rbac.ps1). Infrastructure provisioning is separate from application CI/CD.
 1. Run `Setup-Dev.ps1` for the repository maintainer dev environment. It provisions the permanent main, release, and branch Container Apps; binds their custom HTTPS domains; and reconciles the three SPA redirect URLs locally.
-1. Push to `main` or `release/*` to trigger **CI/CD** deployment and hosted E2E for the matching permanent target. Other branches publish a commit-addressable GHCR image but do not deploy automatically. To deploy and test a feature or bugfix commit, run `./Scripts/Invoke-HostedE2E.ps1 -Current` from that checkout.
+1. Push changes matching the [CI/CD path filters](.github/workflows/cicd.yml)
+  to trigger image publication, deployment, and hosted E2E. `main` selects the
+  permanent main/dev target, `release/*` selects the release target, and other
+  branches select the shared branch target. Documentation-only pushes do not
+  trigger this workflow. Branch deployments share one permanent Container App;
+  a later qualifying branch push can replace its deployed image. To redeploy
+  and locally test a specific feature or bugfix commit after its image is
+  published, run `./Scripts/Invoke-HostedE2E.ps1 -Current` from that checkout.
 
 1. Perform user role assignments per [Post Deployment RBAC](#post-deployment-rbac).
 

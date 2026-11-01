@@ -7,25 +7,60 @@ namespace Eklee.KeyVault.Api.Services;
 public class CategoryService(BlobService blobService, KeyVaultService keyVaultService)
 {
     /// <summary>Migrates legacy metadata without reading or rewriting secret values or access records.</summary>
+    /// <param name="cancellationToken">Cancels startup migration and contention backoff.</param>
     /// <returns>A task completing after a durable, retry-safe migration.</returns>
-    public async Task InitializeAsync()
+    public async Task InitializeAsync(CancellationToken cancellationToken = default)
     {
+        cancellationToken.ThrowIfCancellationRequested();
         var secrets = await keyVaultService.GetSecretsAsync();
         await MutateAsync(metadata => (true, metadata.InitializeCategories([])));
         var (metadata, _) = await blobService.GetMetaAsync();
         var knownNames = (metadata.Items ?? []).Select(item => item.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
-        foreach (var name in secrets.Select(secret => secret.Name).Distinct(StringComparer.OrdinalIgnoreCase))
+        var missingNames = secrets.Select(secret => secret.Name)
+            .Distinct(StringComparer.OrdinalIgnoreCase)
+            .Where(name => !knownNames.Contains(name))
+            .Order(StringComparer.OrdinalIgnoreCase);
+        foreach (var batch in missingNames.Chunk(100))
         {
-            if (knownNames.Contains(name))
+            await InitializeBatchAsync(batch, cancellationToken);
+        }
+    }
+
+    /// <summary>Holds a bounded batch's leases through existence checks and persistence, retrying temporary contention.</summary>
+    private async Task InitializeBatchAsync(string[] names, CancellationToken cancellationToken)
+    {
+        for (var attempt = 0; attempt < 5; attempt++)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var operations = new List<IAsyncDisposable>();
+            try
             {
-                continue;
+                var (metadata, _) = await blobService.GetMetaAsync();
+                var knownNames = (metadata.Items ?? []).Select(item => item.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+                var confirmedNames = new List<string>();
+                foreach (var name in names.Where(name => !knownNames.Contains(name)))
+                {
+                    cancellationToken.ThrowIfCancellationRequested();
+                    operations.Add(await blobService.AcquireSecretOperationAsync(name));
+                    if (await keyVaultService.SecretExistsAsync(name))
+                    {
+                        confirmedNames.Add(name);
+                    }
+                }
+
+                cancellationToken.ThrowIfCancellationRequested();
+                await MutateAsync(current => (true, current.InitializeCategories(confirmedNames)));
+                return;
+            }
+            catch (RequestFailedException exception) when (exception.Status == 409 && attempt < 4)
+            {
+            }
+            finally
+            {
+                await Task.WhenAll(operations.Select(operation => operation.DisposeAsync().AsTask()));
             }
 
-            await using var operation = await blobService.AcquireSecretOperationAsync(name);
-            if (await keyVaultService.SecretExistsAsync(name))
-            {
-                await MutateAsync(current => (true, current.InitializeCategories([name])));
-            }
+            await Task.Delay(TimeSpan.FromMilliseconds(100 * (1 << attempt)), cancellationToken);
         }
     }
 

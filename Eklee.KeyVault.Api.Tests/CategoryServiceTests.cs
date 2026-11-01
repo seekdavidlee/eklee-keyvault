@@ -132,6 +132,124 @@ public class CategoryServiceTests
     }
 
     [Fact]
+    public async Task GivenTemporaryLeaseContention_WhenMigrating_RetriesAndReleasesEarlierLeases()
+    {
+        var store = new MetadataStore { LeaseConflictsRemaining = 1, LeaseConflictName = "legacy-b" };
+        var inventory = new SecretInventory("legacy-a", "legacy-b");
+        var service = new CategoryService(store, inventory);
+
+        await service.InitializeAsync();
+
+        Assert.Equal(4, store.LeaseAttempts);
+        Assert.Equal(2, store.Read().Items!.Count);
+        Assert.False(store.IsSecretLeased("legacy-a"));
+        Assert.False(store.IsSecretLeased("legacy-b"));
+    }
+
+    [Fact]
+    public async Task GivenPersistentLeaseContention_WhenMigrating_StopsAfterFiveAttemptsAndReleasesLeases()
+    {
+        var store = new MetadataStore { LeaseConflictsRemaining = 10, LeaseConflictName = "legacy-b" };
+        var service = new CategoryService(store, new SecretInventory("legacy-a", "legacy-b"));
+
+        var exception = await Assert.ThrowsAsync<RequestFailedException>(() => service.InitializeAsync());
+
+        Assert.Equal(409, exception.Status);
+        Assert.Equal(10, store.LeaseAttempts);
+        Assert.Empty(store.Read().Items ?? []);
+        Assert.False(store.IsSecretLeased("legacy-a"));
+    }
+
+    [Fact]
+    public async Task GivenCancellationDuringMigration_WhenStopping_ReleasesLeasesWithoutPersistingBatch()
+    {
+        using var cancellation = new CancellationTokenSource();
+        var store = new MetadataStore();
+        var inventory = new SecretInventory("legacy-a", "legacy-b")
+        {
+            OnExistenceCheck = _ =>
+            {
+                cancellation.Cancel();
+                return Task.CompletedTask;
+            }
+        };
+        var service = new CategoryService(store, inventory);
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(() => service.InitializeAsync(cancellation.Token));
+
+        Assert.Empty(store.Read().Items ?? []);
+        Assert.False(store.IsSecretLeased("legacy-a"));
+        Assert.Equal(1, store.LeaseAttempts);
+    }
+
+    [Fact]
+    public async Task GivenLaterLookupFailure_WhenMigrating_DiscardsBatchAndReleasesEveryLease()
+    {
+        var store = new MetadataStore();
+        var inventory = new SecretInventory("legacy-a", "legacy-b")
+        {
+            OnExistenceCheck = name => name == "legacy-b"
+                ? Task.FromException(new RequestFailedException(500, "Test later lookup failure"))
+                : Task.CompletedTask
+        };
+        var service = new CategoryService(store, inventory);
+
+        await Assert.ThrowsAsync<RequestFailedException>(() => service.InitializeAsync());
+
+        Assert.Empty(store.Read().Items ?? []);
+        Assert.False(store.IsSecretLeased("legacy-a"));
+        Assert.False(store.IsSecretLeased("legacy-b"));
+        Assert.Equal(1, store.SuccessfulWrites);
+    }
+
+    [Fact]
+    public async Task GivenAnotherReplicaCompletedEntry_WhenRetryingMigration_ReloadsAndSkipsThatEntry()
+    {
+        var store = new MetadataStore { LeaseConflictsRemaining = 1, LeaseConflictName = "legacy-b" };
+        var inventory = new SecretInventory("legacy-a", "legacy-b");
+        var service = new CategoryService(store, inventory);
+        inventory.OnExistenceCheck = async _ =>
+        {
+            inventory.OnExistenceCheck = null;
+            var state = store.Read();
+            state.InitializeCategories(["legacy-b"]);
+            await store.UpdateMetaAsync(state, (await store.GetMetaAsync()).ETag);
+        };
+
+        await service.InitializeAsync();
+
+        Assert.Equal(3, store.LeaseAttempts);
+        Assert.Equal(2, inventory.ExistenceChecks);
+        Assert.Equal(2, store.Read().Items!.Count);
+        Assert.False(store.IsSecretLeased("legacy-a"));
+    }
+
+    [Fact]
+    public async Task GivenLargeLegacyInventory_WhenMigrating_PersistsBoundedBatchesWithLeasesHeld()
+    {
+        var names = Enumerable.Range(0, 250).Select(index => $"legacy-{index:D3}").ToArray();
+        var store = new MetadataStore();
+        var service = new CategoryService(store, new SecretInventory(names));
+        store.OnWrite = state =>
+        {
+            foreach (var item in state.Items ?? [])
+            {
+                if (store.Read().Items?.Any(existing => existing.Id == item.Id) != true)
+                {
+                    Assert.True(store.IsSecretLeased(item.Id!));
+                }
+            }
+        };
+
+        await service.InitializeAsync();
+
+        Assert.Equal(4, store.SuccessfulWrites);
+        Assert.Equal(250, store.Read().Items!.Count);
+        Assert.Equal(100, store.MaximumLeases);
+        Assert.All(names, name => Assert.False(store.IsSecretLeased(name)));
+    }
+
+    [Fact]
     public async Task GivenInterruptedMigration_WhenRetrying_PreservesDefaultIdentityAndWritesOnlyOnce()
     {
         var store = new MetadataStore { ConflictsRemaining = 1 };
@@ -380,6 +498,10 @@ public class CategoryServiceTests
         public Action<SecretItemMetaList>? OnConflict { get; set; }
         public int SuccessfulWrites { get; private set; }
         public int LeaseAttempts { get; private set; }
+        public int LeaseConflictsRemaining { get; set; }
+        public string? LeaseConflictName { get; init; }
+        public int MaximumLeases { get; private set; }
+        public Action<SecretItemMetaList>? OnWrite { get; set; }
 
         public bool IsSecretLeased(string name)
         {
@@ -394,7 +516,13 @@ public class CategoryServiceTests
             LeaseAttempts++;
             lock (operations)
             {
+                if (name == LeaseConflictName && LeaseConflictsRemaining-- > 0)
+                {
+                    throw new RequestFailedException(409, "Test temporary lease conflict");
+                }
+
                 if (!operations.Add(name)) throw new RequestFailedException(409, "Test operation already leased");
+                MaximumLeases = Math.Max(MaximumLeases, operations.Count);
             }
 
             return Task.FromResult<IAsyncDisposable>(new OperationScope(() =>
@@ -430,6 +558,7 @@ public class CategoryServiceTests
             }
 
             Assert.Equal(version.ToString(), ifMatchEtag);
+            OnWrite?.Invoke(state);
             serialized = BinaryData.FromObjectAsJson(state).ToString();
             SuccessfulWrites++;
             return Task.FromResult((++version).ToString());

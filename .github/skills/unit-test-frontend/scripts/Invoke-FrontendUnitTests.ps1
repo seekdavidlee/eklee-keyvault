@@ -47,6 +47,7 @@ if ($MyInvocation.InvocationName -ne '.') {
         if (-not (Test-Path -LiteralPath 'node_modules/vitest/package.json')) {
             return [pscustomobject]@{ Status = 'Blocked'; Reason = 'Configured Vitest is not installed. Run Initialize-FrontendUnitTests.ps1.' }
         }
+        $RequestedPaths = @()
         foreach ($File in $TestFiles) {
             $FullPath = [IO.Path]::GetFullPath((Join-Path $UiRoot $File))
             if (-not $FullPath.StartsWith($UiRoot + [IO.Path]::DirectorySeparatorChar, [StringComparison]::OrdinalIgnoreCase) -or
@@ -54,6 +55,7 @@ if ($MyInvocation.InvocationName -ne '.') {
                 -not (Test-Path -LiteralPath $FullPath -PathType Leaf)) {
                 throw "Expected an existing in-project unit-test file: $File"
             }
+            $RequestedPaths += $FullPath
         }
         $Commands = @([pscustomobject]@{
             Command = 'npm'; Arguments = @('run', $TestScript, '--', '--run', '--reporter=json', "--outputFile=$ReportFile") + $TestFiles
@@ -75,6 +77,22 @@ if ($MyInvocation.InvocationName -ne '.') {
         if (-not $Report.success -or $Report.numPassedTests -le 0 -or
             $Report.numFailedTests -gt 0 -or $Report.numPendingTests -gt 0 -or $Report.numTodoTests -gt 0) {
             throw 'Unit-test report is missing successful execution or contains failed/skipped tests.'
+        }
+        $PathComparison = if ($IsWindows) { [StringComparison]::OrdinalIgnoreCase } else { [StringComparison]::Ordinal }
+        foreach ($RequestedPath in $RequestedPaths) {
+            $FileResults = @($Report.testResults | Where-Object {
+                $_.name -is [string] -and -not [string]::IsNullOrWhiteSpace($_.name) -and
+                [IO.Path]::GetFullPath($_.name, $UiRoot).Equals($RequestedPath, $PathComparison)
+            })
+            if ($FileResults.Count -eq 0) {
+                throw "Unit-test report is missing execution for requested file: $RequestedPath"
+            }
+            foreach ($FileResult in $FileResults) {
+                if ($FileResult.status -cne 'passed' -or @($FileResult.assertionResults).Count -eq 0 -or
+                    @($FileResult.assertionResults | Where-Object { $_.status -cne 'passed' }).Count -gt 0) {
+                    throw "Unit-test report has no successful execution or contains failed/skipped tests for requested file: $RequestedPath"
+                }
+            }
         }
         return [pscustomobject]@{
             Status = 'Passed'; Commands = $Commands; Total = $Report.numTotalTests
