@@ -145,7 +145,8 @@ test.describe('Hosted category management', () => {
     await page.getByRole('link', { name: 'Categories', exact: true }).click();
     await page.getByRole('list', { name: 'Categories', exact: true })
       .getByRole('button', { name: categoryData.categoryName, exact: true }).click();
-    await expect(page.getByRole('gridcell', { name: secretName, exact: true })).toBeVisible({ timeout: 15_000 });
+    await expect(page.getByRole('gridcell').getByText(secretName, { exact: true }))
+      .toBeVisible({ timeout: 15_000 });
   });
 
   test('delete a category with no secrets and persist its removal', async ({ page, request, categoryData }) => {
