@@ -37,7 +37,9 @@ and cleanup. Do not infer filesystem isolation from separate agent contexts.
 ## Workflow
 
 1. Use [create-issue-branch](../skills/create-issue-branch/SKILL.md) with the
-   supplied issue. Resolve an existing release branch and the appropriate
+   supplied issue. Follow its type-resolution preflight and pass `-Type`
+   explicitly even for `Action Resolve`; an issue-only invocation is incomplete.
+   Resolve an existing release branch and the appropriate
    `feature`, `fix`, `doc`, or `refactor` name, then create the work branch from
    that verified release tip and proceed with implementation without a separate
    branch-creation approval when all prerequisite checks pass.

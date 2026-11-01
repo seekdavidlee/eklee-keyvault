@@ -39,7 +39,7 @@
 [CmdletBinding(SupportsShouldProcess, ConfirmImpact = 'High')]
 param(
     [Parameter(Mandatory)][ValidateNotNullOrEmpty()][string]$Issue,
-    [Parameter(Mandatory)][ValidateSet('feature', 'fix', 'doc', 'refactor')][string]$Type,
+    [ValidateSet('feature', 'fix', 'doc', 'refactor')][string]$Type,
     [ValidatePattern('^[a-z0-9]+(?:-[a-z0-9]+)*$')][string]$Slug,
     [string]$Base,
     [string]$ExpectedBaseSha,
@@ -53,6 +53,9 @@ $ErrorActionPreference = 'Stop'
 . (Join-Path $PSScriptRoot '../../_shared/RepositoryTools.ps1')
 
 if ($MyInvocation.InvocationName -ne '.') {
+    if ([string]::IsNullOrWhiteSpace($Type)) {
+        throw 'Type is required. Resolve the issue category and supply -Type feature, fix, doc, or refactor; interactive prompting is not supported.'
+    }
     Push-Location $RepoRoot
     try {
         if ($Action -eq 'Create' -and (-not $Base -or -not $Slug -or -not $ExpectedBaseSha)) {

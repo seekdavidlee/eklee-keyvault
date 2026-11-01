@@ -217,6 +217,12 @@ if ($MyInvocation.InvocationName -ne '.') {
         Copy-Item -LiteralPath (Join-Path $RepoRoot 'Eklee.KeyVault.UI/package.json') -Destination (Join-Path $Fixture 'Eklee.KeyVault.UI/package.json')
         Copy-Item -LiteralPath (Join-Path $RepoRoot 'Eklee.KeyVault.Api.Tests/Eklee.KeyVault.Api.Tests.csproj') -Destination (Join-Path $Fixture 'Eklee.KeyVault.Api.Tests/Eklee.KeyVault.Api.Tests.csproj')
 
+        $TypeParameter = (Get-Command $BranchScript).Parameters['Type']
+        Assert-Equal (@($TypeParameter.Attributes | Where-Object { $_ -is [System.Management.Automation.ParameterAttribute] -and $_.Mandatory }).Count) 0 'branch type does not prompt during binding'
+        Assert-Throws { & $BranchScript -Issue 60 -RepoRoot $Fixture } '*Type is required*'
+        Assert-Equal $SkillTestState.GitWrites 0 'missing type does not switch branches'
+        Assert-Equal $SkillTestState.GhWrites 0 'missing type does not publish'
+
         foreach ($Type in @('feature', 'fix', 'doc', 'refactor')) {
             $Resolved = & $BranchScript -Issue 60 -Type $Type -RepoRoot $Fixture
             Assert-Equal $Resolved.Status 'Resolved' "$Type branch resolution"
