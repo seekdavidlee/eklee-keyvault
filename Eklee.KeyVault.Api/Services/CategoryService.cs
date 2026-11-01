@@ -11,8 +11,22 @@ public class CategoryService(BlobService blobService, KeyVaultService keyVaultSe
     public async Task InitializeAsync()
     {
         var secrets = await keyVaultService.GetSecretsAsync();
-        var names = secrets.Select(secret => secret.Name).ToArray();
-        await MutateAsync(metadata => (true, metadata.InitializeCategories(names)));
+        await MutateAsync(metadata => (true, metadata.InitializeCategories([])));
+        var (metadata, _) = await blobService.GetMetaAsync();
+        var knownNames = (metadata.Items ?? []).Select(item => item.Id).ToHashSet(StringComparer.OrdinalIgnoreCase);
+        foreach (var name in secrets.Select(secret => secret.Name).Distinct(StringComparer.OrdinalIgnoreCase))
+        {
+            if (knownNames.Contains(name))
+            {
+                continue;
+            }
+
+            await using var operation = await blobService.AcquireSecretOperationAsync(name);
+            if (await keyVaultService.SecretExistsAsync(name))
+            {
+                await MutateAsync(current => (true, current.InitializeCategories([name])));
+            }
+        }
     }
 
     /// <summary>Lists shared categories without implying permission to read secrets.</summary>

@@ -104,11 +104,12 @@ public partial class SecretsController(
     [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> SetSecret(string name, [FromBody] SecretSetRequest request)
     {
-        if (string.IsNullOrWhiteSpace(name))
+        if (string.IsNullOrEmpty(name) || name.Length > 127 ||
+            name.Any(character => !char.IsAsciiLetterOrDigit(character) && character != '-'))
         {
             return Problem(
                 title: "Invalid Request",
-                detail: "Secret name cannot be empty.",
+                detail: "Secret name must contain between 1 and 127 ASCII letters, digits, or hyphens.",
                 statusCode: StatusCodes.Status400BadRequest);
         }
 

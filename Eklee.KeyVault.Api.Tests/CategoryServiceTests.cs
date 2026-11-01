@@ -14,6 +14,123 @@ namespace Eklee.KeyVault.Api.Tests;
 /// <summary>Checks durable category operations and conflict retries using isolated storage doubles.</summary>
 public class CategoryServiceTests
 {
+    [Theory]
+    [InlineData("", 1)]
+    [InlineData(" ", 1)]
+    [InlineData("bad_name", 1)]
+    [InlineData("bad.name", 1)]
+    [InlineData("bad/name", 1)]
+    [InlineData("\u00e9", 1)]
+    [InlineData("a", 128)]
+    public async Task GivenInvalidSecretName_WhenSetting_ReturnsBadRequestWithoutSideEffects(string part, int repetitions)
+    {
+        var name = string.Concat(Enumerable.Repeat(part, repetitions));
+        var store = new MetadataStore();
+        var inventory = new SecretInventory();
+        var service = new CategoryService(store, inventory);
+        var category = await service.CreateAsync("Finance");
+        var writes = store.SuccessfulWrites;
+        var controller = new SecretsController(inventory, store, null!, NullLogger<SecretsController>.Instance, service);
+
+        var result = await controller.SetSecret(name, new SecretSetRequest { Value = "test-value", CategoryId = category.Id });
+
+        var problem = Assert.IsType<ProblemDetails>(Assert.IsType<ObjectResult>(result).Value);
+        Assert.Equal(400, problem.Status);
+        Assert.Equal(0, store.LeaseAttempts);
+        Assert.Equal(0, inventory.SetAttempts);
+        Assert.Equal(writes, store.SuccessfulWrites);
+        Assert.Empty(store.Read().Items ?? []);
+        await service.DeleteAsync(category.Id);
+    }
+
+    [Theory]
+    [InlineData("a", 1)]
+    [InlineData("a", 127)]
+    [InlineData("Az09-", 1)]
+    public async Task GivenValidSecretName_WhenSetting_PersistsValueAndAssociation(string part, int repetitions)
+    {
+        var name = string.Concat(Enumerable.Repeat(part, repetitions));
+        var store = new MetadataStore();
+        var inventory = new SecretInventory();
+        var service = new CategoryService(store, inventory);
+        var category = await service.CreateAsync("Finance");
+        var controller = new SecretsController(inventory, store, null!, NullLogger<SecretsController>.Instance, service);
+
+        Assert.IsType<OkObjectResult>(await controller.SetSecret(name,
+            new SecretSetRequest { Value = "test-value", CategoryId = category.Id }));
+
+        Assert.Equal(1, inventory.SetAttempts);
+        var item = Assert.Single(store.Read().Items!);
+        Assert.Equal(name, item.Id);
+        Assert.Equal(category.Id, item.CategoryId);
+    }
+
+    [Fact]
+    public async Task GivenDeletionAfterStartupInventory_WhenMigrating_DoesNotRecreateAssociation()
+    {
+        var store = new MetadataStore();
+        var inventory = new SecretInventory("budget");
+        var service = new CategoryService(store, inventory);
+        var category = await service.CreateAsync("Finance");
+        await service.AssociateSecretAsync("budget", category.Id);
+        var controller = new SecretsController(inventory, store, null!, NullLogger<SecretsController>.Instance, service);
+        inventory.OnInventoryCaptured = async () =>
+        {
+            Assert.IsType<NoContentResult>(await controller.DeleteSecret("budget"));
+            store.ConflictsRemaining = 1;
+        };
+
+        await service.InitializeAsync();
+
+        Assert.Empty(store.Read().Items ?? []);
+        await service.DeleteAsync(category.Id);
+        var replacement = await service.CreateAsync("Replacement");
+        Assert.IsType<OkObjectResult>(await controller.SetSecret("budget",
+            new SecretSetRequest { Value = "test-value", CategoryId = replacement.Id }));
+        Assert.Equal(replacement.Id, Assert.Single(store.Read().Items!).CategoryId);
+    }
+
+    [Fact]
+    public async Task GivenDeletionDuringMissingEntryMigration_WhenSavingWithConflict_HoldsLeaseThroughLookupAndRetries()
+    {
+        var store = new MetadataStore();
+        var inventory = new SecretInventory("legacy");
+        var service = new CategoryService(store, inventory);
+        var controller = new SecretsController(inventory, store, null!, NullLogger<SecretsController>.Instance, service);
+        inventory.OnExistenceCheck = async name =>
+        {
+            var result = await controller.DeleteSecret(name);
+            var problem = Assert.IsType<ProblemDetails>(Assert.IsType<ObjectResult>(result).Value);
+            Assert.Equal(409, problem.Status);
+            store.ConflictsRemaining = 1;
+            store.OnConflict = _ => Assert.True(store.IsSecretLeased(name));
+        };
+
+        await service.InitializeAsync();
+
+        Assert.Equal(1, inventory.ExistenceChecks);
+        Assert.Equal(0, inventory.DeleteAttempts);
+        Assert.Equal(Assert.Single(store.Read().Categories).Id, Assert.Single(store.Read().Items!).CategoryId);
+        Assert.IsType<NoContentResult>(await controller.DeleteSecret("legacy"));
+        Assert.Empty(store.Read().Items!);
+    }
+
+    [Theory]
+    [InlineData(403)]
+    [InlineData(500)]
+    public async Task GivenExistenceLookupFailure_WhenMigrating_FailsWithoutAssociationAndReleasesLease(int status)
+    {
+        var store = new MetadataStore();
+        var inventory = new SecretInventory("legacy") { ExistenceFailureStatus = status };
+        var service = new CategoryService(store, inventory);
+
+        var exception = await Assert.ThrowsAsync<RequestFailedException>(() => service.InitializeAsync());
+
+        Assert.Equal(status, exception.Status);
+        Assert.Empty(store.Read().Items ?? []);
+        await using var operation = await store.AcquireSecretOperationAsync("legacy");
+    }
+
     [Fact]
     public async Task GivenInterruptedMigration_WhenRetrying_PreservesDefaultIdentityAndWritesOnlyOnce()
     {
@@ -209,6 +326,8 @@ public class CategoryServiceTests
         Assert.Equal("finance", secret.Meta.CategoryId);
         Assert.Single(store.Read().Items!);
         Assert.Equal(writes, store.SuccessfulWrites);
+        Assert.Equal(0, inventory.ExistenceChecks);
+        Assert.Equal(0, store.LeaseAttempts);
     }
 
     [Fact]
@@ -260,9 +379,19 @@ public class CategoryServiceTests
         public int ConflictsRemaining { get; set; }
         public Action<SecretItemMetaList>? OnConflict { get; set; }
         public int SuccessfulWrites { get; private set; }
+        public int LeaseAttempts { get; private set; }
+
+        public bool IsSecretLeased(string name)
+        {
+            lock (operations)
+            {
+                return operations.Contains(name);
+            }
+        }
 
         public override Task<IAsyncDisposable> AcquireSecretOperationAsync(string name)
         {
+            LeaseAttempts++;
             lock (operations)
             {
                 if (!operations.Add(name)) throw new RequestFailedException(409, "Test operation already leased");
@@ -319,25 +448,58 @@ public class CategoryServiceTests
         new Azure.Identity.DefaultAzureCredential(),
         NullLogger<KeyVaultService>.Instance)
     {
+        private readonly HashSet<string> activeNames = new(names, StringComparer.OrdinalIgnoreCase);
+
         public int? DeleteFailureStatus { get; set; }
         public int DeleteAttempts { get; private set; }
+        public int SetAttempts { get; private set; }
+        public int ExistenceChecks { get; private set; }
+        public int? ExistenceFailureStatus { get; init; }
+        public Func<Task>? OnInventoryCaptured { get; set; }
+        public Func<string, Task>? OnExistenceCheck { get; set; }
         public TaskCompletionSource? SetStarted { get; init; }
         public TaskCompletionSource? CompleteSet { get; init; }
 
-        public override Task<IEnumerable<SecretItem>> GetSecretsAsync() => Task.FromResult<IEnumerable<SecretItem>>(
-            names.Select(name => new SecretItem { Id = $"https://vault.example.test/secrets/{name}", Enabled = true }));
+        public override async Task<IEnumerable<SecretItem>> GetSecretsAsync()
+        {
+            var snapshot = activeNames.Select(name => new SecretItem
+            {
+                Id = $"https://vault.example.test/secrets/{name}", Enabled = true
+            }).ToArray();
+            if (OnInventoryCaptured is not null) await OnInventoryCaptured();
+            return snapshot;
+        }
+
+        public override async Task<bool> SecretExistsAsync(string name)
+        {
+            ExistenceChecks++;
+            if (OnExistenceCheck is not null) await OnExistenceCheck(name);
+            if (ExistenceFailureStatus is int status)
+            {
+                throw new RequestFailedException(status, "Test existence lookup failure");
+            }
+
+            return activeNames.Contains(name);
+        }
 
         public override Task DeleteSecretAsync(string name)
         {
             DeleteAttempts++;
-            return DeleteFailureStatus is int status
-                ? Task.FromException(new RequestFailedException(status, "Test deletion failure")) : Task.CompletedTask;
+            if (DeleteFailureStatus is int status)
+            {
+                return Task.FromException(new RequestFailedException(status, "Test deletion failure"));
+            }
+
+            activeNames.Remove(name);
+            return Task.CompletedTask;
         }
 
         public override async Task<string> SetSecretAsync(string name, string value)
         {
+            SetAttempts++;
             SetStarted?.TrySetResult();
             if (CompleteSet is not null) await CompleteSet.Task;
+            activeNames.Add(name);
             return name;
         }
     }

@@ -47,6 +47,22 @@ public partial class KeyVaultService
         return items;
     }
 
+    /// <summary>Checks enabled or disabled secret existence using version metadata without reading its value.</summary>
+    /// <param name="name">The name of the secret.</param>
+    /// <returns>Whether an active secret exists; deleted or missing secrets return false.</returns>
+    public virtual async Task<bool> SecretExistsAsync(string name)
+    {
+        try
+        {
+            await using var versions = secretClient.GetPropertiesOfSecretVersionsAsync(name).GetAsyncEnumerator();
+            return await versions.MoveNextAsync();
+        }
+        catch (Azure.RequestFailedException exception) when (exception.Status == 404)
+        {
+            return false;
+        }
+    }
+
     /// <summary>
     /// Retrieves the value of a single secret by name.
     /// </summary>
