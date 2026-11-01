@@ -264,7 +264,7 @@ if ($MyInvocation.InvocationName -ne '.') {
         Assert-Throws { & $BranchScript @ResumeArguments } '*not a verified ancestor*'
         $SkillTestState.IsAncestor = $true
         Assert-Equal $SkillTestState.GitWrites 1 'resume never switches branches'
-        Assert-Throws { & $BranchScript -Issue 60 -Type fix -Action Create -RepoRoot $Fixture -Confirm:$false } '*requires the approved*'
+        Assert-Throws { & $BranchScript -Issue 60 -Type fix -Action Create -RepoRoot $Fixture -Confirm:$false } '*requires the verified*'
         $BranchArguments.ExpectedBaseSha = ('c' * 40)
         Assert-Throws { & $BranchScript @BranchArguments -Confirm:$false } '*release tip changed*'
         $BranchArguments.ExpectedBaseSha = $SkillTestState.BaseSha
@@ -504,7 +504,12 @@ if ($MyInvocation.InvocationName -ne '.') {
             Assert-Equal ($ReviewBody -match '(?s)For standalone review without a supplied snapshot.*?Get-ReviewSnapshot\.ps1') $true 'review skill retains standalone snapshot capture'
         }
         Assert-Equal ($AgentBody -match '(?s)8\. Use \[request-github-code-review\].*?successful creation or verified reuse') $true 'remote review follows verified PR'
-        Assert-Equal ($AgentBody -match '(?s)alone does not authorize branch creation, commits, pushes, PR creation,\s+or remote review requests') $true 'coordinator preserves separate approvals'
+        Assert-Equal ($AgentBody -match '(?s)without a separate\s+branch-creation approval when all prerequisite checks pass') $true 'coordinator proceeds after branch prerequisites pass'
+        Assert-Equal ($AgentBody -match '(?s)issue implementation request authorizes verified local branch creation and\s+implementation') $true 'implementation request authorizes local work'
+        Assert-Equal ($AgentBody -match '(?s)alone does not authorize commits, pushes,\s+PR creation, or remote review requests') $true 'coordinator preserves publication approvals'
+        $BranchBody = Get-Content -LiteralPath (Join-Path (Split-Path $BranchScript -Parent) '../SKILL.md') -Raw
+        Assert-Equal ($BranchBody -match '(?s)without a separate branch-creation approval.*?resolve-only request\s+remains read-only.*?Honor explicit user limits') $true 'branch skill respects request authority and explicit limits'
+        Assert-Equal ($BranchBody -match '-ExpectedBaseSha \$Branch.BaseSha -Confirm:\$false') $true 'branch skill creates from verified proposal without prompting'
         Assert-Equal ($AgentBody -match 'Implement units sequentially on the verified issue branch') $true 'units retain verified branch ownership'
         Assert-Equal ($AgentBody -match '(?s)Unit-level checks and reviews\s+do not replace the complete proposed PR reviews') $true 'unit results cannot bypass final reviews'
         Assert-Equal ($AgentBody -match 'This workflow does not create worker branches or worktrees') $true 'conversion does not authorize worktree fan-out'

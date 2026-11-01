@@ -16,7 +16,7 @@
 .PARAMETER Base
     Optional explicit release/* branch when discovery is ambiguous.
 .PARAMETER ExpectedBaseSha
-    Approved release SHA from Resolve; required with Base and Slug for Create.
+    Verified release SHA from Resolve; required with Base and Slug for Create.
 .PARAMETER CreationEvidence
     Recorded Created result required for Resume. Verifies repository, issue,
     source, release base, and starting-commit ancestry without switching branches.
@@ -56,7 +56,7 @@ if ($MyInvocation.InvocationName -ne '.') {
     Push-Location $RepoRoot
     try {
         if ($Action -eq 'Create' -and (-not $Base -or -not $Slug -or -not $ExpectedBaseSha)) {
-            throw 'Create requires the approved Base, Slug, and ExpectedBaseSha from Resolve.'
+            throw 'Create requires the verified Base, Slug, and ExpectedBaseSha from Resolve.'
         }
         $InputContext = & (Join-Path $PSScriptRoot '../../implement-issue/scripts/Get-IssueContext.ps1') `
             -Issue $Issue -Repository $Repository -RepoRoot $RepoRoot
@@ -107,7 +107,7 @@ if ($MyInvocation.InvocationName -ne '.') {
         if ($Routing.Status -eq 'BaseSelectionRequired') { return $Routing }
         $BaseSha = (Invoke-SkillCommand git @('rev-parse', "refs/remotes/origin/$($Routing.Base)")).Trim()
         if ($ExpectedBaseSha -and $ExpectedBaseSha -cne $BaseSha) {
-            throw 'The release tip changed after approval. Resolve again and obtain approval for the new starting SHA.'
+            throw 'The release tip changed after resolution. Resolve again and verify the new starting SHA before retrying.'
         }
         $Existing = @((Invoke-SkillCommand git @(
             'for-each-ref', '--format=%(refname)', "refs/heads/$Source", "refs/remotes/origin/$Source"
