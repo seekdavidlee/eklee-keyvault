@@ -2,6 +2,7 @@ name: Resolve Merged PR Issues
 
 on:
   pull_request_target:
+    branches: ['release/*']
     types: [closed]
 
 permissions:
@@ -17,8 +18,7 @@ jobs:
   resolve:
     name: Resolve explicit closing links
     if: >-
-      github.event.pull_request.merged == true &&
-      github.event.pull_request.base.ref == github.event.repository.default_branch
+      github.event.pull_request.merged == true
     runs-on: ubuntu-latest
     timeout-minutes: 10
     steps:
