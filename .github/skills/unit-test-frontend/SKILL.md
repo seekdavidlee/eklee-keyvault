@@ -19,8 +19,16 @@ not MUI internals, broad snapshots, or exact generated secrets.
 
 Isolate HTTP, MSAL, browser APIs, and other services. Use minimal providers,
 restore mocks/timers, and await async work without sleeps. No live identities,
-APIs, or secrets. New tooling or broader refactors require approval; obtain
-packages only from approved sources and consult current API documentation.
+APIs, or secrets. Add and configure tooling required for frontend unit tests
+automatically when missing, keeping dependency and configuration changes scoped
+to those tests. Broader refactors still require approval. Consult current API
+documentation before adding tooling.
+
+Use the UI's configured approved package sources without asking for source
+approval again. Verify the effective registry, including applicable scoped
+overrides, matches that configuration before installing packages. If it differs
+or required packages are unavailable there, report `Blocked`; never change
+registries or fall back to another source.
 Playwright is not a unit-test substitute.
 
 ## Invocation
