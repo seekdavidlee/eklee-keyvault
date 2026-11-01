@@ -13,6 +13,7 @@
     Work category: feature, fix, doc, or refactor.
 .PARAMETER Slug
     Optional lowercase hyphenated description; otherwise derived from the title.
+    The complete type/issue-slug branch name must be fewer than 50 characters.
 .PARAMETER Base
     Optional explicit release/* branch when discovery is ambiguous.
 .PARAMETER ExpectedBaseSha
@@ -72,6 +73,9 @@ if ($MyInvocation.InvocationName -ne '.') {
             }
             $Context = $InputContext.Context
             $ExpectedSource = "$($Type.ToLowerInvariant())/$($InputContext.Issue.number)-$($CreationEvidence.Slug)"
+            if ($ExpectedSource.Length -ge 50) {
+                throw 'Recorded branch name must be fewer than 50 characters. Resume requires a separately authorized rename and updated evidence.'
+            }
             if ($CreationEvidence.Context.Repository -cne $Context.Repository -or
                 $CreationEvidence.Issue.number -ne $InputContext.Issue.number -or
                 $CreationEvidence.Source -cne $ExpectedSource -or
@@ -105,6 +109,9 @@ if ($MyInvocation.InvocationName -ne '.') {
             throw 'Issue branches must start from a release/* branch, not main or another work branch.'
         }
         $Source = "$($Type.ToLowerInvariant())/$($InputContext.Issue.number)-$Slug"
+        if ($Source.Length -ge 50) {
+            throw "Branch name must be fewer than 50 characters (received $($Source.Length)). Supply a shorter meaningful -Slug and resolve again."
+        }
         $null = Invoke-SkillCommand git @('check-ref-format', '--branch', $Source)
         $Routing = Get-SkillRouting -Source $Source -Base $Base
         if ($Routing.Status -eq 'BaseSelectionRequired') { return $Routing }

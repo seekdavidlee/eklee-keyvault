@@ -115,7 +115,7 @@ function gh {
         }
         'issue' {
             if ($args[1] -eq 'view') {
-                return (@{ number = 60; title = 'Example'; body = 'Criteria'; comments = @(); url = $SkillTestState.IssueUrl } | ConvertTo-Json)
+                return (@{ number = 60; title = $SkillTestState.IssueTitle; body = 'Criteria'; comments = @(); url = $SkillTestState.IssueUrl } | ConvertTo-Json)
             }
             $SkillTestState.GhWrites++
             $BodyIndex = [array]::IndexOf($args, '--body-file') + 1
@@ -207,7 +207,7 @@ if ($MyInvocation.InvocationName -ne '.') {
         AuthFailure = $false; ApiFailure = $false; FetchFailure = $false; NativeFailure = $false
         IssueUrl = 'https://github.com/owner/repo/issues/60'; Passed = 2; Skipped = 0; Alerts = @()
         Modes = @{}; PrTitle = 'Example'; PrBody = 'fixture'; ExistingBranches = @(); SwitchArguments = @()
-        IsAncestor = $true
+        IsAncestor = $true; IssueTitle = 'Example'
     }
     try {
         $null = [IO.Directory]::CreateDirectory((Join-Path $Fixture 'Eklee.KeyVault.UI/src'))
@@ -230,6 +230,22 @@ if ($MyInvocation.InvocationName -ne '.') {
             Assert-Equal $Resolved.Base 'release/1.2.0' "$Type release base"
         }
         Assert-Equal $SkillTestState.GitWrites 0 'branch lookup does not switch'
+        foreach ($Type in @('feature', 'fix', 'doc', 'refactor')) {
+            $Prefix = "$Type/60-"
+            $BoundarySlug = 'a' * (49 - $Prefix.Length)
+            $BoundaryBranch = & $BranchScript -Issue 60 -Type $Type -Slug $BoundarySlug -RepoRoot $Fixture
+            Assert-Equal $BoundaryBranch.Source.Length 49 "$Type accepts 49-character branch"
+            Assert-Throws { & $BranchScript -Issue 60 -Type $Type -Slug ($BoundarySlug + 'a') -RepoRoot $Fixture } '*fewer than 50 characters*'
+            Assert-Throws {
+                & $BranchScript -Issue 60 -Type $Type -Slug ($BoundarySlug + 'a') -Action Create `
+                    -Base release/1.2.0 -ExpectedBaseSha $SkillTestState.BaseSha -RepoRoot $Fixture -Confirm:$false
+            } '*fewer than 50 characters*'
+        }
+        $SkillTestState.IssueTitle = 'Add category management and category first secret navigation'
+        Assert-Throws { & $BranchScript -Issue 60 -Type feature -RepoRoot $Fixture } '*shorter meaningful -Slug*'
+        Assert-Equal (& $BranchScript -Issue 60 -Type feature -Slug category-management -RepoRoot $Fixture).Source 'feature/60-category-management' 'meaningful explicit slug overrides long title'
+        $SkillTestState.IssueTitle = 'Example'
+        Assert-Equal $SkillTestState.GitWrites 0 'overlength names never switch branches'
         $SkillTestState.Branch = 'main'
         $BranchArguments = @{
             Issue = 60; Type = 'fix'; Slug = 'release-routing'; Action = 'Create'; RepoRoot = $Fixture
@@ -243,6 +259,10 @@ if ($MyInvocation.InvocationName -ne '.') {
         Assert-Equal ($SkillTestState.SwitchArguments -join ' ') "switch --create fix/60-release-routing --no-track $($SkillTestState.BaseSha)" 'explicit untracked release start'
         $ResumeArguments = @{ Issue = 60; Type = 'fix'; Action = 'Resume'; CreationEvidence = $CreatedBranch; RepoRoot = $Fixture }
         Assert-Equal (& $BranchScript @ResumeArguments).Status 'Resumed' 'recorded branch resume'
+        $OriginalSlug = $CreatedBranch.Slug
+        $CreatedBranch.Slug = 'a' * 43
+        Assert-Throws { & $BranchScript @ResumeArguments } '*fewer than 50 characters*'
+        $CreatedBranch.Slug = $OriginalSlug
         $SkillTestState.Head = ('d' * 40)
         $SkillTestState.BaseSha = ('e' * 40)
         Assert-Equal (& $BranchScript @ResumeArguments).BaseSha $CreatedBranch.BaseSha 'resume preserves original starting SHA after release advances'

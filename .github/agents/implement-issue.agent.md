@@ -39,6 +39,8 @@ and cleanup. Do not infer filesystem isolation from separate agent contexts.
 1. Use [create-issue-branch](../skills/create-issue-branch/SKILL.md) with the
    supplied issue. Follow its type-resolution preflight and pass `-Type`
    explicitly even for `Action Resolve`; an issue-only invocation is incomplete.
+   Follow the skill's Branch Naming rules and pass the concise `-Slug`
+   explicitly during resolution.
    Resolve an existing release branch and the appropriate
    `feature`, `fix`, `doc`, or `refactor` name, then create the work branch from
    that verified release tip and proceed with implementation without a separate
