@@ -350,6 +350,7 @@ jobs:
           E2E_CLIENT_ID: ${{ vars.VITE_AZURE_AD_CLIENT_ID }}
           E2E_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
           E2E_ACCESS_TOKEN: ${{ steps.token.outputs.access_token }}
+          PLAYWRIGHT_JSON_OUTPUT_NAME: playwright-results.json
         run: |
           node --input-type=module <<'NODE'
           const claims = JSON.parse(Buffer.from(process.env.E2E_ACCESS_TOKEN.split('.')[1], 'base64url').toString('utf8'));
@@ -378,7 +379,7 @@ jobs:
             echo
             echo "Running Playwright against: \`$E2E_BASE_URL\`"
           } >> "$GITHUB_STEP_SUMMARY"
-          npx playwright test
+          npx playwright test --reporter=html,list,json
 
       - name: Upload Playwright results
         if: always()
@@ -388,4 +389,5 @@ jobs:
           path: |
             Eklee.KeyVault.UI/playwright-report/
             Eklee.KeyVault.UI/test-results/
+            Eklee.KeyVault.UI/playwright-results.json
           retention-days: 7
