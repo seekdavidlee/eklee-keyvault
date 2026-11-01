@@ -1,0 +1,41 @@
+name: Resolve Merged PR Issues
+
+on:
+  pull_request_target:
+    types: [closed]
+
+permissions:
+  contents: read
+  issues: write
+  pull-requests: write
+
+concurrency:
+  group: post-merge-issue-resolution-${{ github.repository }}-${{ github.event.pull_request.number }}
+  cancel-in-progress: false
+
+jobs:
+  resolve:
+    name: Resolve explicit closing links
+    if: >-
+      github.event.pull_request.merged == true &&
+      github.event.pull_request.base.ref == github.event.repository.default_branch
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Checkout trusted default branch
+        uses: actions/checkout@v7
+        with:
+          ref: ${{ github.event.repository.default_branch }}
+          persist-credentials: false
+
+      - name: Resolve merged PR issues
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          PR_NUMBER: ${{ github.event.pull_request.number }}
+          REPOSITORY: ${{ github.repository }}
+        run: |
+          & ./.github/scripts/Resolve-PullRequestIssues.ps1 `
+            -PullRequest ([int]$env:PR_NUMBER) -Repository $env:REPOSITORY `
+            -FromClosingLinks -Action Close -Confirm:$false |
+            ConvertTo-Json -Depth 6
