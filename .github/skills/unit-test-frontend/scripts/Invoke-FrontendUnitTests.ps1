@@ -41,11 +41,11 @@ if ($MyInvocation.InvocationName -ne '.') {
         if (-not $TestScript -or
             (-not $Package.devDependencies.vitest -and -not $Package.dependencies.vitest)) {
             return [pscustomobject]@{
-                Status = 'Blocked'; Reason = 'No supported unit-test script and Vitest dependency configured. Obtain tooling approval.'
+                Status = 'Blocked'; Reason = 'No supported unit-test script and Vitest dependency configured. Run Initialize-FrontendUnitTests.ps1.'
             }
         }
         if (-not (Test-Path -LiteralPath 'node_modules/vitest/package.json')) {
-            return [pscustomobject]@{ Status = 'Blocked'; Reason = 'Configured Vitest is not installed. Use approved package sources only.' }
+            return [pscustomobject]@{ Status = 'Blocked'; Reason = 'Configured Vitest is not installed. Run Initialize-FrontendUnitTests.ps1.' }
         }
         foreach ($File in $TestFiles) {
             $FullPath = [IO.Path]::GetFullPath((Join-Path $UiRoot $File))

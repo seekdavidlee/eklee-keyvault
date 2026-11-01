@@ -174,6 +174,29 @@ function npm {
     $global:LASTEXITCODE = 0
     if ($SkillTestState.NativeFailure) { $global:LASTEXITCODE = 1; return 'npm failed' }
     if ($args[0] -eq 'ls') { return '{"dependencies":{}}' }
+    if ($args[0] -eq 'config') { return ($SkillTestState.NpmConfig | ConvertTo-Json -Compress) }
+    if ($args[0] -eq 'install') {
+        $SkillTestState.NpmInstalls++
+        $Manifest = Get-Content -LiteralPath 'package.json' -Raw | ConvertFrom-Json -AsHashtable
+        $Packages = @('vitest', 'jsdom', '@testing-library/react', '@testing-library/dom', '@testing-library/jest-dom', '@testing-library/user-event')
+        $LockPackages = @{ '' = @{} }
+        foreach ($Name in $Packages) {
+            if (-not $Manifest.devDependencies[$Name]) { $Manifest.devDependencies[$Name] = '4.1.6' }
+            $LockPackages["node_modules/$Name"] = @{ resolved = "$($SkillTestState.LockRegistry)$Name/-/package.tgz"; integrity = 'sha512-fixture' }
+        }
+        $Manifest | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath 'package.json'
+        @{ lockfileVersion = 3; packages = $LockPackages } | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath 'package-lock.json'
+        return 'mocked package resolution'
+    }
+    if ($args[0] -eq 'ci') {
+        $SkillTestState.NpmCi++
+        foreach ($Name in @('vitest', 'jsdom', '@testing-library/react', '@testing-library/dom', '@testing-library/jest-dom', '@testing-library/user-event')) {
+            $Directory = Join-Path (Get-Location).Path "node_modules/$Name"
+            $null = [IO.Directory]::CreateDirectory($Directory)
+            Set-Content -LiteralPath (Join-Path $Directory 'package.json') -Value '{}'
+        }
+        return 'mocked package installation'
+    }
     $ReportArgument = $args | Where-Object { $_ -like '--outputFile=*' } | Select-Object -First 1
     if ($ReportArgument) {
         @{
@@ -200,6 +223,7 @@ if ($MyInvocation.InvocationName -ne '.') {
     $SecurityScript = Join-Path $Scripts 'upgrade-security/scripts/Invoke-SecurityUpgrade.ps1'
     $BackendScript = Join-Path $Scripts 'unit-test-backend/scripts/Invoke-BackendUnitTests.ps1'
     $FrontendScript = Join-Path $Scripts 'unit-test-frontend/scripts/Invoke-FrontendUnitTests.ps1'
+    $SetupScript = Join-Path $Scripts 'unit-test-frontend/scripts/Initialize-FrontendUnitTests.ps1'
     $SkillTestState = @{
         Branch = 'feature/60'; Head = ('a' * 40); Published = ('a' * 40); BaseSha = ('b' * 40)
         Releases = @('release/1.2.0'); Worktree = ''; Working = @(); Committed = @('LICENSE'); Untracked = @()
@@ -208,6 +232,8 @@ if ($MyInvocation.InvocationName -ne '.') {
         IssueUrl = 'https://github.com/owner/repo/issues/60'; Passed = 2; Skipped = 0; Alerts = @()
         Modes = @{}; PrTitle = 'Example'; PrBody = 'fixture'; ExistingBranches = @(); SwitchArguments = @()
         IsAncestor = $true; IssueTitle = 'Example'
+        NpmConfig = @{ registry = 'https://approved.example/npm/' }
+        LockRegistry = 'https://approved.example/npm/'; NpmInstalls = 0; NpmCi = 0
     }
     try {
         $null = [IO.Directory]::CreateDirectory((Join-Path $Fixture 'Eklee.KeyVault.UI/src'))
@@ -469,6 +495,65 @@ if ($MyInvocation.InvocationName -ne '.') {
 
         Assert-Equal (& $FrontendScript -TestFiles src/example.test.ts -RepoRoot $Fixture).Status 'Blocked' 'missing frontend runner'
         $PackageFile = Join-Path $Fixture 'Eklee.KeyVault.UI/package.json'
+        $OriginalPackage = Get-Content -LiteralPath $PackageFile -Raw
+        Set-Content -LiteralPath (Join-Path $Fixture 'Eklee.KeyVault.UI/vite.config.ts') -Value 'export default {}'
+        Assert-Equal (& $SetupScript -RepoRoot $Fixture).Status 'Blocked' 'setup requires configured approved source'
+        Set-Content -LiteralPath (Join-Path $Fixture 'Eklee.KeyVault.UI/.npmrc') -Value 'registry=https://approved.example/npm/'
+        Assert-Equal (& $SetupScript -RepoRoot $Fixture -WhatIf).Status 'Preview' 'setup preview'
+        Assert-Equal $SkillTestState.NpmInstalls 0 'preview never resolves or installs packages'
+        Assert-Equal (Get-Content -LiteralPath $PackageFile -Raw) $OriginalPackage 'preview preserves manifest'
+        $SkillTestState.NpmConfig.registry = 'https://unapproved.example/npm/'
+        Assert-Equal (& $SetupScript -RepoRoot $Fixture).Status 'Blocked' 'registry override blocks setup'
+        $SkillTestState.NpmConfig.registry = 'https://approved.example/npm/'
+        $SkillTestState.NpmConfig['@testing-library:registry'] = 'https://unapproved.example/npm/'
+        Assert-Equal (& $SetupScript -RepoRoot $Fixture).Status 'Blocked' 'scoped registry override blocks setup'
+        $SkillTestState.NpmConfig.Remove('@testing-library:registry')
+        Assert-Equal $SkillTestState.NpmInstalls 0 'source mismatches never resolve packages'
+        $SkillTestState.LockRegistry = 'https://unapproved.example/npm/'
+        Assert-Equal (& $SetupScript -RepoRoot $Fixture).Status 'Blocked' 'foreign lock downloads block installation'
+        Assert-Equal $SkillTestState.NpmCi 0 'foreign tarballs never downloaded'
+        Assert-Equal (Get-Content -LiteralPath $PackageFile -Raw) $OriginalPackage 'blocked resolution restores manifest'
+        Assert-Equal (Test-Path -LiteralPath (Join-Path $Fixture 'Eklee.KeyVault.UI/package-lock.json')) $false 'blocked resolution restores missing lock'
+        $SkillTestState.LockRegistry = 'https://approved.example/npm/'
+        $LockFile = Join-Path $Fixture 'Eklee.KeyVault.UI/package-lock.json'
+        $ForeignLock = '{"lockfileVersion":3,"packages":{"node_modules/example":{"resolved":"https://unapproved.example/package.tgz","integrity":"sha512-fixture"}}}'
+        Set-Content -LiteralPath $LockFile -Value $ForeignLock -NoNewline
+        $InstallsBefore = $SkillTestState.NpmInstalls
+        Assert-Equal (& $SetupScript -RepoRoot $Fixture).Status 'Blocked' 'existing foreign lock blocks before resolution'
+        Assert-Equal $SkillTestState.NpmInstalls $InstallsBefore 'existing foreign lock is never reused'
+        Assert-Equal (Get-Content -LiteralPath $LockFile -Raw) $ForeignLock 'preflight preserves existing lock'
+        Remove-Item -LiteralPath $LockFile
+        $RegistryLock = '{"lockfileVersion":3,"packages":{"node_modules/example":{"version":"1.2.3","integrity":"sha512-fixture"}}}'
+        Set-Content -LiteralPath $LockFile -Value $RegistryLock -NoNewline
+        Assert-Equal (& $SetupScript -RepoRoot $Fixture -WhatIf).Status 'Blocked' 'unexpected missing lock download metadata blocks setup'
+        $SkillTestState.NpmConfig['omit-lockfile-registry-resolved'] = $true
+        Assert-Equal (& $SetupScript -RepoRoot $Fixture -WhatIf).Status 'Preview' 'configured npm registry metadata omission supported'
+        Assert-Equal $SkillTestState.NpmInstalls $InstallsBefore 'omitted registry metadata preview remains read-only'
+        $SkillTestState.NpmConfig.Remove('omit-lockfile-registry-resolved')
+        Remove-Item -LiteralPath $LockFile
+        $UnsupportedPackage = $OriginalPackage | ConvertFrom-Json -AsHashtable
+        $UnsupportedPackage.scripts['test:unit'] = 'custom-runner'
+        $UnsupportedPackage | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath $PackageFile
+        Assert-Equal (& $SetupScript -RepoRoot $Fixture).Status 'Blocked' 'unsupported existing test command preserved'
+        Assert-Equal (Get-Content -LiteralPath $PackageFile -Raw | ConvertFrom-Json -AsHashtable).scripts['test:unit'] 'custom-runner' 'unsupported command not overwritten'
+        Set-Content -LiteralPath $PackageFile -Value $OriginalPackage -NoNewline
+        $SkillTestState.NativeFailure = $true
+        Assert-Equal (& $SetupScript -RepoRoot $Fixture).Status 'Blocked' 'npm failure blocks setup without fallback'
+        $SkillTestState.NativeFailure = $false
+        $Setup = & $SetupScript -RepoRoot $Fixture
+        Assert-Equal $Setup.Status 'Configured' "frontend setup configured ($($Setup.Reason))"
+        Assert-Equal ($Setup.Commands[0].Arguments -contains '--ignore-scripts') $true 'resolution disables lifecycle scripts'
+        Assert-Equal ($Setup.Commands[0].Arguments -contains '--omit-lockfile-registry-resolved=false') $true 'new lock materializes download URLs for verification'
+        Assert-Equal ($Setup.Commands[1].Arguments -contains '--engine-strict') $true 'installation checks runtime compatibility'
+        Assert-Equal ($Setup.Commands[1].Arguments -contains '--include=dev') $true 'production environment cannot omit test dependencies'
+        Assert-Equal $SkillTestState.NpmCi 1 'one verified installation'
+        Assert-Equal (Get-Content -LiteralPath $PackageFile -Raw | ConvertFrom-Json -AsHashtable).devDependencies.vite ($OriginalPackage | ConvertFrom-Json -AsHashtable).devDependencies.vite 'existing dependency version preserved'
+        $ConfigPath = Join-Path $Fixture 'Eklee.KeyVault.UI/vitest.config.mjs'
+        $ConfigBefore = Get-Content -LiteralPath $ConfigPath -Raw
+        Assert-Equal ($ConfigBefore -match "include: \['src/\*\*/\*\.test") $true 'configuration limits discovery to source unit tests'
+        Assert-Equal (& $SetupScript -RepoRoot $Fixture).Status 'Ready' 'setup rerun is idempotent'
+        Assert-Equal $SkillTestState.NpmCi 1 'ready setup does not reinstall'
+        Assert-Equal (Get-Content -LiteralPath $ConfigPath -Raw) $ConfigBefore 'existing test configuration preserved'
         $UiPackage = Get-Content -LiteralPath $PackageFile -Raw | ConvertFrom-Json -AsHashtable
         $UiPackage.scripts.test = 'vitest'
         $UiPackage.devDependencies.vitest = '4.1.6'

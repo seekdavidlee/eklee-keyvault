@@ -19,36 +19,34 @@ not MUI internals, broad snapshots, or exact generated secrets.
 
 Isolate HTTP, MSAL, browser APIs, and other services. Use minimal providers,
 restore mocks/timers, and await async work without sleeps. No live identities,
-APIs, or secrets. Add and configure tooling required for frontend unit tests
-automatically when missing, keeping dependency and configuration changes scoped
-to those tests. Broader refactors still require approval. Consult current API
-documentation before adding tooling.
+APIs, or secrets. Playwright is not a unit-test substitute.
 
-Use the UI's configured approved package sources without asking for source
-approval again. Verify the effective registry, including applicable scoped
-overrides, matches that configuration before installing packages. If it differs
-or required packages are unavailable there, report `Blocked`; never change
-registries or fall back to another source.
-Playwright is not a unit-test substitute.
+## Missing Tooling
+
+Run [Initialize-FrontendUnitTests.ps1](scripts/Initialize-FrontendUnitTests.ps1)
+when tooling is missing. It owns dependency/configuration setup and approved-source
+checks; `-WhatIf` previews changes. Stop on `Blocked`; do not bypass source checks.
+`Ready` or `Configured` permits test authoring/execution, not a passing test claim.
+Broader refactors require approval.
+
+```powershell
+$Setup = & ./.github/skills/unit-test-frontend/scripts/Initialize-FrontendUnitTests.ps1
+```
 
 ## Invocation
 
 Run [Invoke-FrontendUnitTests.ps1](scripts/Invoke-FrontendUnitTests.ps1) from the
-repository root. `TestFiles` are required UI-relative existing unit-test paths.
-`Build` adds the configured build/type check, `Lint` adds lint, and `RepoRoot`
-is optional. `-WhatIf` previews supported commands.
+repository root with UI-relative test paths. The script owns path/tooling
+validation, execution, and result checks; its parameter help defines options.
 
 ```powershell
 $Result = & ./.github/skills/unit-test-frontend/scripts/Invoke-FrontendUnitTests.ps1 -TestFiles src/example.test.tsx -Build -Lint
 ```
 
-## Outputs And Boundaries
+## Handoff
 
-`Passed` includes executed commands and counts. `Blocked` reports missing or
-unsupported tooling. `Preview` is not execution evidence. Errors block the gate.
-
-Return test files, covered behavior, exact commands/results, and remaining
-gaps. Run affected type/lint checks and broaden test selection for shared
-changes. Explain justified non-applicability separately from missing tools.
-Repair only in-scope failures; do not commit, publish, deploy, or substitute
-integration/E2E results for unit tests.
+Run affected type/lint checks and broaden test selection for shared changes.
+Return test files, covered behavior, the script's status/commands/counts, and
+remaining gaps. Only an executed `Passed` result satisfies the gate; distinguish
+non-applicability from blocked setup. Repair only in-scope failures; do not
+commit, publish, or deploy.
