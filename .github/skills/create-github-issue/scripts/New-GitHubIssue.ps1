@@ -21,6 +21,10 @@
 .PARAMETER RequirementsFile
     Path to a non-empty Markdown file containing the detailed issue body.
 
+.PARAMETER Requirements
+    Markdown body supplied directly instead of a file. The script creates and
+    removes its temporary body file, including on preview or failure.
+
 .PARAMETER Milestone
     Exact title of an open milestone. Required only when multiple milestones
     are open.
@@ -40,7 +44,7 @@
     Requires an authenticated GitHub CLI account with issue-write access for a
     live run. The script does not create labels or milestones.
 #>
-[CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High')]
+[CmdletBinding(SupportsShouldProcess = $true, ConfirmImpact = 'High', DefaultParameterSetName = 'File')]
 param(
     [Parameter(Mandatory = $true)]
     [ValidateNotNullOrEmpty()]
@@ -50,9 +54,13 @@ param(
     [ValidateSet('feature', 'enhancement', 'bug', 'documentation', IgnoreCase = $false)]
     [string]$IssueType,
 
-    [Parameter(Mandatory = $true)]
+    [Parameter(Mandatory = $true, ParameterSetName = 'File')]
     [ValidateNotNullOrEmpty()]
     [string]$RequirementsFile,
+
+    [Parameter(Mandatory = $true, ParameterSetName = 'Content')]
+    [ValidateNotNullOrEmpty()]
+    [string]$Requirements,
 
     [Parameter()]
     [ValidateNotNullOrEmpty()]
@@ -110,7 +118,7 @@ function Get-CanonicalRepository {
 
     $Arguments = @('repo', 'view')
     if (-not [string]::IsNullOrWhiteSpace($Repository)) {
-        $Arguments += @('--repo', $Repository)
+        $Arguments += $Repository
     }
 
     $Arguments += @('--json', 'nameWithOwner', '--jq', '.nameWithOwner')
@@ -289,14 +297,31 @@ function Invoke-GitHubIssueCreation {
 #region Main Execution
 
 if (-not $NoMain -and $MyInvocation.InvocationName -notin @('.', '')) {
+    $TemporaryBody = $null
     try {
-        Invoke-GitHubIssueCreation -Title $Title -IssueType $IssueType `
-            -RequirementsFile $RequirementsFile -Milestone $Milestone `
+        $BodyFile = $RequirementsFile
+        if ($PSCmdlet.ParameterSetName -eq 'Content') {
+            $TemporaryBody = [IO.Path]::GetTempFileName()
+            Set-Content -LiteralPath $TemporaryBody -Value $Requirements -Encoding utf8 -NoNewline -WhatIf:$false -Confirm:$false
+            $BodyFile = $TemporaryBody
+        }
+        $Result = Invoke-GitHubIssueCreation -Title $Title -IssueType $IssueType `
+            -RequirementsFile $BodyFile -Milestone $Milestone `
             -Repository $Repository -WhatIf:$WhatIfPreference
+        if ($TemporaryBody) {
+            $Result.RequirementsFile = $null
+            $Result | Add-Member -NotePropertyName Requirements -NotePropertyValue $Requirements
+        }
+        return $Result
     }
     catch {
         Write-Error -ErrorAction Continue "GitHub issue creation failed: $($_.Exception.Message)"
         exit 1
+    }
+    finally {
+        if ($TemporaryBody) {
+            Remove-Item -LiteralPath $TemporaryBody -Force -ErrorAction SilentlyContinue -WhatIf:$false -Confirm:$false
+        }
     }
 }
 #endregion Main Execution
