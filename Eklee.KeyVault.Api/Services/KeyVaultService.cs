@@ -30,7 +30,7 @@ public partial class KeyVaultService
     /// Only returns secrets that are currently enabled.
     /// </summary>
     /// <returns>A collection of <see cref="SecretItem"/> representing each secret.</returns>
-    public async Task<IEnumerable<SecretItem>> GetSecretsAsync()
+    public virtual async Task<IEnumerable<SecretItem>> GetSecretsAsync()
     {
         List<SecretItem> items = [];
 
@@ -72,7 +72,7 @@ public partial class KeyVaultService
     /// <param name="name">The name of the secret to create or update.</param>
     /// <param name="value">The secret value to store.</param>
     /// <returns>The name of the secret that was set.</returns>
-    public async Task<string> SetSecretAsync(string name, string value)
+    public virtual async Task<string> SetSecretAsync(string name, string value)
     {
         var response = await secretClient.SetSecretAsync(name, value);
         LogSetSecret(logger, name.SanitizeForLog());
@@ -85,7 +85,7 @@ public partial class KeyVaultService
     /// </summary>
     /// <param name="name">The name of the secret to delete.</param>
     /// <returns>A task that completes when the delete operation has been initiated.</returns>
-    public async Task DeleteSecretAsync(string name)
+    public virtual async Task DeleteSecretAsync(string name)
     {
         var operation = await secretClient.StartDeleteSecretAsync(name);
         LogInitiatedDelete(logger, name.SanitizeForLog());

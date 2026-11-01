@@ -1,12 +1,22 @@
-/** User-defined display metadata for a Key Vault secret. */
+/** Shared category whose stable ID and default designation survive renaming. */
+export interface CategoryItem {
+  id: string;
+  name: string;
+  isDefault: boolean;
+}
+
+/** User-defined display metadata and persisted category association for a secret. */
 export interface SecretItemMeta {
   id: string | null;
   displayName: string | null;
+  /** Null or missing only in legacy metadata awaiting startup migration. */
+  categoryId?: string | null;
 }
 
-/** Collection of secret metadata with an items array. */
+/** Complete shared metadata document; display-name edits must preserve its inventory. */
 export interface SecretItemMetaList {
   items: SecretItemMeta[] | null;
+  categories?: CategoryItem[];
 }
 
 /** Combined view of a Key Vault secret with display metadata, returned by GET /api/secrets. */
@@ -24,6 +34,8 @@ export interface SecretValueResponse {
 /** Request body for creating or updating a Key Vault secret via PUT /api/secrets/{name}. */
 export interface SecretSetRequest {
   value: string;
+  /** Required when creating a secret; an existing association cannot be changed. */
+  categoryId?: string;
 }
 
 /** Response from PUT /api/secrets/{name}. */

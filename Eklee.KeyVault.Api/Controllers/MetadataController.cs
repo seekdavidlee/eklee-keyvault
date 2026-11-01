@@ -36,11 +36,11 @@ public class MetadataController(BlobService blobService, ILogger<MetadataControl
     }
 
     /// <summary>
-    /// Replaces the entire secret metadata list in blob storage.
+    /// Saves display names from a complete metadata document without changing categories or associations.
     /// Requires the <c>If-Match</c> header with the current ETag for optimistic concurrency.
     /// When the metadata blob does not exist yet, omit the <c>If-Match</c> header.
     /// </summary>
-    /// <param name="metaList">The updated metadata list to persist.</param>
+    /// <param name="metaList">The complete inventory with display-name edits. Category and association changes are rejected.</param>
     /// <response code="204">The metadata was updated successfully.</response>
     /// <response code="400">The request body or headers are invalid.</response>
     /// <response code="409">The ETag does not match — the data was modified by another admin.</response>
@@ -65,10 +65,21 @@ public class MetadataController(BlobService blobService, ILogger<MetadataControl
 
         try
         {
-            var newEtag = await blobService.UpdateMetaAsync(metaList, ifMatchHeader);
+            var (current, etag) = await blobService.GetMetaAsync();
+            if (etag != ifMatchHeader)
+            {
+                return Problem(title: "Conflict", detail: "The metadata was modified by another admin. Please reload and try again.", statusCode: 409);
+            }
+
+            current.UpdateDisplayNames(metaList);
+            var newEtag = await blobService.UpdateMetaAsync(current, etag);
             logger.LogInformation("Updated secret metadata with {Count} items", metaList.Items?.Count ?? 0);
             Response.Headers.ETag = newEtag;
             return NoContent();
+        }
+        catch (ArgumentException ex)
+        {
+            return Problem(title: "Invalid Metadata", detail: ex.Message, statusCode: 400);
         }
         catch (RequestFailedException ex) when (ex.Status is 409 or 412)
         {

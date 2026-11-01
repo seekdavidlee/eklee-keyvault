@@ -16,24 +16,37 @@ public partial class SecretsController(
     KeyVaultService keyVaultService,
     BlobService blobService,
     SecretGenerationService secretGenerationService,
-    ILogger<SecretsController> logger) : ControllerBase
+    ILogger<SecretsController> logger,
+    CategoryService categoryService) : ControllerBase
 {
     /// <summary>
-    /// Lists all Key Vault secrets combined with their user-defined display metadata.
+    /// Lists Key Vault secrets with display metadata, optionally filtered by category.
     /// </summary>
+    /// <param name="categoryId">A persisted category ID, or null to list all secrets.</param>
     /// <returns>A list of <see cref="SecretItemView"/> objects.</returns>
     /// <response code="200">Returns the list of secrets with metadata.</response>
     /// <response code="403">The caller does not have access to Key Vault or blob storage.</response>
+    /// <response code="404">The requested category does not exist.</response>
     [HttpGet]
     [ProducesResponseType(typeof(IEnumerable<SecretItemView>), StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
-    public async Task<IActionResult> GetSecrets()
+    [ProducesResponseType(StatusCodes.Status404NotFound)]
+    public async Task<IActionResult> GetSecrets([FromQuery] string? categoryId = null)
     {
         try
         {
             var (metaList, _) = await blobService.GetMetaAsync();
+            if (categoryId is not null && !metaList.Categories.Any(category => category.Id == categoryId))
+            {
+                return Problem(title: "Category Not Found", detail: "Choose an existing category.", statusCode: 404);
+            }
+
             var secrets = await keyVaultService.GetSecretsAsync();
             var views = secrets.Select(s => new SecretItemView(s, metaList)).ToList();
+            if (categoryId is not null)
+            {
+                views = views.Where(view => view.Meta.CategoryId == categoryId).ToList();
+            }
 
             LogReturningSecrets(logger, views.Count);
             return Ok(views);
@@ -77,16 +90,18 @@ public partial class SecretsController(
     /// If a secret with the specified name already exists, its value is replaced.
     /// </summary>
     /// <param name="name">The name of the secret to create or update.</param>
-    /// <param name="request">The request body containing the secret value.</param>
+    /// <param name="request">The secret value and, for creation, a required category ID. Existing associations cannot change.</param>
     /// <returns>The name of the secret that was set.</returns>
     /// <response code="200">The secret was created or updated successfully.</response>
     /// <response code="400">The request body is invalid.</response>
     /// <response code="403">The caller does not have the Admin role.</response>
+    /// <response code="409">An association change or concurrent metadata write was rejected.</response>
     [HttpPut("{name}")]
     [Authorize(Roles = "Admin")]
     [ProducesResponseType(StatusCodes.Status200OK)]
     [ProducesResponseType(StatusCodes.Status400BadRequest)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> SetSecret(string name, [FromBody] SecretSetRequest request)
     {
         if (string.IsNullOrWhiteSpace(name))
@@ -99,9 +114,27 @@ public partial class SecretsController(
 
         try
         {
+            await using var operation = await blobService.AcquireSecretOperationAsync(name);
+            await categoryService.AssociateSecretAsync(name, request.CategoryId);
             var secretName = await keyVaultService.SetSecretAsync(name, request.Value);
             LogAdminSetSecret(logger, secretName.SanitizeForLog());
             return Ok(new { name = secretName });
+        }
+        catch (ArgumentException ex)
+        {
+            return Problem(title: "Invalid Category", detail: ex.Message, statusCode: 400);
+        }
+        catch (KeyNotFoundException ex)
+        {
+            return Problem(title: "Invalid Category", detail: ex.Message, statusCode: 400);
+        }
+        catch (InvalidOperationException ex)
+        {
+            return Problem(title: "Category Conflict", detail: ex.Message, statusCode: 409);
+        }
+        catch (Azure.RequestFailedException ex) when (ex.Status is 409 or 412)
+        {
+            return Problem(title: "Category Conflict", detail: "Another operation is modifying this secret or its category metadata. Reload and try again.", statusCode: 409);
         }
         catch (Azure.RequestFailedException ex) when (ex.Status == 403)
         {
@@ -147,26 +180,44 @@ public partial class SecretsController(
     /// <response code="204">The secret was deleted successfully.</response>
     /// <response code="403">The caller does not have the Admin role.</response>
     /// <response code="404">The secret was not found.</response>
+    /// <response code="409">The delete or metadata cleanup conflicted; retry the same deletion.</response>
     [HttpDelete("{name}")]
     [Authorize(Roles = "Admin")]
     [ProducesResponseType(StatusCodes.Status204NoContent)]
     [ProducesResponseType(StatusCodes.Status403Forbidden)]
     [ProducesResponseType(StatusCodes.Status404NotFound)]
+    [ProducesResponseType(StatusCodes.Status409Conflict)]
     public async Task<IActionResult> DeleteSecret(string name)
     {
         try
         {
-            await keyVaultService.DeleteSecretAsync(name);
+            await using var operation = await blobService.AcquireSecretOperationAsync(name);
+            var notFound = false;
+            try
+            {
+                await keyVaultService.DeleteSecretAsync(name);
+            }
+            catch (Azure.RequestFailedException ex) when (ex.Status == 404)
+            {
+                notFound = true;
+            }
+
+            await categoryService.RemoveSecretAsync(name);
+            if (notFound)
+            {
+                LogSecretNotFoundForDeletion(logger, name.SanitizeForLog());
+                return Problem(
+                    title: "Not Found",
+                    detail: $"Secret '{name}' was not found.",
+                    statusCode: StatusCodes.Status404NotFound);
+            }
+
             LogAdminDeletedSecret(logger, name.SanitizeForLog());
             return NoContent();
         }
-        catch (Azure.RequestFailedException ex) when (ex.Status == 404)
+        catch (Azure.RequestFailedException ex) when (ex.Status is 409 or 412)
         {
-            LogSecretNotFoundForDeletion(logger, name.SanitizeForLog());
-            return Problem(
-                title: "Not Found",
-                detail: $"Secret '{name}' was not found.",
-                statusCode: StatusCodes.Status404NotFound);
+            return Problem(title: "Metadata Conflict", detail: "Secret deletion or metadata cleanup conflicted. Reload and retry deleting the same secret.", statusCode: 409);
         }
         catch (Azure.RequestFailedException ex) when (ex.Status == 403)
         {

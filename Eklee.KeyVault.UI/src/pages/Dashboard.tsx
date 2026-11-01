@@ -1,5 +1,6 @@
-import { useState, useEffect, useCallback, useRef } from 'react';
+import { useState, useEffect, useCallback, useMemo, useRef } from 'react';
 import { isAxiosError } from 'axios';
+import { Link } from 'react-router-dom';
 import {
   Accordion,
   AccordionDetails,
@@ -22,6 +23,7 @@ import {
   ListItemButton,
   ListItemIcon,
   ListItemText,
+  MenuItem,
   useMediaQuery,
   useTheme,
 } from '@mui/material';
@@ -35,12 +37,15 @@ import {
   Add as AddIcon,
   ExpandMore as ExpandMoreIcon,
   Refresh as RefreshIcon,
+  ArrowBack as ArrowBackIcon,
+  Folder as FolderIcon,
 } from '@mui/icons-material';
 import { DataGrid, type GridColDef } from '@mui/x-data-grid';
 import { deleteSecret, generateSecret, getSecrets, getSecretValue, setSecret } from '../services/secretsService';
 import { getMetadata, updateMetadata } from '../services/metadataService';
+import { getCategories } from '../services/categoriesService';
 import { useUser } from '../auth/UserContext';
-import type { ApiProblemDetails, SecretGenerationRequest, SecretItemMetaList, SecretItemView } from '../types';
+import type { ApiProblemDetails, CategoryItem, SecretGenerationRequest, SecretItemMetaList, SecretItemView } from '../types';
 
 /** Placeholder text shown instead of the actual secret value. */
 const PLACEHOLDER_VALUE = '***';
@@ -67,13 +72,70 @@ interface SecretRow extends SecretItemView {
   editDisplayName: string;
 }
 
-/**
- * Dashboard page — lists Key Vault secrets in a data grid.
- * Supports searching, revealing secret values, copying to clipboard,
- * inline editing of display names (persisted to blob storage via the API),
- * and create / update / delete operations for Admin users.
- */
+/** Category-first navigation; selecting a category mounts an isolated secret table. */
 export function Dashboard() {
+  const { isAdmin } = useUser();
+  const [categories, setCategories] = useState<CategoryItem[]>([]);
+  const [selected, setSelected] = useState<CategoryItem | null>(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+  const [reload, setReload] = useState(0);
+
+  useEffect(() => {
+    let ignore = false;
+    getCategories().then((result) => {
+      if (!ignore) setCategories(result);
+    }).catch((failure: unknown) => {
+      if (!ignore) setError(isAxios403(failure)
+        ? 'You do not have access. Please contact your administrator.'
+        : isAxiosError<ApiProblemDetails>(failure) && failure.response?.data.detail
+          ? failure.response.data.detail : failure instanceof Error ? failure.message : 'Unable to load categories.');
+    }).finally(() => {
+      if (!ignore) setLoading(false);
+    });
+    return () => { ignore = true; };
+  }, [reload]);
+
+  if (selected) {
+    return (
+      <Box>
+        <Button startIcon={<ArrowBackIcon />} onClick={() => setSelected(null)} sx={{ mb: 2 }}>
+          Back to categories
+        </Button>
+        <Typography variant="h5" component="h1" sx={{ mb: 2, overflowWrap: 'anywhere' }}>{selected.name}</Typography>
+        <CategorySecrets key={selected.id} category={selected} categories={categories} />
+      </Box>
+    );
+  }
+
+  return (
+    <Box>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 1, flexWrap: 'wrap', mb: 2 }}>
+        <Typography variant="h5" component="h1" sx={{ flexGrow: 1 }}>Categories</Typography>
+        <Tooltip title="Reload categories"><IconButton aria-label="Reload categories" disabled={loading}
+          onClick={() => { setLoading(true); setError(null); setReload((current) => current + 1); }}>
+          <RefreshIcon />
+        </IconButton></Tooltip>
+        {isAdmin && <Button component={Link} to="/categories" startIcon={<FolderIcon />}>Manage Categories</Button>}
+      </Box>
+      {error && <Alert severity="error">{error}</Alert>}
+      {loading ? <CircularProgress aria-label="Loading categories" /> : (
+        <List aria-label="Categories">
+          {[...categories].sort((first, second) => first.name.localeCompare(second.name)).map((category) => (
+            <ListItemButton key={category.id} onClick={() => setSelected(category)}>
+              <ListItemIcon><FolderIcon /></ListItemIcon>
+              <ListItemText primary={category.name} secondary={category.isDefault ? 'Default category' : undefined}
+                sx={{ minWidth: 0, overflowWrap: 'anywhere' }} />
+            </ListItemButton>
+          ))}
+          {!categories.length && !error && <Typography>No categories available.</Typography>}
+        </List>
+      )}
+    </Box>
+  );
+}
+
+function CategorySecrets({ category, categories }: { category: CategoryItem; categories: CategoryItem[] }) {
   const { isAdmin } = useUser();
   const [rows, setRows] = useState<SecretRow[]>([]);
   const [filteredRows, setFilteredRows] = useState<SecretRow[]>([]);
@@ -87,6 +149,7 @@ export function Dashboard() {
   const [secretDialogMode, setSecretDialogMode] = useState<'create' | 'update'>('create');
   const [secretDialogName, setSecretDialogName] = useState('');
   const [secretDialogValue, setSecretDialogValue] = useState('');
+  const [secretDialogCategoryId, setSecretDialogCategoryId] = useState(category.id);
   const [secretDialogSaving, setSecretDialogSaving] = useState(false);
   const [secretDialogGenerating, setSecretDialogGenerating] = useState(false);
   const [secretGenerationError, setSecretGenerationError] = useState<string | null>(null);
@@ -100,8 +163,8 @@ export function Dashboard() {
   const [deleteTargetName, setDeleteTargetName] = useState('');
   const [deleteDialogDeleting, setDeleteDialogDeleting] = useState(false);
 
-  // Metadata ETag for optimistic concurrency
-  const [metadataEtag, setMetadataEtag] = useState<string | null>(null);
+  const active = useRef(false);
+  const requestVersion = useRef(0);
 
   // Mobile actions dialog state
   const [mobileActionsOpen, setMobileActionsOpen] = useState(false);
@@ -136,25 +199,15 @@ export function Dashboard() {
     }
   }, [handleCloseMobileActions]);
 
-  // Load secrets on mount
-  useEffect(() => {
-    loadSecrets();
-  }, []);
-
-  const loadSecrets = async () => {
+  const loadSecrets = useCallback(async () => {
+    if (!active.current) return;
+    const version = ++requestVersion.current;
     setLoading(true);
     setError(null);
     try {
-      const [secrets, metadataResult] = await Promise.all([
-        getSecrets(),
-        isAdmin ? getMetadata() : Promise.resolve(null),
-      ]);
-
-      if (metadataResult) {
-        setMetadataEtag(metadataResult.etag);
-      }
-
-      const secretRows: SecretRow[] = secrets.map((s) => ({
+      const secrets = await getSecrets(category.id);
+      if (!active.current || version !== requestVersion.current) return;
+      const secretRows: SecretRow[] = secrets.filter((secret) => secret.meta.categoryId === category.id).map((s) => ({
         ...s,
         displayValue: PLACEHOLDER_VALUE,
         isEditingDisplayName: false,
@@ -163,15 +216,22 @@ export function Dashboard() {
       setRows(secretRows);
       setFilteredRows(secretRows);
     } catch (err) {
+      if (!active.current || version !== requestVersion.current) return;
       if (isAxios403(err)) {
         setError('You do not have access. Please contact your administrator.');
       } else {
         setError(err instanceof Error ? err.message : 'Failed to load secrets.');
       }
     } finally {
-      setLoading(false);
+      if (active.current && version === requestVersion.current) setLoading(false);
     }
-  };
+  }, [category.id]);
+
+  useEffect(() => {
+    active.current = true;
+    void loadSecrets();
+    return () => { active.current = false; };
+  }, [loadSecrets]);
 
   // Client-side search filtering (3+ character threshold)
   useEffect(() => {
@@ -241,16 +301,17 @@ export function Dashboard() {
     setError(null);
     setSuccess(null);
     try {
-      // Build the full metadata list from all current rows
+      const current = await getMetadata();
+      const item = current.metaList.items?.find((entry) => entry.id?.toLowerCase() === row.id.toLowerCase());
+      if (!item || item.displayName !== row.meta.displayName) {
+        throw new Error('Conflict: the metadata changed. Reload before editing the display name.');
+      }
       const metaList: SecretItemMetaList = {
-        items: rows.map((r) => ({
-          id: r.id,
-          displayName:
-            r.id === row.id ? row.editDisplayName : r.meta.displayName,
-        })),
+        ...current.metaList,
+        items: current.metaList.items!.map((entry) => entry === item
+          ? { ...entry, displayName: row.editDisplayName } : entry),
       };
-      const newEtag = await updateMetadata(metaList, metadataEtag);
-      setMetadataEtag(newEtag);
+      await updateMetadata(metaList, current.etag);
 
       setRows((prev) =>
         prev.map((r) =>
@@ -278,7 +339,7 @@ export function Dashboard() {
         )
       );
     }
-  }, [rows, metadataEtag]);
+  }, []);
 
   const handleCancelEdit = useCallback((row: SecretRow) => {
     setRows((prev) =>
@@ -311,12 +372,13 @@ export function Dashboard() {
     setSecretDialogMode('create');
     setSecretDialogName('');
     setSecretDialogValue('');
+    setSecretDialogCategoryId(category.id);
     setSecretGenerationError(null);
     setSecretGenerationPolicy(DEFAULT_SECRET_GENERATION_POLICY);
     secretGenerationInProgress.current = false;
     setSecretDialogGenerating(false);
     setSecretDialogOpen(true);
-  }, []);
+  }, [category.id]);
 
   const handleOpenUpdateDialog = useCallback((row: SecretRow) => {
     setSecretDialogMode('update');
@@ -385,9 +447,15 @@ export function Dashboard() {
       return;
     }
 
+    if (secretDialogMode === 'create' && !secretDialogCategoryId) {
+      setError('Select a category for the new secret.');
+      return;
+    }
+
     setSecretDialogSaving(true);
     try {
-      await setSecret(secretDialogName.trim(), secretDialogValue);
+      await setSecret(secretDialogName.trim(), secretDialogValue,
+        secretDialogMode === 'create' ? secretDialogCategoryId : undefined);
       setSuccess(
         secretDialogMode === 'create'
           ? `Secret '${secretDialogName.trim()}' created successfully.`
@@ -397,14 +465,13 @@ export function Dashboard() {
       await loadSecrets();
     } catch (err) {
       setError(
-        err instanceof Error
-          ? err.message
-          : `Failed to ${secretDialogMode} secret.`
+        isAxiosError<ApiProblemDetails>(err) && err.response?.data.detail
+          ? err.response.data.detail : err instanceof Error ? err.message : `Failed to ${secretDialogMode} secret.`
       );
     } finally {
       setSecretDialogSaving(false);
     }
-  }, [secretDialogName, secretDialogValue, secretDialogMode, handleCloseSecretDialog]);
+  }, [secretDialogName, secretDialogValue, secretDialogMode, secretDialogCategoryId, handleCloseSecretDialog, loadSecrets]);
 
   // --- Delete secret dialog handlers ---
 
@@ -434,9 +501,9 @@ export function Dashboard() {
     } finally {
       setDeleteDialogDeleting(false);
     }
-  }, [deleteTargetName, handleCloseDeleteDialog]);
+  }, [deleteTargetName, handleCloseDeleteDialog, loadSecrets]);
 
-  const columns: GridColDef<SecretRow>[] = [
+  const columns = useMemo<GridColDef<SecretRow>[]>(() => [
     {
       field: 'displayName',
       headerName: 'Name',
@@ -453,17 +520,20 @@ export function Dashboard() {
                 onChange={(e) =>
                   handleEditDisplayNameChange(row.id, e.target.value)
                 }
+                onKeyDown={(event) => event.stopPropagation()}
                 variant="outlined"
               />
               <IconButton
                 size="small"
                 color="primary"
+                aria-label="Save display name"
                 onClick={() => handleSaveDisplayName(row)}
               >
                 <CheckIcon fontSize="small" />
               </IconButton>
               <IconButton
                 size="small"
+                aria-label="Cancel display name edit"
                 onClick={() => handleCancelEdit(row)}
               >
                 <CloseIcon fontSize="small" />
@@ -493,9 +563,9 @@ export function Dashboard() {
               {displayText}
             </Typography>
             {isAdmin && (
-              <IconButton size="small" onClick={() => handleStartEdit(row)}>
+              <Tooltip title="Edit display name"><IconButton size="small" aria-label={`Edit display name for ${displayText}`} onClick={() => handleStartEdit(row)}>
                 <EditIcon fontSize="small" />
-              </IconButton>
+              </IconButton></Tooltip>
             )}
           </Box>
         );
@@ -569,7 +639,9 @@ export function Dashboard() {
           } satisfies GridColDef<SecretRow>,
         ]
       : []),
-  ];
+  ], [isMobile, isAdmin, handleOpenMobileActions, handleSaveDisplayName, handleCancelEdit,
+    handleEditDisplayNameChange, handleStartEdit, handleShowSecret, handleCopyToClipboard,
+    handleOpenUpdateDialog, handleOpenDeleteDialog]);
 
   if (loading) {
     return (
@@ -587,7 +659,7 @@ export function Dashboard() {
         </Alert>
       )}
 
-      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2 }}>
+      <Box sx={{ display: 'flex', alignItems: 'center', gap: 2, mb: 2, flexWrap: 'wrap' }}>
         <TextField
           label="Search secrets"
           variant="outlined"
@@ -613,7 +685,7 @@ export function Dashboard() {
         )}
       </Box>
 
-      <DataGrid
+      {!rows.length && !searchText ? <Typography sx={{ py: 3 }}>No secrets in this category.</Typography> : <DataGrid
         rows={filteredRows}
         columns={columns}
         getRowId={(row) => row.id}
@@ -623,7 +695,7 @@ export function Dashboard() {
         }}
         disableRowSelectionOnClick
         autoHeight
-      />
+      />}
 
       {/* Create / Update Secret Dialog */}
       <Dialog
@@ -649,6 +721,13 @@ export function Dashboard() {
             <Alert severity="error" sx={{ mt: 1 }}>
               {secretGenerationError}
             </Alert>
+          )}
+          {error && <Alert severity="error" sx={{ mt: 1 }}>{error}</Alert>}
+          {secretDialogMode === 'create' && (
+            <TextField select fullWidth margin="dense" label="Category" value={secretDialogCategoryId}
+              onChange={(event) => setSecretDialogCategoryId(event.target.value)} disabled={secretDialogSaving}>
+              {categories.map((item) => <MenuItem key={item.id} value={item.id}>{item.name}</MenuItem>)}
+            </TextField>
           )}
           <TextField
             label="Secret Name"
@@ -753,6 +832,7 @@ export function Dashboard() {
               secretDialogSaving ||
               secretDialogGenerating ||
               !secretDialogName.trim() ||
+              (secretDialogMode === 'create' && !secretDialogCategoryId) ||
               !secretDialogValue
             }
           >
@@ -840,6 +920,7 @@ export function Dashboard() {
       <Dialog open={deleteDialogOpen} onClose={handleCloseDeleteDialog}>
         <DialogTitle>Delete Secret</DialogTitle>
         <DialogContent>
+          {error && <Alert severity="error" sx={{ mb: 1 }}>{error}</Alert>}
           <DialogContentText>
             Are you sure you want to delete the secret <strong>{deleteTargetName}</strong>?
             This action will soft-delete the secret in Key Vault.
