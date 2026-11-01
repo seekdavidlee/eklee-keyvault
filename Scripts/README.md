@@ -22,7 +22,6 @@ folder, which contains infrastructure-as-code and CI/CD deployment helpers.
 | [`../Setup-Dev.ps1`](../Setup-Dev.ps1) | Deploys the single maintainer dev profile with `azd` and configures its dedicated API registration and Reader-scoped GitHub OIDC E2E identity. |
 | [`Invoke-HostedE2E.ps1`](Invoke-HostedE2E.ps1) | Updates the permanent branch Container App from the checked-out feature or bugfix commit, then runs local Playwright tests. |
 | [`setup-gh-deploy.ps1`](setup-gh-deploy.ps1) | Creates the GitHub Actions OIDC deployment identity, resource groups, role assignments, and environment variables. |
-| [`Tag-ExistingStackResources.ps1`](Tag-ExistingStackResources.ps1) | Reports or applies stable `resource-id` tags to an existing Eklee KeyVault stack, including the three permanent development Container App targets. |
 
 ## Container App Resource Tags
 
@@ -49,13 +48,9 @@ azd provision --preview
 azd up
 ```
 
-For a pre-existing three-app stack, preview the explicit tag migration before
-applying it:
-
-```powershell
-./Scripts/Tag-ExistingStackResources.ps1 -ResourceGroupName <resource-group>
-./Scripts/Tag-ExistingStackResources.ps1 -ResourceGroupName <resource-group> -Apply
-```
+Use the same provisioning preview for a pre-existing valid three-app stack.
+If resource-name resolution rejects the existing tags, resolve the reported
+ambiguity before provisioning; do not select or retag an app heuristically.
 
 ## Hosted E2E Tests
 

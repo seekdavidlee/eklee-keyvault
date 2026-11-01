@@ -15,8 +15,8 @@ export async function getMetadata(): Promise<MetadataWithETag> {
 }
 
 /**
- * Replaces the entire metadata list via the API with optimistic concurrency.
- * Sends the ETag via the If-Match header. Returns the new ETag from the response.
+ * Saves display names in a complete metadata document without changing associations.
+ * Sends its ETag via If-Match; concurrent edits reject the promise. Returns the new ETag.
  */
 export async function updateMetadata(
   metaList: SecretItemMetaList,

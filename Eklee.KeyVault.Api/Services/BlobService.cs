@@ -2,6 +2,9 @@ using Azure;
 using Azure.Core;
 using Azure.Storage.Blobs;
 using Azure.Storage.Blobs.Models;
+using Azure.Storage.Blobs.Specialized;
+using System.Security.Cryptography;
+using System.Text;
 using Eklee.KeyVault.Api.Models;
 
 namespace Eklee.KeyVault.Api.Services;
@@ -24,13 +27,44 @@ public class BlobService(Config config, TokenCredential credential)
     }
 
     /// <summary>
+    /// Exclusively coordinates a secret's value and association lifecycle across API replicas.
+    /// The caller must dispose the scope after both operations. A crashed owner requires operator lease recovery.
+    /// </summary>
+    /// <param name="name">Secret name, normalized case-insensitively before deriving the lock blob.</param>
+    /// <returns>An infinite lease scope; competing operations fail with a storage conflict.</returns>
+    public virtual async Task<IAsyncDisposable> AcquireSecretOperationAsync(string name)
+    {
+        var hash = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(name.ToUpperInvariant())));
+        var blob = GetBlobClient($"secret-operation-locks/{hash}.lock");
+        try
+        {
+            await blob.UploadAsync(BinaryData.FromString(string.Empty), new BlobUploadOptions
+            {
+                Conditions = new BlobRequestConditions { IfNoneMatch = ETag.All }
+            });
+        }
+        catch (RequestFailedException exception) when (exception.Status is 409 or 412)
+        {
+        }
+
+        var lease = blob.GetBlobLeaseClient();
+        await lease.AcquireAsync(BlobLeaseClient.InfiniteLeaseDuration);
+        return new SecretOperationLease(lease);
+    }
+
+    private sealed class SecretOperationLease(BlobLeaseClient lease) : IAsyncDisposable
+    {
+        public async ValueTask DisposeAsync() => await lease.ReleaseAsync();
+    }
+
+    /// <summary>
     /// Downloads the secret metadata list from blob storage along with its ETag.
     /// Returns an empty list with a <c>null</c> ETag if the metadata file does not exist yet.
     /// </summary>
     /// <returns>
     /// A tuple of the <see cref="SecretItemMetaList"/> and the blob ETag string (or <c>null</c> for a new blob).
     /// </returns>
-    public async Task<(SecretItemMetaList MetaList, string? ETag)> GetMetaAsync()
+    public virtual async Task<(SecretItemMetaList MetaList, string? ETag)> GetMetaAsync()
     {
         var blobClient = GetBlobClient(SecretsMetaFileName);
         if (!await blobClient.ExistsAsync())
@@ -59,7 +93,7 @@ public class BlobService(Config config, TokenCredential credential)
     /// <exception cref="RequestFailedException">
     /// Thrown with status 409 or 412 when the concurrency check fails.
     /// </exception>
-    public async Task<string> UpdateMetaAsync(SecretItemMetaList secretItemMetaList, string? ifMatchEtag)
+    public virtual async Task<string> UpdateMetaAsync(SecretItemMetaList secretItemMetaList, string? ifMatchEtag)
     {
         var blobClient = GetBlobClient(SecretsMetaFileName);
         var data = BinaryData.FromObjectAsJson(secretItemMetaList);

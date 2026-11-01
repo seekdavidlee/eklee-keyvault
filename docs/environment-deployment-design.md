@@ -162,14 +162,15 @@ app used by the `main` deployment, or production image tags.
 ## Infrastructure Provisioning
 
 Application deployment and infrastructure provisioning are separate operations.
-The [`deploy-infra.yml`](../.github/workflows/deploy-infra.yml) workflow is
-manually dispatched for `dev`. It passes that value to
-[`main.bicep`](../Deployment/main.bicep), where it is used for resource names,
-tags, and environment-specific configuration.
+Maintainers provision infrastructure locally using the
+[development deployment instructions](../Deployment/README.md#development-environment)
+and run [assign-mi-rbac.ps1](../Deployment/assign-mi-rbac.ps1) after direct
+Azure CLI provisioning. The [main.bicep](../Deployment/main.bicep) environment
+parameter controls resource names, tags, and environment-specific configuration.
 
 Bicep continues to support production configuration for the customer deployment
-process, but it does not inspect a Git branch. Access to the manually dispatched
-workflow and the customer deployment process must be protected independently
+process, but it does not inspect a Git branch. Access to local infrastructure
+provisioning and the customer deployment process must be protected independently
 from branch routing.
 
 The per-branch and per-release Container Apps are application-level resources.
@@ -281,7 +282,8 @@ for those changes.
   has no Azure or API access outside the maintainer dev environment.
 * Confirm customer and production API registrations expose only delegated user
   access and do not define `E2E.Tester`.
-* Confirm `deploy-infra.yml` is manually dispatched only for `dev`.
+* Confirm infrastructure is provisioned locally for the intended environment and
+  the managed identity RBAC script completes after direct Azure CLI provisioning.
 * Confirm a semantic tag creates public release artifacts without deploying Azure.
 
 ## References
@@ -289,7 +291,7 @@ for those changes.
 * [CI/CD workflow](../.github/workflows/cicd.yml)
 * [Release promotion workflow](../.github/workflows/release-promotion.yml)
 * [GHCR image cleanup workflow](../.github/workflows/cleanup-container-app.yml)
-* [Infrastructure deployment workflow](../.github/workflows/deploy-infra.yml)
+* [Local infrastructure deployment](../Deployment/README.md#development-environment)
 * [Bicep environment parameter](../Deployment/main.bicep)
 * [GitHub deployment setup](../Scripts/setup-gh-deploy.ps1)
 * [GitHub Release and Container Versioning Design](release-versioning-design.md)

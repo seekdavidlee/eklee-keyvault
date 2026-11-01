@@ -4,9 +4,18 @@ on:
   push:
     branches:
       - '**'
-    paths-ignore:
-      - 'Deployment/**'
-      - '**.md'
+    paths:
+      - 'Eklee.KeyVault.Api/**'
+      - 'Eklee.KeyVault.Api.Tests/**'
+      - 'Eklee.KeyVault.UI/**'
+      - 'Eklee.KeyVault.sln'
+      - 'Dockerfile'
+      - '.dockerignore'
+      - 'docker-entrypoint.sh'
+      - '.github/workflows/cicd.yml'
+      - '.github/scripts/resolve-container-app-name.sh'
+      - '.github/scripts/resolve-image-tag.sh'
+      - '!**.md'
 
 permissions:
   id-token: write
@@ -17,7 +26,6 @@ permissions:
 jobs:
   setup:
     name: Resolve Container App Name
-    if: ${{ github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/') }}
     runs-on: ubuntu-latest
     environment: dev
     steps:
@@ -31,6 +39,8 @@ jobs:
           DEV_E2E_BASE_URL: ${{ vars.DEV_E2E_BASE_URL }}
           RELEASE_CONTAINER_APP_NAME: ${{ vars.RELEASE_CONTAINER_APP_NAME }}
           RELEASE_E2E_BASE_URL: ${{ vars.RELEASE_E2E_BASE_URL }}
+          BRANCH_CONTAINER_APP_NAME: ${{ vars.BRANCH_CONTAINER_APP_NAME }}
+          BRANCH_E2E_BASE_URL: ${{ vars.BRANCH_E2E_BASE_URL }}
         run: |
           set -euo pipefail
           container_app_name=$(BRANCH_NAME="${GITHUB_REF_NAME}" bash .github/scripts/resolve-container-app-name.sh)
@@ -44,8 +54,9 @@ jobs:
             echo "target=release" >> "$GITHUB_OUTPUT"
             echo "base_url=${RELEASE_E2E_BASE_URL}" >> "$GITHUB_OUTPUT"
           else
-            echo "::error::Unsupported permanent deployment ref '${GITHUB_REF_NAME}'."
-            exit 1
+            : "${BRANCH_E2E_BASE_URL:?BRANCH_E2E_BASE_URL is required for branch deployments}"
+            echo "target=branch" >> "$GITHUB_OUTPUT"
+            echo "base_url=${BRANCH_E2E_BASE_URL}" >> "$GITHUB_OUTPUT"
           fi
     outputs:
       container_app_name: ${{ steps.setup.outputs.container_app_name }}
@@ -151,12 +162,11 @@ jobs:
       - name: Build Docker image
         env:
           RELEASE_VERSION: ${{ steps.image-tag.outputs.release_version }}
-          SOURCE_REVISION_ID: ${{ steps.image-tag.outputs.source_revision_id }}
+          SOURCE_REVISION_ID: ${{ github.sha }}
         run: |
-          build_args=()
+          build_args=(--build-arg "SOURCE_REVISION_ID=$SOURCE_REVISION_ID")
           if [[ -n "$RELEASE_VERSION" && -n "$SOURCE_REVISION_ID" ]]; then
             build_args+=(--build-arg "RELEASE_VERSION=$RELEASE_VERSION")
-            build_args+=(--build-arg "SOURCE_REVISION_ID=$SOURCE_REVISION_ID")
           fi
 
           docker build "${build_args[@]}" -t ${{ steps.image-tag.outputs.repository }}:${{ steps.image-tag.outputs.image_tag }} \
@@ -194,8 +204,8 @@ jobs:
   deploy:
     name: Deploy to Azure Container Apps
     needs: [setup, build-and-push]
-    if: ${{ !failure() && !cancelled() && (github.ref == 'refs/heads/main' || startsWith(github.ref, 'refs/heads/release/')) }}
-    runs-on: ubuntu-latest
+    if: ${{ !failure() && !cancelled() }}
+    runs-on: ubuntu-24.04
     environment: dev
     concurrency:
       group: permanent-container-app-${{ needs.setup.outputs.target }}
@@ -246,6 +256,16 @@ jobs:
           else
             echo "🌐 Private networking: DISABLED (public access)"
           fi
+
+          echo "Deployment resource group: $RESOURCE_GROUP"
+          echo "Deployment Container App: $CONTAINER_APP_NAME"
+          az account show \
+            --query "{subscription:id,tenant:tenantId}" -o json
+
+          az containerapp show \
+            --name "$CONTAINER_APP_NAME" \
+            --resource-group "$RESOURCE_GROUP" \
+            --query "{name:name,id:id}" -o json
 
           # Check if container app already exists
           EXISTS=$(az containerapp show \
@@ -330,7 +350,27 @@ jobs:
           E2E_CLIENT_ID: ${{ vars.VITE_AZURE_AD_CLIENT_ID }}
           E2E_TENANT_ID: ${{ vars.AZURE_TENANT_ID }}
           E2E_ACCESS_TOKEN: ${{ steps.token.outputs.access_token }}
+          PLAYWRIGHT_JSON_OUTPUT_NAME: playwright-results.json
         run: |
+          node --input-type=module <<'NODE'
+          const claims = JSON.parse(Buffer.from(process.env.E2E_ACCESS_TOKEN.split('.')[1], 'base64url').toString('utf8'));
+          const clientId = process.env.E2E_CLIENT_ID;
+          const errors = [];
+          if (![clientId, `api://${clientId}`].includes(claims.aud)) {
+            errors.push('Token audience does not match E2E_CLIENT_ID. Check the target API registration.');
+          }
+          if (claims.tid !== process.env.E2E_TENANT_ID) {
+            errors.push('Token tenant does not match E2E_TENANT_ID. Check the Azure login tenant.');
+          }
+          if (!Number.isFinite(claims.exp) || claims.exp <= Date.now() / 1000) {
+            errors.push('The hosted E2E token is expired or has no expiry. Acquire a fresh token.');
+          }
+          if (!Array.isArray(claims.roles) || !claims.roles.includes('E2E.Tester')) {
+            errors.push('Token is missing E2E.Tester. Run Setup-Dev.ps1 for this dev target and verify that the CI deployment principal has the role on the API registration identified by E2E_CLIENT_ID. Then acquire a fresh token.');
+          }
+          for (const error of errors) console.error(`::error::${error}`);
+          if (errors.length) process.exit(1);
+          NODE
           npm ci
           npx playwright install --with-deps chromium
           echo "::notice title=Hosted E2E target::Running Playwright against $E2E_BASE_URL"
@@ -339,7 +379,7 @@ jobs:
             echo
             echo "Running Playwright against: \`$E2E_BASE_URL\`"
           } >> "$GITHUB_STEP_SUMMARY"
-          npx playwright test
+          npx playwright test --reporter=html,list,json
 
       - name: Upload Playwright results
         if: always()
@@ -349,4 +389,5 @@ jobs:
           path: |
             Eklee.KeyVault.UI/playwright-report/
             Eklee.KeyVault.UI/test-results/
+            Eklee.KeyVault.UI/playwright-results.json
           retention-days: 7

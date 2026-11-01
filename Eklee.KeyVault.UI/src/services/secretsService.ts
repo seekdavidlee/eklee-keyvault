@@ -8,9 +8,11 @@ import type {
   SecretValueResponse,
 } from '../types';
 
-/** Fetches all secrets combined with their display metadata. */
-export async function getSecrets(): Promise<SecretItemView[]> {
-  const response = await apiClient.get<SecretItemView[]>('/api/secrets');
+/** Fetches secret metadata, optionally restricted to a persisted category ID. */
+export async function getSecrets(categoryId?: string): Promise<SecretItemView[]> {
+  const response = await apiClient.get<SecretItemView[]>('/api/secrets', {
+    params: categoryId === undefined ? undefined : { categoryId },
+  });
   return response.data;
 }
 
@@ -22,9 +24,9 @@ export async function getSecretValue(name: string): Promise<string> {
   return response.data.value;
 }
 
-/** Creates or updates a Key Vault secret. Admin-only. */
-export async function setSecret(name: string, value: string): Promise<string> {
-  const body: SecretSetRequest = { value };
+/** Creates or updates a secret. Creation requires a category; updates cannot move it. Admin-only. */
+export async function setSecret(name: string, value: string, categoryId?: string): Promise<string> {
+  const body: SecretSetRequest = { value, ...(categoryId === undefined ? {} : { categoryId }) };
   const response = await apiClient.put<SecretSetResponse>(
     `/api/secrets/${encodeURIComponent(name)}`,
     body
