@@ -3,6 +3,7 @@ import { CssBaseline, ThemeProvider, createTheme, CircularProgress, Box } from '
 import { AppLayout } from './components/Layout/AppLayout';
 import { UserProvider, useUser } from './auth/UserContext';
 import { Dashboard } from './pages/Dashboard';
+import { CategoryManagement } from './pages/CategoryManagement';
 import { UserManagement } from './pages/UserManagement';
 import { AccessDenied } from './pages/AccessDenied';
 
@@ -38,6 +39,7 @@ function AppRoutes() {
   return (
     <Routes>
       <Route path="/" element={<Dashboard />} />
+      {isAdmin && <Route path="/categories" element={<CategoryManagement />} />}
       {isAdmin && <Route path="/users" element={<UserManagement />} />}
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>

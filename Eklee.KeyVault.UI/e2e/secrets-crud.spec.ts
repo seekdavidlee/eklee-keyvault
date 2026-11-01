@@ -73,6 +73,9 @@ test.describe('Secrets CRUD', () => {
       page.getByRole('button', { name: /sign out/i })
     ).toBeVisible({ timeout: 15_000 });
 
+    await page.getByRole('list', { name: 'Categories' })
+      .getByRole('button', { name: /default category$/i }).click();
+
     // --- CREATE ---
     await page.getByRole('button', { name: /create secret/i }).click();
 

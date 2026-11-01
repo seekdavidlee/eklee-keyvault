@@ -97,7 +97,8 @@ public class SecretGenerationServiceTests
             null!,
             null!,
             _sut,
-            NullLogger<SecretsController>.Instance);
+            NullLogger<SecretsController>.Instance,
+            null!);
 
         var result = controller.GenerateSecret(new SecretGenerationRequest
         {

@@ -641,6 +641,269 @@ if ($MyInvocation.InvocationName -ne '.') {
             Assert-Equal (Test-Path -LiteralPath (Join-Path (Split-Path $AgentPath -Parent) $Link.Groups[1].Value)) $true 'implementation agent reference'
         }
 
+        & {
+            $HostedScript = Join-Path $Scripts 'implement-ui-tests/scripts/Invoke-HostedUiTests.ps1'
+            . $HostedScript
+            $HostedState = @{
+                Sha = ('a' * 40); Branch = 'feature/60'; Workflow = '.github/workflows/cicd.yml'
+                Conclusion = 'success'; Step = 'success'; Running = $false; NoRun = $false
+                Artifact = $true; Report = $true; Skipped = 0; Flaky = 0; Expected = 1
+                TestStatus = 'expected'; ResultStatus = 'passed'; Target = 'https://branch.example/'; ForbidOnly = $true
+                ConfiguredTarget = 'https://branch.example/'
+                Urls = @('https://github.com/owner/repo.git'); Config = ''; Staged = @()
+                Unmerged = ''; Ahead = '0'; Behind = '0'; WatchCalls = 0; Writes = 0
+                Head = ('a' * 40); Published = ('a' * 40); Parent = ('a' * 40)
+                Dirty = @(); Untracked = @(); Committed = @('LICENSE'); PushFailure = $false
+                NoChanges = $false; PushArguments = @(); LocalChecks = 0
+            }
+            $EvidenceDirectories = [Collections.Generic.List[string]]::new()
+            function gh {
+                $global:LASTEXITCODE = 0
+                if ($args[0] -eq 'auth') { return 'authenticated fixture' }
+                if ($args[0] -eq 'repo') { return '{"nameWithOwner":"owner/repo","url":"https://github.com/owner/repo"}' }
+                if ($args[0] -eq 'variable') { return $HostedState.ConfiguredTarget }
+                if ($args[0] -eq 'api') {
+                    if ($args[-1] -like '*artifacts*') {
+                        $Artifacts = @()
+                        if ($HostedState.Artifact) { $Artifacts = @(@{ name = 'hosted-playwright-results-branch-123'; expired = $false }) }
+                        return ConvertTo-Json -InputObject @(@{ artifacts = $Artifacts }) -Depth 10
+                    }
+                    return @{
+                        head_sha = $HostedState.Sha; head_branch = $HostedState.Branch; path = $HostedState.Workflow
+                        event = 'push'; status = $(if ($HostedState.Running) { 'in_progress' } else { 'completed' })
+                        conclusion = $HostedState.Conclusion; html_url = 'https://github.com/owner/repo/actions/runs/123'
+                    } | ConvertTo-Json
+                }
+                if ($args[0] -ne 'run') { throw "Unexpected hosted gh call: $args" }
+                switch ($args[1]) {
+                    'list' {
+                        if ($HostedState.NoRun) { return '[]' }
+                        return '[{"databaseId":123}]'
+                    }
+                    'watch' { $HostedState.WatchCalls++; $HostedState.Running = $false; return 'completed' }
+                    'view' {
+                        if ($args -contains '--log') { return 'masked CI log fixture' }
+                        return @{ jobs = @(@{ steps = @(@{ name = 'Run hosted Playwright tests'; conclusion = $HostedState.Step }) }) } | ConvertTo-Json -Depth 10
+                    }
+                    'download' {
+                        $Directory = $args[-1]
+                        $EvidenceDirectories.Add($Directory)
+                        if ($HostedState.Report) {
+                            @{
+                                config = @{ forbidOnly = $HostedState.ForbidOnly }
+                                errors = @(); stats = @{ expected = $HostedState.Expected; unexpected = 0; skipped = $HostedState.Skipped; flaky = $HostedState.Flaky }
+                                suites = @(@{ specs = @(@{ file = 'categories-crud.spec.ts'; tests = @(@{
+                                    expectedStatus = 'passed'; status = $HostedState.TestStatus
+                                    results = @(@{ status = $HostedState.ResultStatus })
+                                    annotations = @(@{ type = 'Test URL'; description = $HostedState.Target })
+                                }) }) })
+                            } | ConvertTo-Json -Depth 30 | Set-Content -LiteralPath (Join-Path $Directory 'playwright-results.json')
+                        }
+                        return ''
+                    }
+                    default { throw "Unexpected hosted gh run call: $args" }
+                }
+            }
+            function git {
+                $global:LASTEXITCODE = 0
+                switch ($args[0]) {
+                    'check-ref-format' { return '' }
+                    'remote' { return ($HostedState.Urls -join "`n") }
+                    'config' { return $HostedState.Config }
+                    'diff' {
+                        if ($args -contains '--cached') { return ($HostedState.Staged -join "`0") }
+                        return ($HostedState.Dirty -join "`0")
+                    }
+                    'ls-files' {
+                        if ($args -contains '--others') { return ($HostedState.Untracked -join "`0") }
+                        return $HostedState.Unmerged
+                    }
+                    'ls-remote' { return "$($HostedState.Published)`trefs/heads/feature/60" }
+                    'fetch' { return '' }
+                    'rev-list' { if ($args[-1] -like 'HEAD..*') { return $HostedState.Behind }; return $HostedState.Ahead }
+                    'rev-parse' {
+                        if ($args[1] -eq '--show-toplevel') { return $Fixture }
+                        if ($args[1] -eq 'HEAD^') { return $HostedState.Parent }
+                        return $HostedState.Head
+                    }
+                    'branch' { return $HostedState.Branch }
+                    'status' { return '' }
+                    '--literal-pathspecs' {
+                        $HostedState.Writes++
+                        if (-not $HostedState.NoChanges) { $HostedState.Staged = @($args[3..($args.Count - 1)]) }
+                        return ''
+                    }
+                    'commit' {
+                        $HostedState.Writes++
+                        $HostedState.Parent = $HostedState.Head
+                        $HostedState.Head = ('c' * 40)
+                        return 'committed fixture'
+                    }
+                    'diff-tree' { return ($HostedState.Committed -join "`0") }
+                    '-c' {
+                        $HostedState.Writes++
+                        $HostedState.PushArguments = @($args)
+                        if ($HostedState.PushFailure) { $global:LASTEXITCODE = 1; return 'push rejected fixture' }
+                        $HostedState.Published = $HostedState.Head
+                        return 'pushed fixture'
+                    }
+                    default { $HostedState.Writes++; throw "Unexpected hosted Git mutation: $args" }
+                }
+            }
+            function npm {
+                $global:LASTEXITCODE = 0
+                $HostedState.LocalChecks++
+                if ($args[0] -eq 'exec') { return '{"errors":[],"suites":[{"specs":[{"file":"categories-crud.spec.ts"}]}]}' }
+                return 'local build/lint fixture'
+            }
+            try {
+                $Context = [pscustomobject]@{ Repository = 'owner/repo'; Source = 'feature/60'; Head = ('a' * 40) }
+                $SpecFiles = @('e2e/categories-crud.spec.ts')
+                Assert-Equal (Get-UiHostedResult $Context $Context.Head 123 $SpecFiles).Status 'Passed' 'hosted report confirms all pass'
+                $HostedState.Sha = ('b' * 40)
+                Assert-Throws { Get-UiHostedResult $Context $Context.Head 123 $SpecFiles } '*exact SHA*'
+                $HostedState.Sha = $Context.Head
+                $HostedState.Workflow = '.github/workflows/other.yml'
+                Assert-Throws { Get-UiHostedResult $Context $Context.Head 123 $SpecFiles } '*workflow*'
+                $HostedState.Workflow = '.github/workflows/cicd.yml'
+                $HostedState.Branch = 'feature/other'
+                Assert-Throws { Get-UiHostedResult $Context $Context.Head 123 $SpecFiles } '*branch*'
+                $HostedState.Branch = $Context.Source
+                $HostedState.NoRun = $true
+                Assert-Equal (Get-UiHostedResult $Context $Context.Head 0 $SpecFiles).Status 'RunNotFound' 'missing exact run is not passed'
+                $HostedState.NoRun = $false
+                $HostedState.Running = $true
+                Assert-Equal (Get-UiHostedResult $Context $Context.Head 123 $SpecFiles).Status 'Running' 'inspect does not wait'
+                Assert-Equal (Get-UiHostedResult $Context $Context.Head 123 $SpecFiles -Wait).Status 'Passed' 'captured watcher waits for exact run'
+                Assert-Equal $HostedState.WatchCalls 1 'one watcher invocation'
+                foreach ($Property in @('Skipped', 'Flaky')) {
+                    $HostedState[$Property] = 1
+                    Assert-Equal (Get-UiHostedResult $Context $Context.Head 123 $SpecFiles).Status 'Failed' "$Property prevents pass"
+                    $HostedState[$Property] = 0
+                }
+                $HostedState.Expected = 0
+                Assert-Equal (Get-UiHostedResult $Context $Context.Head 123 $SpecFiles).Status 'Failed' 'zero executions cannot pass'
+                $HostedState.Expected = 1
+                $HostedState.ForbidOnly = $false
+                Assert-Equal (Get-UiHostedResult $Context $Context.Head 123 $SpecFiles).Status 'Failed' 'focused-test filtering cannot prove full suite'
+                $HostedState.ForbidOnly = $true
+                $HostedState.ResultStatus = 'failed'
+                Assert-Equal (Get-UiHostedResult $Context $Context.Head 123 $SpecFiles).Status 'Failed' 'individual failed result cannot pass'
+                $HostedState.ResultStatus = 'passed'
+                Assert-Equal (Get-UiHostedResult $Context $Context.Head 123 @('e2e/missing.spec.ts')).Status 'Failed' 'absent requested spec cannot pass'
+                $HostedState.Report = $false
+                Assert-Equal (Get-UiHostedResult $Context $Context.Head 123 $SpecFiles).Status 'EvidenceMissing' 'old report cannot prove pass'
+                $HostedState.Report = $true
+                $HostedState.Conclusion = 'failure'
+                Assert-Equal (Get-UiHostedResult $Context $Context.Head 123 $SpecFiles).Status 'Failed' 'workflow failure stays failed'
+                $HostedState.Conclusion = 'success'
+                $HostedState.Step = 'skipped'
+                Assert-Equal (Get-UiHostedResult $Context $Context.Head 123 $SpecFiles).Status 'Failed' 'skipped browser step cannot pass'
+                $HostedState.Step = 'success'
+                $HostedState.Target = 'http://localhost:8080/'
+                Assert-Throws { Get-UiHostedResult $Context $Context.Head 123 $SpecFiles } '*cloud dev branch HTTPS URL*'
+                $HostedState.Target = 'https://branch.example/'
+                Assert-Equal (Assert-UiPublication $Context $Fixture @('LICENSE') 'feature/60' 'owner/repo') 'https://github.com/owner/repo.git' 'one verified push endpoint'
+                Assert-Throws { Assert-UiPublication $Context $Fixture @('../outside') 'feature/60' 'owner/repo' } '*Unsupported task path*'
+                foreach ($Path in @('Eklee.KeyVault.UI/playwright-results.json', 'Eklee.KeyVault.UI/.env.local', 'setup-dev.json')) {
+                    Assert-Throws { Assert-UiPublication $Context $Fixture @($Path) 'feature/60' 'owner/repo' } '*Unsupported task path*'
+                }
+                $HostedState.Staged = @('unrelated.txt')
+                Assert-Throws { Assert-UiPublication $Context $Fixture @('LICENSE') 'feature/60' 'owner/repo' } '*Unrelated staged*'
+                $HostedState.Staged = @()
+                $HostedState.Urls = @('https://github.com/other/repo.git')
+                Assert-Throws { Assert-UiPublication $Context $Fixture @('LICENSE') 'feature/60' 'owner/repo' } '*approved GitHub push endpoint*'
+                $HostedState.Urls = @('https://github.com/owner/repo.git', 'https://github.com/other/repo.git')
+                Assert-Throws { Assert-UiPublication $Context $Fixture @('LICENSE') 'feature/60' 'owner/repo' } '*exactly one*'
+                $HostedState.Urls = @('https://github.com/owner/repo.git')
+                $HostedState.Config = "remote.origin.push`nrefs/heads/*:refs/heads/*`0"
+                Assert-Throws { Assert-UiPublication $Context $Fixture @('LICENSE') 'feature/60' 'owner/repo' } '*Extra push refspecs*'
+                $HostedState.Config = "remote.origin.mirror`ntrue`0"
+                Assert-Throws { Assert-UiPublication $Context $Fixture @('LICENSE') 'feature/60' 'owner/repo' } '*mirror*'
+                $HostedState.Config = ''
+                $HostedState.Ahead = '1'
+                Assert-Throws { Assert-UiPublication $Context $Fixture @('LICENSE') 'feature/60' 'owner/repo' } '*HEAD must match*'
+                $HostedState.Ahead = '0'
+                $HostedState.Unmerged = 'unmerged'
+                Assert-Throws { Assert-UiPublication $Context $Fixture @('LICENSE') 'feature/60' 'owner/repo' } '*Unmerged*'
+                $HostedState.Unmerged = ''
+                Assert-Throws { Assert-UiTaskScope $null $Context $HostedState.Urls[0] @('LICENSE') } '*original Begin task scope*'
+                $Scope = [pscustomobject]@{
+                    Status = 'ScopeCaptured'; Repository = 'owner/repo'; Source = 'feature/60'
+                    PushUrl = $HostedState.Urls[0]; InitialDirtyFiles = @('LICENSE'); TestUrl = 'https://branch.example'
+                }
+                Assert-Throws { Assert-UiTaskScope $Scope $Context $HostedState.Urls[0] @('LICENSE') } '*pre-existing edits*'
+                if ($IsWindows) {
+                    Assert-Throws { Assert-UiTaskScope $Scope $Context $HostedState.Urls[0] @('license') } '*pre-existing edits*'
+                }
+                else {
+                    Assert-UiTaskScope $Scope $Context $HostedState.Urls[0] @('license')
+                }
+                $Scope.InitialDirtyFiles = @('unrelated.txt')
+                Assert-UiTaskScope $Scope $Context $HostedState.Urls[0] @('LICENSE')
+                $HostedState.ConfiguredTarget = 'https://other.example/'
+                Assert-Throws { Assert-UiTaskScope $Scope $Context $HostedState.Urls[0] @('LICENSE') } '*cloud dev target changed*'
+                foreach ($Url in @('http://branch.example/', 'https://localhost/', 'https://user:password@branch.example/', '/relative')) {
+                    $HostedState.ConfiguredTarget = $Url
+                    Assert-Throws { Get-UiCloudTarget 'owner/repo' } '*absolute, non-loopback, and credential-free*'
+                }
+                $HostedState.ConfiguredTarget = 'https://branch.example/'
+                $Scope.PushUrl = 'https://github.com/other/repo.git'
+                Assert-Throws { Assert-UiTaskScope $Scope $Context $HostedState.Urls[0] @('LICENSE') } '*endpoint must remain unchanged*'
+                $Context.Source = 'main'
+                Assert-Throws { Assert-UiPublication $Context $Fixture @('LICENSE') 'main' 'owner/repo' } '*main or release*'
+                Assert-Equal $HostedState.Writes 0 'hosted guard tests never commit or push'
+                $Context.Source = 'feature/60'
+                foreach ($Package in @('typescript', 'eslint', '@playwright/test')) {
+                    $PackageDirectory = Join-Path $Fixture "Eklee.KeyVault.UI/node_modules/$Package"
+                    $null = [IO.Directory]::CreateDirectory($PackageDirectory)
+                    Set-Content -LiteralPath (Join-Path $PackageDirectory 'package.json') -Value '{}'
+                }
+                $SpecDirectory = Join-Path $Fixture 'Eklee.KeyVault.UI/e2e'
+                $null = [IO.Directory]::CreateDirectory($SpecDirectory)
+                Set-Content -LiteralPath (Join-Path $SpecDirectory 'categories-crud.spec.ts') -Value 'fixture'
+                $HostedState.Dirty = @('unrelated.txt')
+                $Begin = & $HostedScript -Action Begin -TaskFiles LICENSE -RepoRoot $Fixture
+                Assert-Equal $Begin.Status 'ScopeCaptured' 'Begin captures pre-edit scope'
+                Assert-Equal $Begin.Repository 'owner/repo' 'Begin resolves repository input'
+                Assert-Equal $Begin.Source 'feature/60' 'Begin resolves source branch input'
+                Assert-Equal $Begin.TestUrl 'https://branch.example' 'Begin captures configured cloud target'
+                Assert-Equal ($Begin.InitialDirtyFiles -join ',') 'unrelated.txt' 'Begin preserves initial dirty file evidence'
+                $PublishArgs = @{
+                    Action = 'Publish'; Repository = 'owner/repo'; ExpectedBranch = 'feature/60'
+                    TaskFiles = @('LICENSE'); TestFiles = $SpecFiles; TaskScope = $Begin
+                    PublishAuthorized = $true; Message = 'test: hosted iteration'; RepoRoot = $Fixture
+                }
+                Assert-Equal (& $HostedScript @PublishArgs -WhatIf).Status 'Preview' 'publish preview does not commit or push'
+                Assert-Equal $HostedState.Writes 0 'publication preview has no Git mutations'
+                Assert-Equal $HostedState.LocalChecks 0 'publication preview has no local check side effects'
+                $Begin.InitialDirtyFiles = @('LICENSE')
+                Assert-Throws { & $HostedScript @PublishArgs -Confirm:$false } '*pre-existing edits*'
+                Assert-Equal $HostedState.Writes 0 'pre-existing task edits never staged'
+                $Begin.InitialDirtyFiles = @('unrelated.txt')
+                $Published = & $HostedScript @PublishArgs -Confirm:$false
+                Assert-Equal $Published.Status 'Published' 'scoped ordinary publication'
+                Assert-Equal $HostedState.LocalChecks 3 'publication builds lints and discovers before Git writes'
+                Assert-Equal ($Published.TaskFiles -join ',') 'LICENSE' 'only explicit task files committed'
+                Assert-Equal ($HostedState.PushArguments -join ' ') "-c push.followTags=false -c push.recurseSubmodules=no push --porcelain https://github.com/owner/repo.git $('c' * 40):refs/heads/feature/60" 'explicit endpoint SHA branch push with no tags or submodules'
+                $HostedState.Staged = @()
+                $HostedState.NoChanges = $true
+                Assert-Equal (& $HostedScript @PublishArgs -Confirm:$false).Status 'NoChanges' 'clean iteration does not create an empty commit'
+                $HostedState.NoChanges = $false
+                $HostedState.Head = ('a' * 40); $HostedState.Published = ('a' * 40)
+                $HostedState.Committed = @('unrelated.txt')
+                Assert-Throws { & $HostedScript @PublishArgs -Confirm:$false } '*post-hook scope check*'
+                Assert-Equal $HostedState.Published ('a' * 40) 'hook-added unrelated changes never pushed'
+                $HostedState.Head = ('a' * 40); $HostedState.Staged = @()
+                $HostedState.Committed = @('LICENSE'); $HostedState.PushFailure = $true
+                Assert-Throws { & $HostedScript @PublishArgs -Confirm:$false } '*remains local*Ordinary push failed*stop without force-push*'
+                Assert-Equal $HostedState.Published ('a' * 40) 'rejected push preserves remote tip'
+            }
+            finally {
+                foreach ($Directory in $EvidenceDirectories) { Remove-Item -LiteralPath $Directory -Recurse -Force }
+            }
+        }
+
         foreach ($Skill in Get-ChildItem $Scripts -Recurse -Filter SKILL.md) {
             $Body = Get-Content -LiteralPath $Skill.FullName -Raw
             Assert-Equal ($Body -match '(?s)^---\r?\nname: .+?\r?\ndescription: .+?\r?\n.*?---') $true "frontmatter $($Skill.Directory.Name)"

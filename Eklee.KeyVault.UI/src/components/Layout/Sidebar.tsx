@@ -1,6 +1,6 @@
 import { useMemo, type ReactElement } from 'react';
 import { List, ListItemButton, ListItemIcon, ListItemText } from '@mui/material';
-import { Dashboard as DashboardIcon, People as PeopleIcon } from '@mui/icons-material';
+import { Dashboard as DashboardIcon, People as PeopleIcon, Folder as FolderIcon } from '@mui/icons-material';
 import { useNavigate, useLocation } from 'react-router-dom';
 import { useUser } from '../../auth/UserContext';
 
@@ -13,7 +13,7 @@ export interface NavItem {
 
 /**
  * Returns the navigation items available to the current user.
- * Admin users see the "User Management" link in addition to "Dashboard".
+ * Admin users also see category and user management links.
  */
 export function useNavItems(): NavItem[] {
   const { isAdmin } = useUser();
@@ -22,7 +22,10 @@ export function useNavItems(): NavItem[] {
     () => [
       { label: 'Dashboard', path: '/', icon: <DashboardIcon /> },
       ...(isAdmin
-        ? [{ label: 'User Management', path: '/users', icon: <PeopleIcon /> }]
+        ? [
+            { label: 'Category Management', path: '/categories', icon: <FolderIcon /> },
+            { label: 'User Management', path: '/users', icon: <PeopleIcon /> },
+          ]
         : []),
     ],
     [isAdmin],

@@ -7,4 +7,7 @@ public class SecretItemMeta
 {
     public string? Id { get; set; }
     public string? DisplayName { get; set; }
+
+    /// <summary>Gets or sets the stable shared category identifier; null denotes legacy metadata.</summary>
+    public string? CategoryId { get; set; }
 }

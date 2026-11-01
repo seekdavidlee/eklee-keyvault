@@ -10,4 +10,7 @@ public class SecretSetRequest
     /// <summary>The value to store in the secret.</summary>
     [Required]
     public string Value { get; set; } = string.Empty;
+
+    /// <summary>Gets or sets the required category for new secrets; existing associations cannot be changed.</summary>
+    public string? CategoryId { get; set; }
 }
