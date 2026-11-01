@@ -602,6 +602,7 @@ if ($MyInvocation.InvocationName -ne '.') {
         Assert-Equal (& $ResolutionScript @LinkedArguments -Action Close -Confirm:$false).Status 'NoIssues' 'no closing links means no issues selected'
         Assert-Equal $SkillTestState.GhWrites $WritesAfterLinkedResolution 'no closing links produces zero writes'
         $Workflow = Get-Content -LiteralPath (Join-Path $RepoRoot '.github/workflows/resolve-merged-pr-issues.yml') -Raw
+        Assert-Equal ($Workflow -match '(?m)^  pull-requests: read\r?$') $true 'workflow only reads pull requests'
         Assert-Equal ($Workflow -match '(?s)pull_request_target:\s+types: \[closed\]') $true 'trusted merge-event trigger'
         Assert-Equal ($Workflow -match 'github.event.pull_request.merged == true') $true 'closed without merge excluded'
         Assert-Equal ($Workflow -match 'github.event.pull_request.base.ref == github.event.repository.default_branch') $true 'release branch merges excluded'
