@@ -40,6 +40,7 @@ function ConvertTo-TestPages {
 }
 
 function New-TestPullRequest {
+    if ($SkillTestState.ResolutionPr) { return $SkillTestState.ResolutionPr }
     return @{
         number = 61; state = 'open'; html_url = 'https://github.com/owner/repo/pull/61'
         title = $SkillTestState.PrTitle; body = $SkillTestState.PrBody
@@ -111,11 +112,24 @@ function gh {
         }
         'repo' {
             if ($args -contains '--jq') { return 'owner/repo' }
-            return '{"nameWithOwner":"owner/repo","url":"https://github.com/owner/repo"}'
+            if ($args -contains 'other/repo') { return '{"nameWithOwner":"other/repo","url":"https://github.com/other/repo"}' }
+            return '{"nameWithOwner":"owner/repo","url":"https://github.com/owner/repo","defaultBranchRef":{"name":"main"}}'
         }
         'issue' {
             if ($args[1] -eq 'view') {
                 return (@{ number = 60; title = $SkillTestState.IssueTitle; body = 'Criteria'; comments = @(); url = $SkillTestState.IssueUrl } | ConvertTo-Json)
+            }
+            if ($args[1] -eq 'close') {
+                $IssueNumber = [int]$args[2]
+                if ($SkillTestState.CloseFailure -eq $IssueNumber) { $global:LASTEXITCODE = 1; return 'closure failed' }
+                Assert-Equal $args[[array]::IndexOf($args, '--reason') + 1] 'completed' 'issue closure reason'
+                $Comment = $args[[array]::IndexOf($args, '--comment') + 1]
+                Assert-Equal ($Comment -like '*https://github.com/owner/repo/pull/61*') $true 'issue comment references merged PR'
+                $SkillTestState.ResolutionIssues[$IssueNumber].state = 'closed'
+                $SkillTestState.ResolutionIssues[$IssueNumber].state_reason = 'completed'
+                $SkillTestState.GhWrites++
+                $SkillTestState.ClosedIssues += $IssueNumber
+                return 'closed'
             }
             $SkillTestState.GhWrites++
             $BodyIndex = [array]::IndexOf($args, '--body-file') + 1
@@ -125,6 +139,11 @@ function gh {
         }
         'pr' {
             $SkillTestState.GhWrites++
+            if ($args[1] -eq 'comment') {
+                $Body = $args[[array]::IndexOf($args, '--body') + 1]
+                $SkillTestState.ResolutionComments += @{ body = $Body }
+                return 'https://github.com/owner/repo/pull/61#issuecomment-1'
+            }
             if ($args[1] -eq 'edit') {
                 Assert-Equal $args[-1] '@copilot' 'reviewer selector'
                 $SkillTestState.Pending = $SkillTestState.AcceptRequest
@@ -135,6 +154,11 @@ function gh {
         'api' {
             $Endpoint = $args[-1]
             if ($SkillTestState.ApiFailure) { $global:LASTEXITCODE = 1; return 'API denied' }
+            if ($args[1] -eq 'graphql') {
+                Assert-Equal ($args -contains '--paginate' -and $args -contains '--slurp') $true 'paginated closing links'
+                Assert-Equal ($Endpoint -match 'closingIssuesReferences\(first: 100, after: \$endCursor\)') $true 'structured closing-link query'
+                return ($SkillTestState.ClosingLinkPages | ConvertTo-Json -Depth 20 -Compress)
+            }
             if ($Endpoint -match '/(?:pulls|reviews|alerts)\?') {
                 Assert-Equal ($args -contains '--paginate' -and $args -contains '--slurp') $true 'paginated collection'
             }
@@ -146,6 +170,13 @@ function gh {
             if ($Endpoint -match '/reviews\?') { return ConvertTo-TestPages $SkillTestState.Reviews }
             if ($Endpoint -match '/pulls\?') { return ConvertTo-TestPages $SkillTestState.SourcePrs }
             if ($Endpoint -match '/pulls/\d+$') { return (New-TestPullRequest | ConvertTo-Json -Depth 10 -Compress) }
+            if ($Endpoint -match '/issues/\d+/comments\?') {
+                Assert-Equal ($args -contains '--paginate' -and $args -contains '--slurp') $true 'paginated PR comments'
+                return ConvertTo-TestPages $SkillTestState.ResolutionComments
+            }
+            if ($Endpoint -match '/issues/(?<IssueNumber>\d+)$') {
+                return ($SkillTestState.ResolutionIssues[[int]$Matches.IssueNumber] | ConvertTo-Json -Depth 10)
+            }
             if ($Endpoint -like '*dependabot/alerts*') { return ConvertTo-TestPages $SkillTestState.Alerts }
             if ($Endpoint -like '*labels*') { return '[[{"name":"bug"}]]' }
             if ($Endpoint -like '*milestones*') { return '[[{"title":"1.2.0"}]]' }
@@ -228,6 +259,7 @@ if ($MyInvocation.InvocationName -ne '.') {
     $ContextScript = Join-Path $Scripts 'implement-issue/scripts/Get-IssueContext.ps1'
     $BranchScript = Join-Path $Scripts 'create-issue-branch/scripts/New-IssueBranch.ps1'
     $PrScript = Join-Path $Scripts 'create-pull-request/scripts/Invoke-PullRequest.ps1'
+    $ResolutionScript = Join-Path $RepoRoot '.github/scripts/Resolve-PullRequestIssues.ps1'
     $SnapshotScript = Join-Path $Scripts 'functional-implementation-code-review/scripts/Get-ReviewSnapshot.ps1'
     $ReviewScript = Join-Path $Scripts 'request-github-code-review/scripts/Request-CopilotReview.ps1'
     $SecurityScript = Join-Path $Scripts 'upgrade-security/scripts/Invoke-SecurityUpgrade.ps1'
@@ -466,6 +498,121 @@ if ($MyInvocation.InvocationName -ne '.') {
         Assert-Equal (& $ReviewScript @ReviewArguments -Confirm:$false).Status 'Blocked' 'unobserved request is not success'
         $ReviewArguments.Head = 'stale'
         Assert-Throws { & $ReviewScript @ReviewArguments -WhatIf } '*differs from the reviewed handoff*'
+
+        $SkillTestState.ResolutionPr = New-TestPullRequest
+        $SkillTestState.ResolutionPr.state = 'closed'
+        $SkillTestState.ResolutionPr.base.ref = 'main'
+        $SkillTestState.ResolutionPr.merged_at = '2026-11-01T19:40:57Z'
+        $SkillTestState.ResolutionPr.merge_commit_sha = ('c' * 40)
+        $SkillTestState.ResolutionIssues = @{}
+        $SkillTestState.ResolutionComments = @()
+        $SkillTestState.ClosedIssues = @()
+        foreach ($IssueNumber in @(59, 60, 64)) {
+            $SkillTestState.ResolutionIssues[$IssueNumber] = @{
+                number = $IssueNumber; state = 'open'; state_reason = $null
+                html_url = "https://github.com/owner/repo/issues/$IssueNumber"
+                title = "Issue $IssueNumber"; body = "Acceptance criteria for #$IssueNumber"
+            }
+        }
+        $ResolutionArguments = @{ PullRequest = 61; Issues = @(59, 60, 64, 60); RepoRoot = $Fixture }
+        $WritesBeforeResolution = $SkillTestState.GhWrites
+        $GitWritesBeforeResolution = $SkillTestState.GitWrites
+        $Preview = & $ResolutionScript @ResolutionArguments
+        Assert-Equal $Preview.Status 'Preview' 'issue resolution defaults to preview'
+        Assert-Equal $Preview.Issues.Count 3 'duplicate issue selection normalized'
+        Assert-Equal ($Preview.Issues.Status -join ',') 'WouldClose,WouldClose,WouldClose' 'explicit closure preview'
+        Assert-Equal $Preview.PullRequestTitle $SkillTestState.PrTitle 'preview includes fetched PR title'
+        Assert-Equal $Preview.PullRequestBody $SkillTestState.PrBody 'preview preserves fetched PR body'
+        Assert-Equal $Preview.Issues[0].Title 'Issue 59' 'preview includes fetched issue title'
+        Assert-Equal $Preview.Issues[0].Body 'Acceptance criteria for #59' 'preview preserves issue acceptance criteria'
+        Assert-Throws { & $ResolutionScript @ResolutionArguments -Action Close -Confirm:$false } '*explicit closure approval*'
+        Assert-Equal (& $ResolutionScript @ResolutionArguments -Action Close -CompletionVerified -WhatIf).Status 'Preview' 'issue closure WhatIf'
+        Assert-Throws { & $ResolutionScript @ResolutionArguments -Repository other/repo } '*does not match*'
+        Assert-Throws { & $ResolutionScript -PullRequest 61 -Issues 0 -RepoRoot $Fixture } '*Issues*'
+        $SkillTestState.ResolutionPr.merged_at = $null
+        Assert-Throws { & $ResolutionScript @ResolutionArguments -Action Close -CompletionVerified -Confirm:$false } '*must be merged*'
+        $SkillTestState.ResolutionPr.merged_at = '2026-11-01T19:40:57Z'
+        $SkillTestState.ResolutionPr.base.ref = 'release/1.2.0'
+        Assert-Throws { & $ResolutionScript @ResolutionArguments -Action Close -CompletionVerified -Confirm:$false } '*default branch*'
+        $SkillTestState.ResolutionPr.base.ref = 'main'
+        $SkillTestState.ResolutionPr.base.repo.full_name = 'other/repo'
+        Assert-Throws { & $ResolutionScript @ResolutionArguments } '*default branch*'
+        $SkillTestState.ResolutionPr.base.repo.full_name = 'owner/repo'
+        $SkillTestState.ResolutionIssues[64].pull_request = @{ url = 'https://example.test/pr' }
+        Assert-Throws { & $ResolutionScript @ResolutionArguments -Action Close -CompletionVerified -Confirm:$false } '*not a valid issue*'
+        $SkillTestState.ResolutionIssues[64].Remove('pull_request')
+        $SkillTestState.ResolutionIssues[64].html_url = 'https://github.com/other/repo/issues/64'
+        Assert-Throws { & $ResolutionScript @ResolutionArguments -Action Close -CompletionVerified -Confirm:$false } '*not a valid issue*'
+        $SkillTestState.ResolutionIssues[64].html_url = 'https://github.com/owner/repo/issues/64'
+        $SkillTestState.ApiFailure = $true
+        Assert-Throws { & $ResolutionScript @ResolutionArguments -Action Close -CompletionVerified -Confirm:$false } '*API denied*'
+        $SkillTestState.ApiFailure = $false
+        Assert-Equal $SkillTestState.GhWrites $WritesBeforeResolution 'all invalid selections and previews have zero writes'
+        $SkillTestState.CloseFailure = 60
+        Assert-Throws { & $ResolutionScript @ResolutionArguments -Action Close -CompletionVerified -Confirm:$false } '*closure failed*'
+        Assert-Equal ($SkillTestState.ClosedIssues -join ',') '59' 'partial closure stops before later issues'
+        Assert-Equal $SkillTestState.ResolutionIssues[60].state 'open' 'failed closure remains open'
+        Assert-Equal $SkillTestState.ResolutionComments.Count 0 'partial failure does not claim complete resolution on PR'
+        $SkillTestState.CloseFailure = $null
+        $Resolved = & $ResolutionScript @ResolutionArguments -Action Close -CompletionVerified -Confirm:$false
+        Assert-Equal $Resolved.Status 'Resolved' 'successful post-merge resolution'
+        Assert-Equal ($Resolved.Issues.Status -join ',') 'AlreadyClosed,Closed,Closed' 'resume preserves earlier closure'
+        Assert-Equal ($SkillTestState.ClosedIssues -join ',') '59,60,64' 'each issue closed once'
+        Assert-Equal $SkillTestState.ResolutionComments.Count 1 'one PR resolution summary'
+        Assert-Equal ($SkillTestState.ResolutionComments[0].body -like '*#59, #60, #64*') $true 'PR summary names all selected issues'
+        $WritesAfterResolution = $SkillTestState.GhWrites
+        Assert-Equal (& $ResolutionScript @ResolutionArguments -Action Close -CompletionVerified -Confirm:$false).Status 'Resolved' 'resolved rerun succeeds'
+        Assert-Equal $SkillTestState.GhWrites $WritesAfterResolution 'rerun avoids duplicate issue and PR comments'
+        Assert-Equal $SkillTestState.GitWrites $GitWritesBeforeResolution 'issue resolution never writes Git'
+        $LinkedArguments = @{ PullRequest = 61; FromClosingLinks = $true; RepoRoot = $Fixture }
+        $SkillTestState.ClosingLinkPages = @(foreach ($Numbers in @(@(59, 60), @(64, 59))) {
+            @{
+                data = @{ repository = @{ pullRequest = @{
+                    number = 61
+                    closingIssuesReferences = @{
+                        nodes = @($Numbers | ForEach-Object {
+                            @{ number = $_; url = "https://github.com/owner/repo/issues/$_"; repository = @{ nameWithOwner = 'owner/repo' } }
+                        })
+                        pageInfo = @{ hasNextPage = ($Numbers[0] -eq 59); endCursor = 'cursor' }
+                    }
+                } } }
+            }
+        })
+        $LinkedPreview = & $ResolutionScript @LinkedArguments
+        Assert-Equal ($LinkedPreview.Issues.Number -join ',') '59,60,64' 'closing links collected from all pages and deduplicated'
+        Assert-Equal (& $ResolutionScript @LinkedArguments -Action Close -WhatIf).Status 'Preview' 'automatic closure WhatIf without manual completion switch'
+        Assert-Equal $SkillTestState.GhWrites $WritesAfterResolution 'closing-link previews do not write'
+        $SkillTestState.ClosingLinkPages[1].data.repository.pullRequest.closingIssuesReferences.nodes[0].repository.nameWithOwner = 'other/repo'
+        Assert-Throws { & $ResolutionScript @LinkedArguments -Action Close -Confirm:$false } '*valid issues in this repository*'
+        $SkillTestState.ClosingLinkPages[1].data.repository.pullRequest.closingIssuesReferences.nodes[0].repository.nameWithOwner = 'owner/repo'
+        $SkillTestState.ClosingLinkPages[0].data.repository.pullRequest.number = 62
+        Assert-Throws { & $ResolutionScript @LinkedArguments -Action Close -Confirm:$false } '*invalid closing-link response*'
+        $SkillTestState.ClosingLinkPages[0].data.repository.pullRequest.number = 61
+        Assert-Equal $SkillTestState.GhWrites $WritesAfterResolution 'invalid closing links fail before writes'
+        $SkillTestState.ResolutionIssues[60].state = 'open'
+        $SkillTestState.ResolutionIssues[60].state_reason = $null
+        Assert-Equal (& $ResolutionScript @LinkedArguments -Action Close -Confirm:$false).Status 'Resolved' 'merged closing links authorize automatic closure'
+        Assert-Equal ($SkillTestState.ClosedIssues -join ',') '59,60,64,60' 'automatic closure preserves already closed issues'
+        $WritesAfterLinkedResolution = $SkillTestState.GhWrites
+        Assert-Equal (& $ResolutionScript @LinkedArguments -Action Close -Confirm:$false).Status 'Resolved' 'automatic resolution rerun succeeds'
+        Assert-Equal $SkillTestState.GhWrites $WritesAfterLinkedResolution 'automatic rerun has no duplicate writes'
+        $SkillTestState.ClosingLinkPages = @(@{ data = @{ repository = @{ pullRequest = @{
+            number = 61; closingIssuesReferences = @{ nodes = @(); pageInfo = @{ hasNextPage = $false; endCursor = $null } }
+        } } } })
+        Assert-Equal (& $ResolutionScript @LinkedArguments -Action Close -Confirm:$false).Status 'NoIssues' 'no closing links means no issues selected'
+        Assert-Equal $SkillTestState.GhWrites $WritesAfterLinkedResolution 'no closing links produces zero writes'
+        $Workflow = Get-Content -LiteralPath (Join-Path $RepoRoot '.github/workflows/resolve-merged-pr-issues.yml') -Raw
+        Assert-Equal ($Workflow -match '(?m)^  pull-requests: read\r?$') $true 'workflow only reads pull requests'
+        Assert-Equal ($Workflow -match '(?s)pull_request_target:\s+types: \[closed\]') $true 'trusted merge-event trigger'
+        Assert-Equal ($Workflow -match 'github.event.pull_request.merged == true') $true 'closed without merge excluded'
+        Assert-Equal ($Workflow -match 'github.event.pull_request.base.ref == github.event.repository.default_branch') $true 'release branch merges excluded'
+        Assert-Equal ($Workflow -match 'ref: \$\{\{ github.event.repository.default_branch \}\}') $true 'checkout named trusted default branch'
+        Assert-Equal ($Workflow -match 'persist-credentials: false') $true 'checkout does not persist write credentials'
+        Assert-Equal ($Workflow -match 'group: post-merge-issue-resolution-.*github.event.pull_request.number') $true 'distinct merge events have independent queues'
+        Assert-Equal ($Workflow -match '(?s)env:.*?PR_NUMBER:.*?run:.*?\[int\]\$env:PR_NUMBER') $true 'event number passed as data not executable text'
+        Assert-Equal ($Workflow -match '-FromClosingLinks -Action Close -Confirm:\$false') $true 'workflow delegates selection and closure to script'
+        Assert-Equal $SkillTestState.GitWrites $GitWritesBeforeResolution 'automatic resolution never writes Git'
+        $SkillTestState.ResolutionPr = $null
 
         $Alert = @{
             number = 1; security_advisory = @{ severity = 'high'; ghsa_id = 'GHSA-example' }
