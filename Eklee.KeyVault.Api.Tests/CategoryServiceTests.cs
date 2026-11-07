@@ -487,7 +487,7 @@ public class CategoryServiceTests
         Assert.Empty(store.Read().Items!);
     }
 
-    private sealed class MetadataStore(SecretItemMetaList? initial = null) : BlobService(null!, null!)
+    internal sealed class MetadataStore(SecretItemMetaList? initial = null) : BlobService(null!, null!)
     {
         private string serialized = BinaryData.FromObjectAsJson(initial ?? new SecretItemMetaList()).ToString();
         private int version;
@@ -502,6 +502,8 @@ public class CategoryServiceTests
         public string? LeaseConflictName { get; init; }
         public int MaximumLeases { get; private set; }
         public Action<SecretItemMetaList>? OnWrite { get; set; }
+        public int? LeaseReleaseFailureStatus { get; init; }
+        public string? LeaseReleaseFailureName { get; init; }
 
         public bool IsSecretLeased(string name)
         {
@@ -527,7 +529,15 @@ public class CategoryServiceTests
 
             return Task.FromResult<IAsyncDisposable>(new OperationScope(() =>
             {
-                lock (operations) operations.Remove(name);
+                lock (operations)
+                {
+                    if (name == LeaseReleaseFailureName && LeaseReleaseFailureStatus is int status)
+                    {
+                        throw new RequestFailedException(status, "Test lease release failure");
+                    }
+
+                    operations.Remove(name);
+                }
             }));
         }
 

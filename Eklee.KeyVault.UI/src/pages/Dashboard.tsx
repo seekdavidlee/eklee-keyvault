@@ -27,24 +27,23 @@ import {
   useMediaQuery,
   useTheme,
 } from '@mui/material';
-import {
-  Visibility as VisibilityIcon,
-  ContentCopy as CopyIcon,
-  Edit as EditIcon,
-  Check as CheckIcon,
-  Close as CloseIcon,
-  Delete as DeleteIcon,
-  Add as AddIcon,
-  ExpandMore as ExpandMoreIcon,
-  Refresh as RefreshIcon,
-  ArrowBack as ArrowBackIcon,
-  Folder as FolderIcon,
-} from '@mui/icons-material';
+import VisibilityIcon from '@mui/icons-material/Visibility';
+import CopyIcon from '@mui/icons-material/ContentCopy';
+import EditIcon from '@mui/icons-material/Edit';
+import CheckIcon from '@mui/icons-material/Check';
+import CloseIcon from '@mui/icons-material/Close';
+import DeleteIcon from '@mui/icons-material/Delete';
+import AddIcon from '@mui/icons-material/Add';
+import ExpandMoreIcon from '@mui/icons-material/ExpandMore';
+import RefreshIcon from '@mui/icons-material/Refresh';
+import ArrowBackIcon from '@mui/icons-material/ArrowBack';
+import FolderIcon from '@mui/icons-material/Folder';
 import { DataGrid, type GridColDef } from '@mui/x-data-grid';
 import { deleteSecret, generateSecret, getSecrets, getSecretValue, setSecret } from '../services/secretsService';
 import { getMetadata, updateMetadata } from '../services/metadataService';
 import { getCategories } from '../services/categoriesService';
 import { useUser } from '../auth/UserContext';
+import { SecretTransferControls } from '../components/SecretTransferControls';
 import type { ApiProblemDetails, CategoryItem, SecretGenerationRequest, SecretItemMetaList, SecretItemView } from '../types';
 
 /** Placeholder text shown instead of the actual secret value. */
@@ -80,6 +79,7 @@ export function Dashboard() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
   const [reload, setReload] = useState(0);
+  const [secretReload, setSecretReload] = useState(0);
 
   useEffect(() => {
     let ignore = false;
@@ -103,7 +103,10 @@ export function Dashboard() {
           Back to categories
         </Button>
         <Typography variant="h5" component="h1" sx={{ mb: 2, overflowWrap: 'anywhere' }}>{selected.name}</Typography>
-        <CategorySecrets key={selected.id} category={selected} categories={categories} />
+        <SecretTransferControls key={selected.id} category={selected}
+          onCategoryCreated={(created) => setCategories((items) => [...items, created])}
+          onImported={() => setSecretReload((version) => version + 1)} />
+        <CategorySecrets key={`${selected.id}-${secretReload}`} category={selected} categories={categories} />
       </Box>
     );
   }

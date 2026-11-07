@@ -124,6 +124,13 @@ public class CategoryService(BlobService blobService, KeyVaultService keyVaultSe
         return (true, true);
     });
 
+    /// <summary>Preserves imported display metadata while the caller holds the secret's operation lease.</summary>
+    public Task SetImportedDisplayNameAsync(string name, string displayName) => MutateAsync(metadata =>
+    {
+        metadata.GetById(name, name).DisplayName = displayName;
+        return (true, true);
+    });
+
     /// <summary>Removes an association after deletion; callers must hold the per-secret lease through delete and cleanup.</summary>
     /// <param name="name">Deleted secret name.</param>
     /// <returns>A task completing after metadata cleanup.</returns>

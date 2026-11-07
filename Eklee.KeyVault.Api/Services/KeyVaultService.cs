@@ -95,6 +95,22 @@ public partial class KeyVaultService
         return response.Value.Name;
     }
 
+    /// <summary>Reads a secret and its complete Key Vault tags for export.</summary>
+    public virtual async Task<KeyVaultSecret> GetSecretWithTagsAsync(string name) =>
+        (await secretClient.GetSecretAsync(name)).Value;
+
+    /// <summary>Writes an imported value and tags together; the caller must hold the secret lease and check existence first.</summary>
+    public virtual async Task SetSecretWithTagsAsync(string name, string value, IReadOnlyDictionary<string, string> tags)
+    {
+        var secret = new KeyVaultSecret(name, value);
+        foreach (var tag in tags)
+        {
+            secret.Properties.Tags.Add(tag.Key, tag.Value);
+        }
+
+        await secretClient.SetSecretAsync(secret);
+    }
+
     /// <summary>
     /// Starts a soft-delete operation for a secret in Key Vault.
     /// The secret can be recovered during the vault's retention period.

@@ -71,6 +71,7 @@ builder.Services.AddScoped<BlobService>();
 builder.Services.AddScoped<KeyVaultService>();
 builder.Services.AddScoped<SecretGenerationService>();
 builder.Services.AddScoped<CategoryService>();
+builder.Services.AddScoped<SecretTransferService>();
 builder.Services.AddHostedService<CategoryInitializationService>();
 builder.Services.AddScoped<UserAccessService>();
 builder.Services.AddScoped<Microsoft.AspNetCore.Authentication.IClaimsTransformation, UserAccessClaimsTransformation>();
