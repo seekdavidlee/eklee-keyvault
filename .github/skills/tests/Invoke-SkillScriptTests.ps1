@@ -629,7 +629,17 @@ if ($MyInvocation.InvocationName -ne '.') {
         Assert-Throws { & $ResolutionScript @ResolutionArguments -Action Close -CompletionVerified -Confirm:$false } '*must be merged*'
         $SkillTestState.ResolutionPr.merged_at = '2026-11-01T19:40:57Z'
         $SkillTestState.ResolutionPr.base.ref = 'release/1.2.0'
-        Assert-Throws { & $ResolutionScript @ResolutionArguments -Action Close -CompletionVerified -Confirm:$false } '*default branch*'
+        Assert-Equal (& $ResolutionScript @ResolutionArguments).Status 'Preview' 'verified release merge accepted'
+        $SkillTestState.ResolutionPr.merged_at = $null
+        Assert-Throws { & $ResolutionScript @ResolutionArguments -Action Close -CompletionVerified -Confirm:$false } '*must be merged*'
+        $SkillTestState.ResolutionPr.merged_at = '2026-11-01T19:40:57Z'
+        $SkillTestState.ResolutionPr.base.repo.full_name = 'other/repo'
+        Assert-Throws { & $ResolutionScript @ResolutionArguments } '*must be merged*'
+        $SkillTestState.ResolutionPr.base.repo.full_name = 'owner/repo'
+        foreach ($RejectedBase in @('feature/60', 'release/', 'Release/1.2.0', '')) {
+            $SkillTestState.ResolutionPr.base.ref = $RejectedBase
+            Assert-Throws { & $ResolutionScript @ResolutionArguments -Action Close -CompletionVerified -Confirm:$false } '*default branch*'
+        }
         $SkillTestState.ResolutionPr.base.ref = 'main'
         $SkillTestState.ResolutionPr.base.repo.full_name = 'other/repo'
         Assert-Throws { & $ResolutionScript @ResolutionArguments } '*default branch*'
@@ -661,6 +671,7 @@ if ($MyInvocation.InvocationName -ne '.') {
         Assert-Equal $SkillTestState.GhWrites $WritesAfterResolution 'rerun avoids duplicate issue and PR comments'
         Assert-Equal $SkillTestState.GitWrites $GitWritesBeforeResolution 'issue resolution never writes Git'
         $LinkedArguments = @{ PullRequest = 61; FromClosingLinks = $true; RepoRoot = $Fixture }
+        $SkillTestState.ResolutionPr.base.ref = 'release/1.2.0'
         $SkillTestState.ClosingLinkPages = @(foreach ($Numbers in @(@(59, 60), @(64, 59))) {
             @{
                 data = @{ repository = @{ pullRequest = @{
@@ -699,9 +710,9 @@ if ($MyInvocation.InvocationName -ne '.') {
         Assert-Equal $SkillTestState.GhWrites $WritesAfterLinkedResolution 'no closing links produces zero writes'
         $Workflow = Get-Content -LiteralPath (Join-Path $RepoRoot '.github/workflows/resolve-merged-pr-issues.yml') -Raw
         Assert-Equal ($Workflow -match '(?m)^  pull-requests: read\r?$') $true 'workflow only reads pull requests'
-        Assert-Equal ($Workflow -match '(?s)pull_request_target:\s+types: \[closed\]') $true 'trusted merge-event trigger'
+        Assert-Equal ($Workflow -match '(?s)pull_request_target:\s+branches: \[''release/\*''\]\s+types: \[closed\]') $true 'trusted release merge-event trigger'
         Assert-Equal ($Workflow -match 'github.event.pull_request.merged == true') $true 'closed without merge excluded'
-        Assert-Equal ($Workflow -match 'github.event.pull_request.base.ref == github.event.repository.default_branch') $true 'release branch merges excluded'
+        Assert-Equal ($Workflow -match 'github.event.pull_request.base.ref == github.event.repository.default_branch') $false 'release branch merges not excluded'
         Assert-Equal ($Workflow -match 'ref: \$\{\{ github.event.repository.default_branch \}\}') $true 'checkout named trusted default branch'
         Assert-Equal ($Workflow -match 'persist-credentials: false') $true 'checkout does not persist write credentials'
         Assert-Equal ($Workflow -match 'group: post-merge-issue-resolution-.*github.event.pull_request.number') $true 'distinct merge events have independent queues'
