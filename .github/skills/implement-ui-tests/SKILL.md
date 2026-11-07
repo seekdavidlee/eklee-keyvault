@@ -18,6 +18,9 @@ implementation and evidence-driven repair decisions.
 - `TaskScope`: the original `Begin` result captured before implementation edits.
 - `Repository` and `ExpectedBranch`: use the identities returned in `TaskScope`.
 - `Message` and `PublishAuthorized`: commit message and recorded publication consent.
+- `IssueNumber`: verified issue number when this is issue work; pass it explicitly
+  from the caller. Otherwise the runner infers it from an issue branch. An
+  explicit number conflicting with the branch issue blocks publication.
 - `Commit` and optional `RunId`: published SHA and known run for `Inspect`/`Wait`.
 - Optional `RepoRoot`; defaults to this checkout. See script help for parameters.
 
@@ -43,6 +46,13 @@ stronger Git operations after a rejection.
 
 ## Invocation
 
+Follow [Issue Commit References](../create-pull-request/SKILL.md#issue-commit-references)
+for every issue-related iteration: include `Refs #<issue-number>` in `Message`.
+Publish checks the supplied message before staging and the actual committed
+message after hooks, before push. Missing references stop publication; a commit
+whose hook removed the reference remains local. Do not rewrite it without
+separate approval. Non-issue work does not require an invented issue reference.
+
 From the checkout, assign `$Runner` to the linked script path. Capture scope
 before editing, then publish each reviewed repair and inspect its returned SHA:
 
@@ -56,16 +66,19 @@ $Scope = & $Runner -Action Begin -TaskFiles $Files
 $Publication = & $Runner -Action Publish -Repository $Scope.Repository `
   -ExpectedBranch $Scope.Source -TaskScope $Scope -TaskFiles $Files `
   -TestFiles $Specs -PublishAuthorized -Confirm:$false `
-  -Message 'test: cover hosted category management'
+  -IssueNumber 60 -Message "test: cover hosted category management`n`nRefs #60"
 $Result = & $Runner -Action Wait -Repository $Scope.Repository `
   -ExpectedBranch $Scope.Source -Commit $Publication.Commit -TestFiles $Specs
 $Result | Select-Object Status, Commit, RunId, RunUrl, TestUrl, Counts, Reason
 ```
 
 Use `Inspect` for nonblocking read-only observation and `Publish -WhatIf` for a
-publication preview. Execute
+publication preview. The example assumes verified issue #60; use the caller's
+actual issue, or omit `IssueNumber` and the reference only for non-issue work.
+Execute
 [Invoke-SkillScriptTests.ps1](../tests/Invoke-SkillScriptTests.ps1) to validate
-the runner with contained CLI mocks.
+the runner with contained CLI mocks; use `-Scope CommitReference` for the issue
+reference guards.
 
 ## Outputs
 

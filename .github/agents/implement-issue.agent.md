@@ -107,8 +107,14 @@ and cleanup. Do not infer filesystem isolation from separate agent contexts.
    If required gaps remain or documentation edits are needed, return to step 3,
    rerun affected validation and steps 4 through 6 against a fresh complete
    snapshot fingerprint, then repeat the final documentation check. Unresolved
-   required documentation gaps block publication. Return the verified PR URL
-   and number.
+   required documentation gaps block publication. Carry the verified numeric
+   issue number as `IssueNumber` into PR Preview/Create. Require every approved
+   issue-work commit message to include a standalone `Refs #<issue-number>`
+   line under the skill's Issue Commit References policy, including review
+   fixes and test iterations. Preview that line with the message for commit
+   approval. A missing reference in existing history blocks publication; do
+   not amend, rebase, or force-push without separate approval. Return the
+   verified PR URL and number.
 8. Use [request-github-code-review](../skills/request-github-code-review/SKILL.md)
    against that PR, only after successful creation or verified reuse.
 

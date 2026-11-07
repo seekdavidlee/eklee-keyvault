@@ -39,6 +39,36 @@ function Invoke-SkillJson {
     return ConvertFrom-Json -InputObject $Output -AsHashtable -Depth 100
 }
 
+function Get-SkillCommitIssue {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory)][string]$Source,
+        [ValidateRange(0, [int]::MaxValue)][int]$IssueNumber
+    )
+
+    $BranchIssue = 0
+    if ($Source -cmatch '^(feature|fix|doc|refactor)/(?<issue>[1-9][0-9]*)(?:-[a-z0-9]+(?:-[a-z0-9]+)*)?$') {
+        $BranchIssue = [int]$Matches.issue
+    }
+    if ($IssueNumber -and $BranchIssue -and $IssueNumber -ne $BranchIssue) {
+        throw "Issue #$IssueNumber does not match source branch issue #$BranchIssue."
+    }
+    if ($IssueNumber) { return $IssueNumber }
+    return $BranchIssue
+}
+
+function Assert-SkillCommitIssueReference {
+    [CmdletBinding()]
+    param(
+        [AllowEmptyString()][string]$Message,
+        [Parameter(Mandatory)][ValidateRange(1, [int]::MaxValue)][int]$IssueNumber
+    )
+
+    if ($Message -cnotmatch "(?m)^Refs #${IssueNumber}\r?$") {
+        throw "Commit message must include a standalone 'Refs #$IssueNumber' line."
+    }
+}
+
 function Get-SkillContext {
     [CmdletBinding()]
     param([string]$Repository)

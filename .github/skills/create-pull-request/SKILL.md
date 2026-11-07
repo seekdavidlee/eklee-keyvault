@@ -25,6 +25,36 @@ Create or reuse one PR using
   identity, not review verdicts; the calling workflow must verify all three
   review dispositions before Preview/Create.
 * `TaskFiles`: same optional working-file selection used for local review.
+* `IssueNumber`: verified positive numeric issue number for issue work; pass it
+  explicitly from the issue handoff. The script infers it from
+  `feature`, `fix`, `doc`, or `refactor` issue branches when omitted and rejects
+  conflicts. Non-issue workflows without an associated issue may omit it.
+
+## Issue Commit References
+
+Every commit created for the associated issue must include a standalone
+`Refs #<issue-number>` line, separated from the Conventional Commit subject
+by a blank line. Preserve the other applicable commit-message requirements,
+including the generated-by footer. Preview the complete message for approval.
+Use the verified issue number, not a PR number or a number guessed from text.
+
+```text
+fix(api): validate secret requests
+
+Refs #60
+```
+
+Use `Refs` for association without automatic issue closure. Do not substitute
+`Fixes`, `Closes`, or `Resolves` unless issue closure is explicitly requested;
+the `Refs` line remains required. PR-body issue linkage is a separate requirement.
+Do not invent an issue for work that has none.
+
+Preview/Create check every non-merge commit in the source-only range
+`origin/<base>..HEAD` before creating or reusing a PR. Merge commits are excluded
+so integration messages are not treated as issue-work commits. A missing or
+wrong reference blocks publication, including `-WhatIf`. Report the offending
+SHA and request separate approval before rewriting any existing history; do not
+automatically amend, rebase, or force-push. Resolve remains routing-only.
 
 ## Invocation And Approval
 
@@ -52,6 +82,7 @@ $Arguments = @{
     Title = $ApprovedTitle
     BodyFile = $ApprovedBodyFile
     ReviewedFingerprint = $PassingReviewFingerprint
+    IssueNumber = $VerifiedIssueNumber
 }
 $Preview = & ./.github/skills/create-pull-request/scripts/Invoke-PullRequest.ps1 @Arguments -Action Preview
 ```
@@ -65,6 +96,7 @@ Only with PR-write approval, run the same inputs with `-Action Create
 verified branch pair. `Created` or `Reused` additionally returns `PullRequest`
 (number and `html_url`) and published `Head`; hand these to
 [remote review](../request-github-code-review/SKILL.md).
+Preview/Create also return the resolved `IssueNumber` (`0` when no issue applies).
 
 `PullRequestSelectionRequired` requires a user decision about the returned
 PRs. Errors block publication. Changed content/routing requires fresh affected

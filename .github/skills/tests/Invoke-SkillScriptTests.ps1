@@ -11,14 +11,14 @@
 .PARAMETER RepoRoot
     Repository containing the skill scripts.
 .PARAMETER Scope
-    All checks (default), or focused branch and milestone checks.
+    All checks (default), branch/milestone checks, or commit-reference guards.
 .EXAMPLE
     ./.github/skills/tests/Invoke-SkillScriptTests.ps1
 #>
 [CmdletBinding()]
 param(
     [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../../..')).Path,
-    [ValidateSet('All', 'Milestone')][string]$Scope = 'All'
+    [ValidateSet('All', 'Milestone', 'CommitReference')][string]$Scope = 'All'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -99,6 +99,8 @@ function git {
             if ($args -contains '--raw') { return '' }
             return 'complete diff fixture'
         }
+        'rev-list' { return $SkillTestState.Head }
+        'show' { return $SkillTestState.CommitMessage }
         'switch' {
             $SkillTestState.GitWrites++
             $SkillTestState.SwitchArguments = @($args)
@@ -292,6 +294,7 @@ if ($MyInvocation.InvocationName -ne '.') {
         IssueUrl = 'https://github.com/owner/repo/issues/60'; Passed = 2; Skipped = 0; Alerts = @()
         Modes = @{}; PrTitle = 'Example'; PrBody = 'fixture'; ExistingBranches = @(); SwitchArguments = @()
         IsAncestor = $true; IssueTitle = 'Example'
+        CommitMessage = "feat: implement issue`n`nRefs #60"
         IssueMilestone = @{ title = '1.2.0' }
         MilestonePages = '[[{"title":"1.2.0","state":"open"}]]'
         MilestoneWriteFailure = $false; MilestoneVerificationFailure = $false
@@ -299,6 +302,20 @@ if ($MyInvocation.InvocationName -ne '.') {
         LockRegistry = 'https://approved.example/npm/'; NpmInstalls = 0; NpmCi = 0
     }
     try {
+        . (Join-Path $Scripts '_shared/RepositoryTools.ps1')
+        foreach ($Type in @('feature', 'fix', 'doc', 'refactor')) {
+            Assert-Equal (Get-SkillCommitIssue -Source "$Type/60-example") 60 "$Type resolves commit issue"
+        }
+        Assert-Equal (Get-SkillCommitIssue -Source 'release/1.2.0') 0 'release does not imply an issue'
+        Assert-Equal (Get-SkillCommitIssue -Source 'test/hosted' -IssueNumber 60) 60 'explicit issue on non-issue branch'
+        Assert-Throws { Get-SkillCommitIssue -Source 'fix/60-example' -IssueNumber 61 } '*does not match source branch issue*'
+        foreach ($Message in @("fix: example`n`nRefs #60", "fix: example`r`n`r`nRefs #60`r`n")) {
+            Assert-SkillCommitIssueReference -Message $Message -IssueNumber 60
+            $script:Assertions++
+        }
+        foreach ($Message in @('', 'fix: no issue', 'Refs #600', 'Refs #61', 'Fixes #60', 'text Refs #60', 'Refs #60 trailing')) {
+            Assert-Throws { Assert-SkillCommitIssueReference -Message $Message -IssueNumber 60 } '*standalone*Refs #60*'
+        }
         $null = [IO.Directory]::CreateDirectory((Join-Path $Fixture 'Eklee.KeyVault.UI/src'))
         $null = [IO.Directory]::CreateDirectory((Join-Path $Fixture 'Eklee.KeyVault.Api.Tests'))
         Set-Content -LiteralPath (Join-Path $Fixture 'LICENSE') -Value 'fixture' -NoNewline
@@ -532,6 +549,13 @@ if ($MyInvocation.InvocationName -ne '.') {
         $PrArguments = @{ Action = 'Create'; Base = 'release/1.2.0'; Title = 'Example'; BodyFile = (Join-Path $Fixture 'LICENSE'); ReviewedFingerprint = $Snapshot.Fingerprint; RepoRoot = $Fixture }
         Assert-Equal (& $PrScript @PrArguments -WhatIf).Status 'Preview' 'PR creation preview'
         Assert-Equal $SkillTestState.GhWrites 0 'PR preview has no write'
+        $SkillTestState.CommitMessage = 'feat: no reference'
+        Assert-Throws { & $PrScript @PrArguments -WhatIf } '*Commit*standalone*Refs #60*'
+        $SkillTestState.CommitMessage = "feat: wrong reference`n`nRefs #600"
+        Assert-Throws { & $PrScript @PrArguments -Confirm:$false } '*Commit*standalone*Refs #60*'
+        Assert-Equal $SkillTestState.GhWrites 0 'missing or wrong commit issue blocks PR writes'
+        $SkillTestState.CommitMessage = "feat: implement issue`n`nRefs #60"
+        Assert-Throws { & $PrScript @PrArguments -IssueNumber 61 -WhatIf } '*does not match source branch issue*'
         $PrArguments.ReviewedFingerprint = 'stale'
         Assert-Throws { & $PrScript @PrArguments -WhatIf } '*changed after local review*'
         $PrArguments.ReviewedFingerprint = $Snapshot.Fingerprint
@@ -554,6 +578,7 @@ if ($MyInvocation.InvocationName -ne '.') {
         $SkillTestState.SourcePrs = @()
         Assert-Equal (& $PrScript @PrArguments -Confirm:$false).Status 'Created' 'mocked PR creation'
 
+        if ($Scope -ne 'CommitReference') {
         $ReviewArguments = @{ Repository = 'owner/repo'; Number = 61; Source = 'feature/60'; Base = 'release/1.2.0'; Head = $SkillTestState.Head; RepoRoot = $Fixture }
         Assert-Equal (& $ReviewScript @ReviewArguments -WhatIf).Status 'Preview' 'review preview'
         $SkillTestState.Pending = $true
@@ -877,6 +902,7 @@ if ($MyInvocation.InvocationName -ne '.') {
         foreach ($Link in [regex]::Matches($AgentBody, '\]\(([^)#]+)(?:#[^)]*)?\)')) {
             Assert-Equal (Test-Path -LiteralPath (Join-Path (Split-Path $AgentPath -Parent) $Link.Groups[1].Value)) $true 'implementation agent reference'
         }
+        }
 
         & {
             $HostedScript = Join-Path $Scripts 'implement-ui-tests/scripts/Invoke-HostedUiTests.ps1'
@@ -892,6 +918,7 @@ if ($MyInvocation.InvocationName -ne '.') {
                 Head = ('a' * 40); Published = ('a' * 40); Parent = ('a' * 40)
                 Dirty = @(); Untracked = @(); Committed = @('LICENSE'); PushFailure = $false
                 NoChanges = $false; PushArguments = @(); LocalChecks = 0
+                CommitMessage = ''; RemoveIssueReference = $false
             }
             $EvidenceDirectories = [Collections.Generic.List[string]]::new()
             function gh {
@@ -974,8 +1001,10 @@ if ($MyInvocation.InvocationName -ne '.') {
                         $HostedState.Writes++
                         $HostedState.Parent = $HostedState.Head
                         $HostedState.Head = ('c' * 40)
+                        $HostedState.CommitMessage = if ($HostedState.RemoveIssueReference) { 'test: hook removed reference' } else { $args[2] }
                         return 'committed fixture'
                     }
+                    'show' { return $HostedState.CommitMessage }
                     'diff-tree' { return ($HostedState.Committed -join "`0") }
                     '-c' {
                         $HostedState.Writes++
@@ -1109,8 +1138,13 @@ if ($MyInvocation.InvocationName -ne '.') {
                 $PublishArgs = @{
                     Action = 'Publish'; Repository = 'owner/repo'; ExpectedBranch = 'feature/60'
                     TaskFiles = @('LICENSE'); TestFiles = $SpecFiles; TaskScope = $Begin
-                    PublishAuthorized = $true; Message = 'test: hosted iteration'; RepoRoot = $Fixture
+                    PublishAuthorized = $true; Message = "test: hosted iteration`n`nRefs #60"; RepoRoot = $Fixture
                 }
+                $ValidMessage = $PublishArgs.Message
+                $PublishArgs.Message = 'test: missing reference'
+                Assert-Throws { & $HostedScript @PublishArgs -Confirm:$false } '*standalone*Refs #60*'
+                Assert-Equal $HostedState.Writes 0 'missing commit issue blocks staging and publication'
+                $PublishArgs.Message = $ValidMessage
                 Assert-Equal (& $HostedScript @PublishArgs -WhatIf).Status 'Preview' 'publish preview does not commit or push'
                 Assert-Equal $HostedState.Writes 0 'publication preview has no Git mutations'
                 Assert-Equal $HostedState.LocalChecks 0 'publication preview has no local check side effects'
@@ -1132,6 +1166,10 @@ if ($MyInvocation.InvocationName -ne '.') {
                 Assert-Throws { & $HostedScript @PublishArgs -Confirm:$false } '*post-hook scope check*'
                 Assert-Equal $HostedState.Published ('a' * 40) 'hook-added unrelated changes never pushed'
                 $HostedState.Head = ('a' * 40); $HostedState.Staged = @()
+                $HostedState.Committed = @('LICENSE'); $HostedState.RemoveIssueReference = $true
+                Assert-Throws { & $HostedScript @PublishArgs -Confirm:$false } '*standalone*Refs #60*'
+                Assert-Equal $HostedState.Published ('a' * 40) 'hook-removed issue reference never pushed'
+                $HostedState.Head = ('a' * 40); $HostedState.Staged = @(); $HostedState.RemoveIssueReference = $false
                 $HostedState.Committed = @('LICENSE'); $HostedState.PushFailure = $true
                 Assert-Throws { & $HostedScript @PublishArgs -Confirm:$false } '*remains local*Ordinary push failed*stop without force-push*'
                 Assert-Equal $HostedState.Published ('a' * 40) 'rejected push preserves remote tip'
