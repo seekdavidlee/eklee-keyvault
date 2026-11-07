@@ -133,6 +133,46 @@ dev and non-dev API registrations rather than a single shared registration.
 rejects its app-registration name when it appears in a same-tenant customer
 target in `setup.json`.
 
+### Frontend Cache Policy And Upgrade Verification
+
+The combined container serves the SPA through ASP.NET Core. Entry HTML at `/`,
+`/index.html`, and client-side deep links uses `Cache-Control: no-cache` so
+navigation and reload revalidate it. Runtime `/config.js` uses
+`Cache-Control: no-store` so configuration is not reused across deployments.
+Existing API and authentication response policies are unchanged.
+
+Successful static-file responses under `/assets/` with Vite's current
+eight-character content hash in the filename use
+`Cache-Control: public, max-age=31536000, immutable`. The policy covers generated
+JavaScript, CSS, images, and fonts. Unversioned files and missing assets do not
+receive immutable caching. Keep content hashes when changing build output names;
+an unversioned file must not use the hashed naming convention.
+
+Already-open tabs continue running their loaded JavaScript until refreshed.
+The application does not automatically reload tabs or discard unsaved edits.
+
+Verify a version update in the deployment's browser session:
+
+1. Before updating, open the site in Edge and record the entry page's bundle
+  URL and application version from the Network panel.
+2. Deploy the selected image using the version-only setup operation and confirm
+  the intended digest, healthy revision, and traffic assignment.
+3. Keep the browser cache enabled and leave any Disable cache option unchecked.
+  Refresh the original URL normally without adding a query string or clearing
+  the browser cache. Verify that the entry HTML references the new bundle and
+  the application reports the deployed version.
+4. Check `/`, `/index.html`, and a client-side deep link for `no-cache`,
+  `/config.js` for `no-store`, and the entry page's hashed bundle for
+  `public, max-age=31536000, immutable`. A nonexistent `.js` asset must return
+  404 without immutable caching. Entry-page 304 responses retain `no-cache`.
+5. Confirm sign-in and category navigation still work. Record the before/after
+  versions, bundle URLs, response status codes, and cache headers without
+  capturing authentication tokens or secret values.
+
+This smoke check requires a deployment containing the policy and two distinct
+frontend builds. Passing isolated middleware tests alone is not evidence that a
+live deployment or an existing browser session has been verified.
+
 ## CI Routing And Deployment
 
 The [`cicd.yml`](../.github/workflows/cicd.yml) `setup` job derives a Container

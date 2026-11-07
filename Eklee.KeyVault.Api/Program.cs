@@ -1,5 +1,6 @@
 using Azure.Core;
 using Azure.Identity;
+using Eklee.KeyVault.Api;
 using Eklee.KeyVault.Api.Services;
 using Microsoft.Identity.Web;
 
@@ -144,7 +145,8 @@ app.UseCors("AllowFrontend");
 
 // Serve the React SPA from wwwroot/ (combined container deployment)
 app.UseDefaultFiles();
-app.UseStaticFiles();
+var frontendFileOptions = Extensions.CreateFrontendStaticFileOptions();
+app.UseStaticFiles(frontendFileOptions);
 
 app.UseAuthentication();
 app.UseAuthorization();
@@ -154,6 +156,6 @@ app.MapHealthChecks("/healthz");
 
 // SPA fallback — unmatched routes serve index.html so React Router handles client-side routing.
 // API routes (/api/*) and health checks (/healthz) are matched above and won't hit this fallback.
-app.MapFallbackToFile("index.html");
+app.MapFallbackToFile("index.html", frontendFileOptions);
 
 app.Run();
