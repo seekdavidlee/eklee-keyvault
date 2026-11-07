@@ -1,6 +1,6 @@
 ---
 name: create-issue-branch
-description: "Look up a release branch and create a typed issue branch. Use before issue implementation to start feature, fix, doc, or refactor work from the selected release tip."
+description: "Look up a release branch, ensure the issue has a milestone, and create a typed issue branch. Use before issue implementation or resume to start feature, fix, doc, or refactor work from the selected release tip and assign a missing release milestone."
 ---
 
 ## Goal
@@ -9,6 +9,8 @@ Create a verified `<type>/<issue-number>-<slug>` branch from the exact tip of
 `origin/release/*`, without inheriting the current branch's unrelated commits.
 Success means the source branch and starting SHA match the selected release,
 and the complete branch name is meaningful and fewer than 50 characters.
+Before implementation, the issue must also have a verified milestone assignment.
+Preserve any existing milestone; assign only when the issue has none.
 
 ## Inputs
 
@@ -21,7 +23,8 @@ and the complete branch name is meaningful and fewer than 50 characters.
 	Choose and pass it explicitly; the script's issue-title fallback is accepted
 	only when the complete branch name meets the length limit.
 - `Base`, `Repository`, `RepoRoot`: optional release branch and checkout identity.
-- `Action`: `Resolve` (default), `Create`, or read-only `Resume`.
+- `Action`: read-only `Resolve` (default), `Create`, or `Resume`. Only `Create`
+	switches branches; `Create` and `Resume` can assign a missing milestone.
 - `ExpectedBaseSha`: verified starting SHA from `Resolve` for `Create`.
 - `CreationEvidence`: recorded `Created` result for `Resume`.
 
@@ -63,6 +66,9 @@ When the user requests issue implementation, verify the resolved repository,
 source, release base, starting SHA, and clean worktree, then use the returned
 proposal without a separate branch-creation approval. A resolve-only request
 remains read-only. Honor explicit user limits requiring approval or no changes.
+That implementation request also authorizes assigning a missing milestone through
+this skill. Other mutation requests require approval; `-WhatIf` never assigns a
+milestone or creates a branch.
 
 ```powershell
 $Created = & ./.github/skills/create-issue-branch/scripts/New-IssueBranch.ps1 -Issue 60 -Type feature -Action Create -Base $Branch.Base -Slug $Branch.Slug -ExpectedBaseSha $Branch.BaseSha -Confirm:$false
@@ -72,8 +78,36 @@ For an explicitly chosen resume on the existing checkout, supply its recorded
 creation result; a matching branch name alone is insufficient:
 
 ```powershell
-$Resumed = & ./.github/skills/create-issue-branch/scripts/New-IssueBranch.ps1 -Issue 60 -Type feature -Action Resume -CreationEvidence $Created
+$Resumed = & ./.github/skills/create-issue-branch/scripts/New-IssueBranch.ps1 -Issue 60 -Type feature -Action Resume -CreationEvidence $Created -Confirm:$false
 ```
+
+## Milestone Gate
+
+[Set-IssueMilestone.ps1](./scripts/Set-IssueMilestone.ps1) handles the deterministic
+check and assignment using `gh`. `New-IssueBranch.ps1` invokes it after release
+and branch prerequisites pass, including during a verified resume.
+
+- Keep an existing assignment, including one belonging to a different or closed
+	milestone. Do not silently move an issue to another release.
+- For an unassigned issue, the current milestone is the exact version of the
+	resolved release base: `release/1.2.0` selects the open milestone `1.2.0`.
+	This matches the release creation workflow. Do not guess from due dates,
+	creation order, or the highest version when several releases exist.
+- Query all open milestone pages. Require exactly one matching title. A missing,
+	closed, or duplicate match blocks creation or resume. Report the blocker;
+	do not create or reopen milestones automatically.
+- `Resolve` returns `Milestone.Status` as `AlreadyAssigned` or `Resolved` without
+	writing. `Create` ensures the assignment before switching branches. `Resume`
+	repairs a missing assignment without switching branches.
+- Recheck the issue before assignment to preserve an assignment added since
+	resolution. Use `gh issue edit --milestone` only if it remains unassigned,
+	then read back the issue to verify the title. GitHub does not provide an atomic
+	assign-if-empty operation here; a concurrent change between the final read and
+	write remains possible. Verification errors block the handoff, not rollback.
+
+Require `Milestone.Status` of `AlreadyAssigned` or `Assigned` on `Created` or
+`Resumed` before implementation. Carry the milestone evidence with the branch
+handoff. A `Preview` is not implementation-ready.
 
 ## Outputs
 
@@ -82,7 +116,7 @@ $Resumed = & ./.github/skills/create-issue-branch/scripts/New-IssueBranch.ps1 -I
 	with `Base`; no release creation or fallback is authorized.
 - `Preview`: `Create -WhatIf` made no branch change.
 - `Created` or `Resumed`: verified `Context`, `Issue`, `Source`, `Base`, `BaseSha`,
-	and `Routing` for [implementation](../implement-issue/SKILL.md).
+	`Routing`, and `Milestone` evidence for [implementation](../implement-issue/SKILL.md).
 - Error: report and stop. If the release tip changes, resolve again and verify
 	the new proposal before retrying; ask only when a user decision is needed.
 	Preserve existing work rather than automatically stashing, resetting, or
@@ -90,3 +124,9 @@ $Resumed = & ./.github/skills/create-issue-branch/scripts/New-IssueBranch.ps1 -I
 
 Carry the same base into review and PR resolution. This skill authorizes no
 commits, pushes, PR creation, or remote review.
+
+Run the offline milestone and branch regression checks from the repository root:
+
+```powershell
+& ./.github/skills/tests/Invoke-SkillScriptTests.ps1 -Scope Milestone
+```

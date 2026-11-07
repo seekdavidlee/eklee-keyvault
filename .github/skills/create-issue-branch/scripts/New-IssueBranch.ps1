@@ -22,7 +22,8 @@
     Recorded Created result required for Resume. Verifies repository, issue,
     source, release base, and starting-commit ancestry without switching branches.
 .PARAMETER Action
-    Resolve (default), Create, or read-only Resume. Only Create switches branches.
+    Resolve (default), Create, or Resume. Create and Resume ensure a milestone;
+    only Create switches branches.
 .PARAMETER Repository
     Optional owner/name, verified against the checkout.
 .PARAMETER RepoRoot
@@ -92,10 +93,23 @@ if ($MyInvocation.InvocationName -ne '.') {
             catch {
                 throw "Recorded starting SHA is not a verified ancestor of HEAD: $($_.Exception.Message)"
             }
+            $Milestone = & (Join-Path $PSScriptRoot 'Set-IssueMilestone.ps1') `
+                -Issue $Issue -Base $CreationEvidence.Base `
+                -Repository $Context.Repository -RepoRoot $RepoRoot
+            if ($Milestone.Status -eq 'Resolved') {
+                if ($PSCmdlet.ShouldProcess($InputContext.Issue.url, 'Assign the missing release milestone before resuming')) {
+                    $Milestone = & (Join-Path $PSScriptRoot 'Set-IssueMilestone.ps1') `
+                        -Issue $Issue -Base $CreationEvidence.Base -Action Ensure `
+                        -Repository $Context.Repository -RepoRoot $RepoRoot -Confirm:$false
+                }
+                else { $Milestone.Status = 'Preview' }
+            }
+            $Status = if ($Milestone.Status -eq 'Preview') { 'Preview' } else { 'Resumed' }
             return [pscustomobject]@{
-                Status = 'Resumed'; Context = $Context; Issue = $InputContext.Issue
+                Status = $Status; Context = $Context; Issue = $InputContext.Issue
                 Source = $Context.Source; Slug = $CreationEvidence.Slug
                 Base = $CreationEvidence.Base; BaseSha = $CreationEvidence.BaseSha; Routing = $Routing
+                Milestone = $Milestone
             }
         }
         if ($CreationEvidence) { throw 'CreationEvidence is only supported with Action Resume.' }
@@ -126,13 +140,21 @@ if ($MyInvocation.InvocationName -ne '.') {
             throw "Branch $Source already exists locally or on origin. Select another Slug or explicitly resume the existing work."
         }
         $Context = Get-SkillContext -Repository $Repository
+        $Milestone = & (Join-Path $PSScriptRoot 'Set-IssueMilestone.ps1') `
+            -Issue $Issue -Base $Routing.Base -Repository $Context.Repository -RepoRoot $RepoRoot
         $Status = 'Resolved'
         if ($Action -eq 'Create') {
             if (-not [string]::IsNullOrWhiteSpace($Context.Worktree)) {
                 throw 'Branch creation requires a clean worktree. Preserve existing changes and retry; do not stash or reset automatically.'
             }
             $Status = 'Preview'
-            if ($PSCmdlet.ShouldProcess($Source, "Create branch from $($Routing.Base) at $BaseSha")) {
+            if ($PSCmdlet.ShouldProcess($Source, "Ensure the issue milestone and create branch from $($Routing.Base) at $BaseSha")) {
+                $Milestone = & (Join-Path $PSScriptRoot 'Set-IssueMilestone.ps1') `
+                    -Issue $Issue -Base $Routing.Base -Action Ensure `
+                    -Repository $Context.Repository -RepoRoot $RepoRoot -Confirm:$false
+                if ($Milestone.Status -notin @('AlreadyAssigned', 'Assigned')) {
+                    throw 'Milestone assignment is required before creating the issue branch.'
+                }
                 $null = Invoke-SkillCommand git @('switch', '--create', $Source, '--no-track', $BaseSha)
                 $Context = Get-SkillContext -Repository $Repository
                 if ($Context.Source -cne $Source -or $Context.Head -cne $BaseSha) {
@@ -144,6 +166,7 @@ if ($MyInvocation.InvocationName -ne '.') {
         [pscustomobject]@{
             Status = $Status; Context = $Context; Issue = $InputContext.Issue
             Source = $Source; Slug = $Slug; Base = $Routing.Base; BaseSha = $BaseSha; Routing = $Routing
+            Milestone = $Milestone
         }
     }
     finally {
