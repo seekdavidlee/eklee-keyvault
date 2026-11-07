@@ -7,7 +7,8 @@
 .DESCRIPTION
     Prompts for full setup or a version-only update. Full setup selects an Azure
     target, prepares its azd environment, and runs azd up. Version-only mode reads
-    an existing azd environment and updates only its Container App image, without
+    an existing azd environment (automatically selecting the only one, or listing
+    available names) and updates only its Container App image, without
     provisioning or running setup hooks. Sign in with Azure CLI before updating.
     Stores non-secret Azure target metadata in the current user's profile so
     multiple tenants and subscriptions can be used from the same repository.
@@ -72,7 +73,38 @@ function Invoke-VersionOnlyUpdate {
         [string]$RepositoryPath
     )
 
-    $environmentName = Read-RequiredValue -Prompt 'Existing azd environment name'
+    $environmentListOutput = @(& azd env list --output json)
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Could not list existing azd environments.'
+    }
+    $environments = @((($environmentListOutput -join [Environment]::NewLine) | ConvertFrom-Json))
+    if ($environments.Count -eq 0) {
+        throw 'No existing azd environments were found. Run full setup first.'
+    }
+
+    if ($environments.Count -eq 1) {
+        $environmentName = [string]$environments[0].Name
+        Write-Host "Automatically selected the only azd environment: $environmentName" -ForegroundColor Cyan
+    }
+    else {
+        Write-Host 'Choose an existing azd environment:' -ForegroundColor Cyan
+        for ($index = 0; $index -lt $environments.Count; $index++) {
+            Write-Host ('{0}. {1}' -f ($index + 1), $environments[$index].Name)
+        }
+
+        while ($true) {
+            $selection = (Read-Host 'Selection').Trim()
+            $selectedIndex = 0
+            if ([int]::TryParse($selection, [ref]$selectedIndex) -and
+                $selectedIndex -ge 1 -and $selectedIndex -le $environments.Count) {
+                $environmentName = [string]$environments[$selectedIndex - 1].Name
+                break
+            }
+
+            Write-Warning "Choose a number from 1 to $($environments.Count)."
+        }
+    }
+
     Invoke-ExternalCommand -CommandName 'azd' -Arguments @('env', 'select', $environmentName)
     $environmentOutput = @(& azd env get-values --output json)
     if ($LASTEXITCODE -ne 0) {
@@ -98,10 +130,6 @@ function Invoke-VersionOnlyUpdate {
     }
 
     Write-Host "Environment: $environmentName | subscription: $subscriptionId | resource group: $resourceGroupName | Container App: $containerAppName" -ForegroundColor Cyan
-    if (-not (Read-YesNoValue -Prompt 'Select a release and update only this Container App image?' -DefaultValue $false)) {
-        Write-Host 'Cancelled.'
-        return
-    }
 
     if ($PSCmdlet.ShouldProcess("Container App '$containerAppName' in subscription '$subscriptionId'", 'Select a release, set CONTAINER_IMAGE, and update only the application image')) {
         . (Join-Path $RepositoryPath 'Deployment\resolve-container-image.ps1')

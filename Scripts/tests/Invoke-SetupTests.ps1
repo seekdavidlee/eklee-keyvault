@@ -36,6 +36,7 @@ function Reset-TestState {
     foreach ($answer in $Answers) { $script:answers.Enqueue($answer) }
     $script:calls = [System.Collections.Generic.List[string]]::new()
     $script:failure = ''
+    $script:environments = @([pscustomobject]@{ Name = 'existing'; IsDefault = $true })
     $script:environment = @{
         AZURE_SUBSCRIPTION_ID = $target.subscriptionId
         resourceGroupName = $target.resourceGroupName
@@ -65,6 +66,9 @@ function azd {
     $command = "azd $($args -join ' ')"
     $script:calls.Add($command)
     if ($command -eq $script:failure) { $global:LASTEXITCODE = 1; return }
+    if ($command -eq 'azd env list --output json') {
+        return ConvertTo-Json -InputObject $script:environments -Compress
+    }
     if ($command -eq 'azd env get-values --output json') {
         return ConvertTo-Json $script:environment -Compress
     }
@@ -130,53 +134,66 @@ Reset-TestState @('q')
 & $main
 Assert-True ($script:calls.Count -eq 0) 'quit has no CLI or setup operations'
 
-Reset-TestState @('2', 'existing', 'Y', '1')
+Reset-TestState @('2', '1')
 & $main
 $expectedUpdate = "az containerapp update --name sample-app --resource-group sample-rg --subscription $($target.subscriptionId) --container-name eklee-keyvault --image ghcr.io/seekdavidlee/eklee-keyvault@$digest --output none"
 Assert-True ($script:calls[-1] -eq $expectedUpdate) 'image-only update uses explicit app, container, subscription, and digest'
 Assert-True ($script:calls -contains "azd env set CONTAINER_IMAGE ghcr.io/seekdavidlee/eklee-keyvault@$digest") 'saved image stays aligned with update'
 Assert-True (@($script:calls | Where-Object { $_ -match '^azd (up|env new)\b' -or $_ -in @('catalog', 'connect', 'configure environment') }).Count -eq 0) 'version-only bypasses full setup'
-Assert-True ($script:answers.Count -eq 0) 'release selection consumed'
+Assert-True ($script:answers.Count -eq 0) 'version-only goes directly to release selection without another confirmation'
 
-Reset-TestState @('2', 'existing', 'N')
-& $main
-Assert-True ($script:calls.Count -eq 3) 'cancellation performs only environment selection and reads'
-
-Reset-TestState @('2', 'existing', 'Y')
+Reset-TestState @('2')
 $WhatIfPreference = $true
 try { & $main }
 finally { $WhatIfPreference = $false }
-Assert-True ($script:calls.Count -eq 3) 'WhatIf performs no image resolution or mutation'
+Assert-True ($script:calls -contains 'azd env select existing') 'only environment selected without prompting'
+Assert-True ($script:answers.Count -eq 0) 'only environment needs no selection answer'
+Assert-True ($script:calls.Count -eq 4) 'WhatIf performs only environment listing, selection, and reads'
 
-foreach ($failedCommand in @('azd env select existing', 'azd env get-values --output json', 'az containerapp show')) {
-    Reset-TestState @('2', 'existing')
+Reset-TestState @('2', 'bad', '0', '3', '2', '1')
+$script:environments = @(
+    [pscustomobject]@{ Name = 'dev'; IsDefault = $true }
+    [pscustomobject]@{ Name = 'prod'; IsDefault = $false }
+)
+& $main
+Assert-True ($script:calls -contains 'azd env select prod') 'numbered selection chooses the requested environment'
+Assert-True ($script:answers.Count -eq 0) 'invalid environment selections retry'
+Assert-True ($script:calls[-1] -eq $expectedUpdate) 'multiple environments also proceed directly to release selection'
+
+Reset-TestState @('2')
+$script:environments = @()
+Assert-CaseThrows '*No existing azd environments*Run full setup first*'
+Assert-True ($script:calls.Count -eq 1) 'no environments stops before selection or Azure access'
+
+foreach ($failedCommand in @('azd env list --output json', 'azd env select existing', 'azd env get-values --output json', 'az containerapp show')) {
+    Reset-TestState @('2')
     $script:failure = $failedCommand
     Assert-CaseThrows '*Setup failed:*'
     Assert-True (@($script:calls | Where-Object { $_ -match '^azd env set|^az containerapp update' }).Count -eq 0) 'preflight failure prevents image mutation'
 }
 
 foreach ($key in @('AZURE_SUBSCRIPTION_ID', 'resourceGroupName', 'containerAppName')) {
-    Reset-TestState @('2', 'existing')
+    Reset-TestState @('2')
     $script:environment.Remove($key)
     Assert-CaseThrows '*valid AZURE_SUBSCRIPTION_ID*'
-    Assert-True ($script:calls.Count -eq 2) 'missing environment output stops before Azure access'
+    Assert-True ($script:calls.Count -eq 3) 'missing environment output stops before Azure access'
 }
 
-Reset-TestState @('2', 'existing')
+Reset-TestState @('2')
 $script:containerNames = @('other-container')
 Assert-CaseThrows '*does not contain the eklee-keyvault container*'
 
-Reset-TestState @('2', 'existing', 'Y', '1')
+Reset-TestState @('2', '1')
 $script:failure = 'manifest'
 Assert-CaseThrows '*Could not resolve the GHCR image tag*'
 Assert-True (@($script:calls | Where-Object { $_ -match '^azd env set|^az containerapp update' }).Count -eq 0) 'resolver failure prevents image mutation'
 
-Reset-TestState @('2', 'existing', 'Y', '1')
+Reset-TestState @('2', '1')
 $script:failure = "azd env set CONTAINER_IMAGE ghcr.io/seekdavidlee/eklee-keyvault@$digest"
 Assert-CaseThrows '*Failed to set CONTAINER_IMAGE*'
 Assert-True (@($script:calls | Where-Object { $_ -match '^az containerapp update' }).Count -eq 0) 'environment write failure prevents Azure update'
 
-Reset-TestState @('2', 'existing', 'Y', '1')
+Reset-TestState @('2', '1')
 $script:failure = 'az containerapp update'
 Assert-CaseThrows '*Command failed with exit code 1*'
 
