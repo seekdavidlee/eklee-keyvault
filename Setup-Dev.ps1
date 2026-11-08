@@ -53,10 +53,10 @@
     Confirms the requested legacy-role mutation.
 
 .EXAMPLE
-    ./Setup-Dev.ps1
+    ./Deployment/Setup-Maintainer.ps1
 
 .EXAMPLE
-    ./Setup-Dev.ps1 -RemoveLegacyE2ERole -LegacyApiClientId <api-client-id> -LegacyCallerAppId <caller-client-id> -ConfirmLegacyRemoval
+    ./Deployment/Setup-Maintainer.ps1 -RemoveLegacyE2ERole -LegacyApiClientId <api-client-id> -LegacyCallerAppId <caller-client-id> -ConfirmLegacyRemoval
 #>
 
 [CmdletBinding(SupportsShouldProcess)]
@@ -835,7 +835,8 @@ if ($MyInvocation.InvocationName -eq '.') {
 $maintainerTarget = Get-MaintainerDevTarget -Path $ProfilePath
 Assert-DevRegistrationIsDistinct -Target $maintainerTarget -CustomerPath $CustomerProfilePath
 
-$setupScriptPath = Join-Path $PSScriptRoot 'Setup.ps1'
+$repositoryPath = Split-Path -Parent $PSScriptRoot
+$setupScriptPath = Join-Path $repositoryPath 'Setup.ps1'
 if (-not (Test-Path -LiteralPath $setupScriptPath)) {
     throw "Required customer setup helper '$setupScriptPath' was not found."
 }
@@ -849,7 +850,7 @@ foreach ($domainPropertyName in @('customDevDomainName', 'customReleaseDomainNam
 $githubRepository = Resolve-GitHubRepository `
     -Organization $GitHubOrganization `
     -RepositoryName $GitHubRepoName `
-    -RepositoryPath $PSScriptRoot
+    -RepositoryPath $repositoryPath
 $GitHubOrganization = $githubRepository.Organization
 $GitHubRepoName = $githubRepository.Repository
 Set-MaintainerApprovedGitHubRepository `
@@ -868,10 +869,10 @@ if ($WhatIfPreference) {
     return
 }
 
-Push-Location $PSScriptRoot
+Push-Location $repositoryPath
 try {
     Connect-ToTarget -Target $maintainerTarget
-    Set-MaintainerDevAzdEnvironment -Target $maintainerTarget -RepositoryPath $PSScriptRoot
+    Set-MaintainerDevAzdEnvironment -Target $maintainerTarget -RepositoryPath $repositoryPath
 
     if (-not $PSCmdlet.ShouldProcess("azd environment '$($maintainerTarget.environmentName)'", 'Run azd up')) {
         return

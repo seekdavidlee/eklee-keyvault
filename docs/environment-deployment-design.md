@@ -129,9 +129,9 @@ against the dev API, but it has no application-role assignment, Azure RBAC, or
 valid token audience for customer or production environments. Microsoft Entra
 application roles are registration-wide, so this boundary requires separate
 dev and non-dev API registrations rather than a single shared registration.
-`Setup-Dev.ps1` reads the single maintainer target from `setup-dev.json` and
-rejects its app-registration name when it appears in a same-tenant customer
-target in `setup.json`.
+[Setup-Maintainer.ps1](../Deployment/Setup-Maintainer.ps1) reads the single
+maintainer target from `setup-dev.json` and rejects its app-registration name
+when it appears in a same-tenant customer target in `setup.json`.
 
 ### Frontend Cache Policy
 
@@ -219,7 +219,7 @@ themselves remain separate resources. The cleanup action must remove only the
 Container App associated with the merged branch or release and must leave the
 managed identity in place for future deployments.
 
-[`Setup-Dev.ps1`](../Setup-Dev.ps1) creates or reuses the deployment identity,
+[Setup-Maintainer.ps1](../Deployment/Setup-Maintainer.ps1) creates or reuses the deployment identity,
 reconciles the OIDC federated credential for the `dev` GitHub Environment,
 assigns Contributor on the maintainer profile's exact resource group, and sets
 the Azure deployment variables before assigning the hosted E2E role. It reuses
@@ -291,8 +291,8 @@ for those changes.
 
 ## Verification Checklist
 
-* Confirm `Setup-Dev.ps1` configures the main, release, and branch custom domains
-  and reconciles all three redirect URLs.
+* Confirm [Setup-Maintainer.ps1](../Deployment/Setup-Maintainer.ps1) configures
+  the main, release, and branch custom domains and reconciles all three redirect URLs.
 * Confirm all qualifying branch runs select the `dev` GitHub Environment, deploy
   only their matching permanent target, and complete E2E before their target queue advances.
 * Confirm a feature or bugfix CI run publishes an immutable commit image,
@@ -318,5 +318,5 @@ for those changes.
 * [GHCR image cleanup workflow](../.github/workflows/cleanup-container-app.yml)
 * [Local infrastructure deployment](../Deployment/README.md#development-environment)
 * [Bicep environment parameter](../Deployment/main.bicep)
-* [GitHub deployment setup](../Setup-Dev.ps1)
+* [GitHub deployment setup](../Deployment/Setup-Maintainer.ps1)
 * [GitHub Release and Container Versioning Design](release-versioning-design.md)

@@ -227,14 +227,28 @@ allows scale-to-zero and introduces cold starts. Storage, logging, and networkin
 can still incur charges while compute is idle. Estimate costs for your selected
 region and configuration rather than assuming all deployments are nearly free.
 
+## Which Setup Should I Use
+
+| Audience           | Entry Point                                                | Purpose                                                         |
+| ------------------ | ---------------------------------------------------------- | --------------------------------------------------------------- |
+| App consumers      | [Setup.ps1](Setup.ps1)                                     | Deploy or update a published release in your Azure environment. |
+| Maintainers        | [Setup-Maintainer.ps1](Deployment/Setup-Maintainer.ps1)    | Configure non-production CI/CD deployment and hosted E2E.       |
+| Local contributors | [Local Development](#local-development)                    | Run the frontend and API locally without maintainer setup.      |
+
+Run either deployment script from the repository root. Both use the shared
+[azure.yaml](azure.yaml) project configuration at the root; infrastructure and
+deployment helpers live under [Deployment](Deployment/README.md). Maintainer
+setup is not required for local development and must not target customer or
+production resources.
+
 ## Prerequisites
 
 - [Node.js](https://nodejs.org/) 22.22.2 or later on the Node 22 line (matching CI and the lockfile's engine requirements)
 - [.NET SDK](https://dotnet.microsoft.com/download) 10, matching the API's `net10.0` target
 - [Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli) (logged in with `az login`)
 - [PowerShell](https://learn.microsoft.com/powershell/scripting/install/installing-powershell) 7.4 or later for the deployment scripts
-- [Azure Developer CLI](https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd) for `Setup.ps1` and `Setup-Dev.ps1`
-- [GitHub CLI](https://cli.github.com/) (authenticated with `gh auth login`) for maintainer `Setup-Dev.ps1` and GitHub workflow administration; not required for customer `Setup.ps1`
+- [Azure Developer CLI](https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd) for [Setup.ps1](Setup.ps1) and [Setup-Maintainer.ps1](Deployment/Setup-Maintainer.ps1)
+- [GitHub CLI](https://cli.github.com/) (authenticated with `gh auth login`) for [maintainer setup](Deployment/Setup-Maintainer.ps1) and GitHub workflow administration; not required for [customer setup](Setup.ps1)
 - [Git](https://git-scm.com/) for cloning the repository and resolving its `origin` during scripted setup
 
 ## Local Development
@@ -259,8 +273,8 @@ three values as shown below, using the client and tenant IDs printed by setup.
 > This local helper replaces the registration's SPA redirect URI list with
 > localhost and any explicitly supplied dev/prod URLs. Use a separate local
 > registration, or supply all required URLs to avoid removing deployed redirects.
-> Use `Setup-Dev.ps1` for maintainer deployment rather than this helper's optional
-> GitHub-variable configuration.
+> Use [Setup-Maintainer.ps1](Deployment/Setup-Maintainer.ps1) for maintainer
+> deployment rather than this helper's optional GitHub-variable configuration.
 
 ### Running the React (Vite) Frontend
 
@@ -355,7 +369,7 @@ access to secrets.
 After bootstrap, an Admin uses **User Management** to add users and assign
 `Admin` or `User`. Unregistered users receive 403. At least one Admin must remain.
 
-## Automated Deployment
+## Maintainer Deployment
 
 These steps configure the repository maintainer's non-production CI/CD and hosted
 E2E environment. Customers should use [Customer Deployment](#customer-deployment)
@@ -368,8 +382,8 @@ instead; do not run maintainer E2E setup against a customer or production vault.
   `appRegistrationName` must be distinct from customer registrations in the same
   tenant. Configure three distinct custom hostnames and their DNS records for
   managed-certificate validation; setup prompts for missing hostnames.
-1. From the repository root, run `./Setup-Dev.ps1`. It runs `azd up` to provision
-  infrastructure and the permanent main, release, and branch Container Apps,
+1. From the repository root, run `./Deployment/Setup-Maintainer.ps1`. It runs
+  `azd up` to provision infrastructure and the permanent main, release, and branch Container Apps,
   applies managed-identity RBAC, binds custom HTTPS domains, and reconciles all
   three SPA redirect URLs. A separate Azure CLI infrastructure deployment is not
   required. It also creates or reuses the deployment identity, reconciles its
@@ -426,22 +440,23 @@ release promotion publishes the semantic release artifacts and deletes the
 matching `release-<normalized-version>-<12-char-ref-hash>` GHCR image. No workflow
 deletes a permanent Container App.
 
-The setup scripts configure the following GitHub environment variables in `dev`:
+The [maintainer setup script](Deployment/Setup-Maintainer.ps1) configures the
+following GitHub environment variables in `dev`:
 
-| Variable | Set by |
-| --- | --- |
-| `AZURE_CLIENT_ID` | `Setup-Dev.ps1` |
-| `AZURE_TENANT_ID` | `Setup-Dev.ps1` |
-| `AZURE_SUBSCRIPTION_ID` | `Setup-Dev.ps1` |
-| `RESOURCE_GROUP` | `Setup-Dev.ps1` |
-| `VITE_AZURE_AD_CLIENT_ID` | `Setup-Dev.ps1` |
-| `VITE_AZURE_AD_AUTHORITY` | `Setup-Dev.ps1` |
-| `DEV_CONTAINER_APP_NAME` | `Setup-Dev.ps1` |
-| `DEV_E2E_BASE_URL` | `Setup-Dev.ps1` |
-| `RELEASE_CONTAINER_APP_NAME` | `Setup-Dev.ps1` |
-| `RELEASE_E2E_BASE_URL` | `Setup-Dev.ps1` |
-| `BRANCH_CONTAINER_APP_NAME` | `Setup-Dev.ps1` |
-| `BRANCH_E2E_BASE_URL` | `Setup-Dev.ps1` |
+| Variable                     | Set By                                                  |
+| ---------------------------- | ------------------------------------------------------- |
+| `AZURE_CLIENT_ID`            | [Setup-Maintainer.ps1](Deployment/Setup-Maintainer.ps1) |
+| `AZURE_TENANT_ID`            | [Setup-Maintainer.ps1](Deployment/Setup-Maintainer.ps1) |
+| `AZURE_SUBSCRIPTION_ID`      | [Setup-Maintainer.ps1](Deployment/Setup-Maintainer.ps1) |
+| `RESOURCE_GROUP`             | [Setup-Maintainer.ps1](Deployment/Setup-Maintainer.ps1) |
+| `VITE_AZURE_AD_CLIENT_ID`    | [Setup-Maintainer.ps1](Deployment/Setup-Maintainer.ps1) |
+| `VITE_AZURE_AD_AUTHORITY`    | [Setup-Maintainer.ps1](Deployment/Setup-Maintainer.ps1) |
+| `DEV_CONTAINER_APP_NAME`     | [Setup-Maintainer.ps1](Deployment/Setup-Maintainer.ps1) |
+| `DEV_E2E_BASE_URL`           | [Setup-Maintainer.ps1](Deployment/Setup-Maintainer.ps1) |
+| `RELEASE_CONTAINER_APP_NAME` | [Setup-Maintainer.ps1](Deployment/Setup-Maintainer.ps1) |
+| `RELEASE_E2E_BASE_URL`       | [Setup-Maintainer.ps1](Deployment/Setup-Maintainer.ps1) |
+| `BRANCH_CONTAINER_APP_NAME`  | [Setup-Maintainer.ps1](Deployment/Setup-Maintainer.ps1) |
+| `BRANCH_E2E_BASE_URL`        | [Setup-Maintainer.ps1](Deployment/Setup-Maintainer.ps1) |
 
 CI/CD selects the SPA redirect URI from the target's E2E base URL; it does not
 use a shared `VITE_AZURE_AD_REDIRECT_URI` GitHub environment variable.

@@ -106,8 +106,8 @@ manually:
 When using [Setup.ps1](Setup.ps1), do not configure an E2E role assignment for
 a customer target profile. Customer `azd` deployments must not create, modify,
 or assign a GitHub service identity. The maintainer-only dev E2E identity is
-provisioned independently by [Setup-Dev.ps1](Setup-Dev.ps1) and is not an input
-to customer setup.
+provisioned independently by [Setup-Maintainer.ps1](Deployment/Setup-Maintainer.ps1)
+and is not an input to customer setup.
 
 At the end of `azd up`, the `postdeploy` hook runs
 [update-app-registration-redirect-uri.ps1](Deployment/update-app-registration-redirect-uri.ps1)
@@ -283,14 +283,17 @@ successfully before the script stores the digest and continues to `azd up`.
 ### Maintainer Dev Setup
 
 Repository maintainers deploy the hosted E2E target through a separate, single
-profile and registration:
+profile and registration. From the repository root, run:
 
 ```powershell
-.\Setup-Dev.ps1
+.\Deployment\Setup-Maintainer.ps1
 ```
 
-`Setup-Dev.ps1` reads `$HOME\.eklee-keyvault\setup-dev.json`, runs `azd up` for
-that one target, then provisions the isolated dev E2E identity. Its
+[Setup-Maintainer.ps1](Deployment/Setup-Maintainer.ps1) reads
+`$HOME\.eklee-keyvault\setup-dev.json`, runs `azd up` for that one target, then
+provisions the isolated dev E2E identity. Both setup scripts use the root-level
+[azure.yaml](azure.yaml); moving the maintainer entry point under `Deployment`
+does not create a separate azd project. Its
 `appRegistrationName` must differ from every customer registration in the same
 Microsoft Entra tenant. The script rejects a duplicate name found in
 `$HOME\.eklee-keyvault\setup.json` and must never be used for a customer or

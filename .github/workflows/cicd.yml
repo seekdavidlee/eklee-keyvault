@@ -398,7 +398,7 @@ jobs:
             errors.push('The hosted E2E token is expired or has no expiry. Acquire a fresh token.');
           }
           if (!Array.isArray(claims.roles) || !claims.roles.includes('E2E.Tester')) {
-            errors.push('Token is missing E2E.Tester. Run Setup-Dev.ps1 for this dev target and verify that the CI deployment principal has the role on the API registration identified by E2E_CLIENT_ID. Then acquire a fresh token.');
+            errors.push('Token is missing E2E.Tester. Run ./Deployment/Setup-Maintainer.ps1 from the repository root for this dev target and verify that the CI deployment principal has the role on the API registration identified by E2E_CLIENT_ID. Then acquire a fresh token.');
           }
           for (const error of errors) console.error(`::error::${error}`);
           if (errors.length) process.exit(1);
