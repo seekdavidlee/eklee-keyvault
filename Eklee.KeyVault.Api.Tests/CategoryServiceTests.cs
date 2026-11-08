@@ -487,13 +487,14 @@ public class CategoryServiceTests
         Assert.Empty(store.Read().Items!);
     }
 
-    private sealed class MetadataStore(SecretItemMetaList? initial = null) : BlobService(null!, null!)
+    internal sealed class MetadataStore(SecretItemMetaList? initial = null) : BlobService(null!, null!)
     {
         private string serialized = BinaryData.FromObjectAsJson(initial ?? new SecretItemMetaList()).ToString();
         private int version;
         private readonly HashSet<string> operations = new(StringComparer.OrdinalIgnoreCase);
 
         public int Attempts { get; private set; }
+        public int Reads { get; private set; }
         public int ConflictsRemaining { get; set; }
         public Action<SecretItemMetaList>? OnConflict { get; set; }
         public int SuccessfulWrites { get; private set; }
@@ -502,6 +503,8 @@ public class CategoryServiceTests
         public string? LeaseConflictName { get; init; }
         public int MaximumLeases { get; private set; }
         public Action<SecretItemMetaList>? OnWrite { get; set; }
+        public int? LeaseReleaseFailureStatus { get; init; }
+        public string? LeaseReleaseFailureName { get; init; }
 
         public bool IsSecretLeased(string name)
         {
@@ -527,7 +530,15 @@ public class CategoryServiceTests
 
             return Task.FromResult<IAsyncDisposable>(new OperationScope(() =>
             {
-                lock (operations) operations.Remove(name);
+                lock (operations)
+                {
+                    if (name == LeaseReleaseFailureName && LeaseReleaseFailureStatus is int status)
+                    {
+                        throw new RequestFailedException(status, "Test lease release failure");
+                    }
+
+                    operations.Remove(name);
+                }
             }));
         }
 
@@ -542,8 +553,11 @@ public class CategoryServiceTests
 
         public SecretItemMetaList Read() => BinaryData.FromString(serialized).ToObjectFromJson<SecretItemMetaList>()!;
 
-        public override Task<(SecretItemMetaList MetaList, string? ETag)> GetMetaAsync() =>
-            Task.FromResult<(SecretItemMetaList, string?)>((Read(), version.ToString()));
+        public override Task<(SecretItemMetaList MetaList, string? ETag)> GetMetaAsync()
+        {
+            Reads++;
+            return Task.FromResult<(SecretItemMetaList, string?)>((Read(), version.ToString()));
+        }
 
         public override Task<string> UpdateMetaAsync(SecretItemMetaList state, string? ifMatchEtag)
         {

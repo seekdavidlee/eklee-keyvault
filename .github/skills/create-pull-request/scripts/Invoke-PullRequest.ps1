@@ -20,6 +20,9 @@
     Fingerprint from passing local review; required for Preview and Create.
 .PARAMETER TaskFiles
     Same working-file selection used in the review snapshot, if any.
+.PARAMETER IssueNumber
+    Issue associated with every non-merge source commit. Inferred from issue
+    branches when omitted; an explicit value must match the branch issue.
 .PARAMETER RepoRoot
     Repository checkout; defaults to this script's repository.
 .OUTPUTS
@@ -39,6 +42,7 @@ param(
     [string]$BodyFile,
     [string]$ReviewedFingerprint,
     [string[]]$TaskFiles,
+    [ValidateRange(1, [int]::MaxValue)][int]$IssueNumber,
     [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../../../..')).Path
 )
 
@@ -85,6 +89,17 @@ if ($MyInvocation.InvocationName -ne '.') {
         if ($Context.Head -cne $Published) {
             throw 'Local HEAD is not the published source tip. Obtain named-branch push approval separately.'
         }
+        $ResolvedIssue = Get-SkillCommitIssue -Source $Context.Source -IssueNumber $IssueNumber
+        if ($ResolvedIssue) {
+            $Commits = @((Invoke-SkillCommand git @(
+                'rev-list', '--no-merges', "refs/remotes/origin/$($Routing.Base)..HEAD"
+            )) -split "`n" | Where-Object { $_ })
+            foreach ($CommitSha in $Commits) {
+                $CommitMessage = Invoke-SkillCommand git @('show', '-s', '--format=%B', $CommitSha)
+                try { Assert-SkillCommitIssueReference -Message $CommitMessage -IssueNumber $ResolvedIssue }
+                catch { throw "Commit ${CommitSha}: $($_.Exception.Message) Stop; do not rewrite history without approval." }
+            }
+        }
         $Matches = @(Get-SourcePullRequests -Context $Context)
         if ($Matches.Count -gt 1 -or
             ($Matches.Count -eq 1 -and $Matches[0].base.ref -cne $Routing.Base)) {
@@ -124,6 +139,7 @@ if ($MyInvocation.InvocationName -ne '.') {
             Base = $Routing.Base; Head = $Published; Routing = $Routing
             Title = $Title; Body = Get-Content -LiteralPath $BodyFile -Raw
             PullRequest = $PullRequest; Fingerprint = $Snapshot.Fingerprint
+            IssueNumber = $ResolvedIssue
         }
     }
     finally {

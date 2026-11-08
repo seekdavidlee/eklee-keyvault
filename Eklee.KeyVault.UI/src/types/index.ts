@@ -56,6 +56,12 @@ export interface SecretGenerationResponse {
   value: string;
 }
 
+/** Value-free import outcomes, including partial completion and authorization failures. */
+export interface SecretImportResponse {
+  results: { name: string; status: 'imported' | 'skipped' | 'failed' | 'notAttempted'; error?: string | null }[];
+  accessDenied: boolean;
+}
+
 /** Problem-details response returned for a failed API request. */
 export interface ApiProblemDetails {
   detail?: string;

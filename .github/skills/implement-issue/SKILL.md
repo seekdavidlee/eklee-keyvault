@@ -65,4 +65,8 @@ changed files, criterion evidence, documentation updates or a justified
 no-update result, checks, and blockers to
 [local review](../functional-implementation-code-review/SKILL.md).
 Include documentation changes in the complete proposed review snapshot.
+Carry the verified numeric issue number forward as `IssueNumber` for publication
+and require the [Issue Commit References](../create-pull-request/SKILL.md#issue-commit-references)
+policy when a later stage receives commit approval. Every issue-work commit,
+including fixes and tests, must include `Refs #<issue-number>`.
 This stage does not authorize commits, pushes, PR creation, or remote review.

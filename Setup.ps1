@@ -3,9 +3,13 @@
 
 <#
 .SYNOPSIS
-    Selects an Azure tenant and subscription, prepares its azd environment,
-    and runs azd up.
+    Runs full Azure setup or updates only an existing application's image version.
 .DESCRIPTION
+    Prompts for full setup or a version-only update. Full setup selects an Azure
+    target, prepares its azd environment, and runs azd up. Version-only mode reads
+    an existing azd environment (automatically selecting the only one, or listing
+    available names) and updates only its Container App image, without
+    provisioning or running setup hooks. Sign in with Azure CLI before updating.
     Stores non-secret Azure target metadata in the current user's profile so
     multiple tenants and subscriptions can be used from the same repository.
     Azure CLI and azd credentials are handled by their own login commands and
@@ -16,11 +20,12 @@
 .EXAMPLE
     .\Setup.ps1
 
-    Selects or creates a target, prepares its azd environment, and runs azd up.
+    Choose full setup to configure a target, or version-only to update an existing app.
 .EXAMPLE
     .\Setup.ps1 -WhatIf
 
-    Selects or creates a target and shows the azd up action without running it.
+    Full setup shows the azd up action without running it. Version-only mode reads
+    the existing environment and app but skips image resolution and mutation.
 .NOTES
     Requires Azure CLI, Azure Developer CLI, and an interactive PowerShell
     session. The profile file contains tenant and subscription IDs, which are
@@ -38,6 +43,105 @@ $ErrorActionPreference = 'Stop'
 Set-StrictMode -Version Latest
 
 #region Functions
+
+function Read-SetupMode {
+    [CmdletBinding()]
+    [OutputType([string])]
+    param()
+
+    Write-Host 'Choose a setup operation:' -ForegroundColor Cyan
+    Write-Host '1. Full setup (configure a target and run azd up)'
+    Write-Host '2. Version-only update (change an existing Container App image)'
+    Write-Host 'Q. Quit'
+
+    while ($true) {
+        switch ((Read-Host 'Selection').Trim()) {
+            '1' { return 'Full' }
+            '2' { return 'VersionOnly' }
+            'Q' { return 'Quit' }
+            default { Write-Warning 'Choose 1, 2, or Q.' }
+        }
+    }
+}
+
+function Invoke-VersionOnlyUpdate {
+    [CmdletBinding(SupportsShouldProcess)]
+    [OutputType([void])]
+    param(
+        [Parameter(Mandatory = $true)]
+        [ValidateNotNullOrEmpty()]
+        [string]$RepositoryPath
+    )
+
+    $environmentListOutput = @(& azd env list --output json)
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Could not list existing azd environments.'
+    }
+    $environments = @((($environmentListOutput -join [Environment]::NewLine) | ConvertFrom-Json))
+    if ($environments.Count -eq 0) {
+        throw 'No existing azd environments were found. Run full setup first.'
+    }
+
+    if ($environments.Count -eq 1) {
+        $environmentName = [string]$environments[0].Name
+        Write-Host "Automatically selected the only azd environment: $environmentName" -ForegroundColor Cyan
+    }
+    else {
+        Write-Host 'Choose an existing azd environment:' -ForegroundColor Cyan
+        for ($index = 0; $index -lt $environments.Count; $index++) {
+            Write-Host ('{0}. {1}' -f ($index + 1), $environments[$index].Name)
+        }
+
+        while ($true) {
+            $selection = (Read-Host 'Selection').Trim()
+            $selectedIndex = 0
+            if ([int]::TryParse($selection, [ref]$selectedIndex) -and
+                $selectedIndex -ge 1 -and $selectedIndex -le $environments.Count) {
+                $environmentName = [string]$environments[$selectedIndex - 1].Name
+                break
+            }
+
+            Write-Warning "Choose a number from 1 to $($environments.Count)."
+        }
+    }
+
+    Invoke-ExternalCommand -CommandName 'azd' -Arguments @('env', 'select', $environmentName)
+    $environmentOutput = @(& azd env get-values --output json)
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Could not read the existing azd environment.'
+    }
+    $environment = ($environmentOutput -join [Environment]::NewLine) | ConvertFrom-Json -AsHashtable
+    $subscriptionId = [string]$environment['AZURE_SUBSCRIPTION_ID']
+    $resourceGroupName = [string]$environment['resourceGroupName']
+    $containerAppName = [string]$environment['containerAppName']
+    if ($subscriptionId -notmatch '^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$' -or
+        $resourceGroupName -notmatch '^[a-zA-Z0-9._()\-]{1,90}$' -or
+        $containerAppName -notmatch '^[a-z][a-z0-9-]{0,30}[a-z0-9]$') {
+        throw 'The environment must have valid AZURE_SUBSCRIPTION_ID, resourceGroupName, and containerAppName values from a completed full setup.'
+    }
+
+    $containerOutput = @(& az containerapp show --name $containerAppName --resource-group $resourceGroupName --subscription $subscriptionId --query 'properties.template.containers[].name' --output json)
+    if ($LASTEXITCODE -ne 0) {
+        throw 'Could not read the existing Container App. Sign in to its subscription with Azure CLI and verify that full setup has completed.'
+    }
+    $containerNames = @((($containerOutput -join [Environment]::NewLine) | ConvertFrom-Json))
+    if ('eklee-keyvault' -notin $containerNames) {
+        throw 'The existing Container App does not contain the eklee-keyvault container.'
+    }
+
+    Write-Host "Environment: $environmentName | subscription: $subscriptionId | resource group: $resourceGroupName | Container App: $containerAppName" -ForegroundColor Cyan
+
+    if ($PSCmdlet.ShouldProcess("Container App '$containerAppName' in subscription '$subscriptionId'", 'Select a release, set CONTAINER_IMAGE, and update only the application image')) {
+        . (Join-Path $RepositoryPath 'Deployment\resolve-container-image.ps1')
+        $imageReference = Resolve-ContainerImage -Path $RepositoryPath
+        Invoke-ExternalCommand -CommandName 'az' -Arguments @(
+            'containerapp', 'update', '--name', $containerAppName,
+            '--resource-group', $resourceGroupName, '--subscription', $subscriptionId,
+            '--container-name', 'eklee-keyvault', '--image', $imageReference, '--output', 'none'
+        )
+        Write-Host 'Application image updated.' -ForegroundColor Green
+    }
+}
 
 function Test-CommandAvailable {
     <# .SYNOPSIS Checks that a required command is available. #>
@@ -829,6 +933,12 @@ function Set-TargetCustomDomainName {
 
 if ($MyInvocation.InvocationName -ne '.') {
     try {
+        $setupMode = Read-SetupMode
+        if ($setupMode -eq 'Quit') {
+            Write-Host 'Cancelled.'
+            exit 0
+        }
+
         foreach ($commandName in @('az', 'azd', 'git')) {
             Test-CommandAvailable -CommandName $commandName
         }
@@ -836,6 +946,11 @@ if ($MyInvocation.InvocationName -ne '.') {
         $repositoryPath = $PSScriptRoot
         Push-Location $repositoryPath
         try {
+            if ($setupMode -eq 'VersionOnly') {
+                Invoke-VersionOnlyUpdate -RepositoryPath $repositoryPath -WhatIf:$WhatIfPreference
+                exit 0
+            }
+
             $targets = @(Get-TargetCatalog -Path $ProfilePath)
             if ($targets.Count -eq 0) {
                 Write-Host 'No targets found. Add your tenant and subscription targets.' -ForegroundColor Yellow

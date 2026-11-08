@@ -5,14 +5,14 @@
 .SYNOPSIS
     Resolve explicit issue-closing links after a PR merges.
 .DESCRIPTION
-    Verify repository identity, a merged default-branch PR, and every selected
+    Verify repository identity, a PR merged into the default or a release branch, and every selected
     issue before any write. Close open issues with a PR reference, then post one
     summary on the PR. Already closed issues are preserved. No Git writes occur.
 .PARAMETER PullRequest
     Merged PR number in the checkout's repository.
 .PARAMETER FromClosingLinks
     Select only GitHub's paginated closingIssuesReferences for this merged PR.
-    Its default-branch merge authorizes these explicit closures. Plain issue/PR
+    Its verified default- or release-branch merge authorizes these explicit closures. Plain issue/PR
     mentions, branch names, and milestones are not completion declarations.
 .PARAMETER Issues
     Explicit issue numbers for manual recovery; requires CompletionVerified to close.
@@ -72,8 +72,9 @@ if ($MyInvocation.InvocationName -ne '.') {
             $MergedPr.html_url -cne $PrUrl -or
             $MergedPr.base.repo.full_name -ine $Context.Repository -or
             -not $RepositoryInfo.defaultBranchRef.name -or
-            $MergedPr.base.ref -cne $RepositoryInfo.defaultBranchRef.name) {
-            throw 'PR must be merged into this repository default branch before issues can be resolved.'
+            ($MergedPr.base.ref -cne $RepositoryInfo.defaultBranchRef.name -and
+                $MergedPr.base.ref -cnotmatch '^release/.+$')) {
+            throw 'PR must be merged into this repository default branch or a release/* branch before issues can be resolved.'
         }
         $IssueNumbers = $Issues
         if ($FromClosingLinks) {

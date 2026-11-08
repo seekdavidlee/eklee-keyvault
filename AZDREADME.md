@@ -49,7 +49,39 @@ selected tag, resolves it to a `sha256` digest, and stores the immutable referen
 reference.
 
 A direct `azd up` rerun of an environment configured by `Setup.ps1` reuses the stored digest. Run
-`Setup.ps1` again when you intentionally want to select a different release image.
+`Setup.ps1` again and choose the version-only option when you want to select a
+different release image without rerunning setup.
+
+## Version-Only Updates
+
+When you run [Setup.ps1](Setup.ps1), choose `1` for full setup, `2` for a
+version-only update, or `Q` to quit. Full setup retains the target configuration
+and `azd up` workflow.
+
+For a version-only update, enter the name of an existing azd environment from a
+completed full setup. Sign in with Azure CLI to an account with permission to
+update that environment's Container App. The script reads the saved subscription,
+resource group, and Container App name, verifies the app, and asks for confirmation.
+Choose a release using the existing release menu. The script stores the resolved
+digest in `CONTAINER_IMAGE` and runs `az containerapp update` for only the
+`eklee-keyvault` container image. It does not collect or save target profiles,
+provision resources, run `azd up`, or execute app-registration, networking,
+custom-domain, or RBAC setup hooks.
+
+The environment and Container App must already exist; missing deployment outputs
+stop the update rather than starting full setup. If an update fails after storing
+the digest, `CONTAINER_IMAGE` retains the selected image for a retry. Run
+`Setup.ps1` again to retry the version-only update.
+
+With `-WhatIf`, version-only mode selects and reads the environment and verifies
+the app, but skips release resolution, setting `CONTAINER_IMAGE`, and the Azure
+image update.
+
+The checkout does not include a dedicated setup regression test suite. Automated
+setup regression coverage is unavailable; `-WhatIf` checks are not a substitute
+for validating an actual version-only update in a test environment.
+
+## Provisioning Configuration
 
 The script also resolves Azure location for provisioning. It first checks `AZURE_LOCATION`, then
 `infra.parameters.location`, then process environment `AZURE_LOCATION`. If none are set, it prompts
@@ -83,7 +115,8 @@ to add the deployed Container App URL to the app registration SPA redirect URIs.
 
 ## Collected Parameters
 
-`Setup.ps1` prompts for the following target settings and stores them before it invokes `azd up`:
+In full setup mode, `Setup.ps1` prompts for the following target settings and
+stores them before it invokes `azd up`:
 
 | Parameter            | Description                                                                     | Example     |
 |----------------------|---------------------------------------------------------------------------------|-------------|

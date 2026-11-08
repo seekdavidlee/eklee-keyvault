@@ -2,6 +2,7 @@ import apiClient from './apiClient';
 import type {
   SecretGenerationRequest,
   SecretGenerationResponse,
+  SecretImportResponse,
   SecretItemView,
   SecretSetRequest,
   SecretSetResponse,
@@ -46,4 +47,20 @@ export async function generateSecret(request: SecretGenerationRequest): Promise<
 /** Deletes a Key Vault secret by name. Admin-only. */
 export async function deleteSecret(name: string): Promise<void> {
   await apiClient.delete(`/api/secrets/${encodeURIComponent(name)}`);
+}
+
+/** Downloads a category's unencrypted export using the shared authenticated client. */
+export async function exportSecrets(categoryId: string): Promise<Blob> {
+  const response = await apiClient.get<Blob>('/api/secret-transfers/export', {
+    params: { categoryId }, responseType: 'blob',
+  });
+  return response.data;
+}
+
+/** Sends the original JSON text so server validation can detect duplicate properties before writes. */
+export async function importSecrets(categoryId: string, document: string): Promise<SecretImportResponse> {
+  const response = await apiClient.post<SecretImportResponse>('/api/secret-transfers/import', document, {
+    params: { categoryId }, headers: { 'Content-Type': 'application/json' },
+  });
+  return response.data;
 }

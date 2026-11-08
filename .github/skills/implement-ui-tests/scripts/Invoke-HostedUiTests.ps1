@@ -26,6 +26,9 @@
     Reuse that consent across in-scope iterations; this switch is not a prompt.
 .PARAMETER Message
     Commit message for this iteration. Required for Publish.
+.PARAMETER IssueNumber
+    Optional issue number, inferred from an issue branch. Publish requires a
+    standalone Refs #<number> line when an issue is resolved.
 .PARAMETER Commit
     Exact 40-character SHA to inspect; defaults to local HEAD.
 .PARAMETER RunId
@@ -49,6 +52,7 @@ param(
     [string]$Repository,
     [switch]$PublishAuthorized,
     [string]$Message,
+    [ValidateRange(1, [int]::MaxValue)][int]$IssueNumber,
     [ValidatePattern('^[a-fA-F0-9]{40}$')][string]$Commit,
     [ValidateRange(1, [long]::MaxValue)][long]$RunId,
     [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../../../..')).Path
@@ -288,6 +292,8 @@ if ($MyInvocation.InvocationName -ne '.') {
         }
         if ($Action -eq 'Publish') {
             if (-not $PublishAuthorized -or -not $Message) { throw 'Publish requires recorded task-scoped authorization and a commit message.' }
+            $ResolvedIssue = Get-SkillCommitIssue -Source $Context.Source -IssueNumber $IssueNumber
+            if ($ResolvedIssue) { Assert-SkillCommitIssueReference -Message $Message -IssueNumber $ResolvedIssue }
             $PushUrl = Assert-UiPublication $Context $Root $TaskFiles $ExpectedBranch $Repository
             Assert-UiTaskScope $TaskScope $Context $PushUrl $TaskFiles
             if (-not $PSCmdlet.ShouldProcess("$Repository/$ExpectedBranch", 'Validate, commit only task files, and ordinary-push this iteration')) {
@@ -307,6 +313,10 @@ if ($MyInvocation.InvocationName -ne '.') {
             if ((Invoke-SkillCommand git @('branch', '--show-current')).Trim() -cne $ExpectedBranch -or
                 $Parent -cne $Context.Head -or @($Committed | Where-Object { $_ -cnotin $TaskFiles }).Count) {
                 throw "Commit $Sha failed the post-hook scope check; keep it local and stop."
+            }
+            if ($ResolvedIssue) {
+                $CommittedMessage = Invoke-SkillCommand git @('show', '-s', '--format=%B', $Sha)
+                Assert-SkillCommitIssueReference -Message $CommittedMessage -IssueNumber $ResolvedIssue
             }
             try {
                 $null = Invoke-SkillCommand git @('-c', 'push.followTags=false', '-c', 'push.recurseSubmodules=no',

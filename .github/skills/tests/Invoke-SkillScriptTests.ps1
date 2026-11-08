@@ -10,11 +10,16 @@
     Checks linked skill and agent contracts without executing an agent workflow.
 .PARAMETER RepoRoot
     Repository containing the skill scripts.
+.PARAMETER Scope
+    All checks (default), branch/milestone checks, or commit-reference guards.
 .EXAMPLE
     ./.github/skills/tests/Invoke-SkillScriptTests.ps1
 #>
 [CmdletBinding()]
-param([string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../../..')).Path)
+param(
+    [string]$RepoRoot = (Resolve-Path (Join-Path $PSScriptRoot '../../..')).Path,
+    [ValidateSet('All', 'Milestone', 'CommitReference')][string]$Scope = 'All'
+)
 
 $ErrorActionPreference = 'Stop'
 
@@ -94,6 +99,8 @@ function git {
             if ($args -contains '--raw') { return '' }
             return 'complete diff fixture'
         }
+        'rev-list' { return $SkillTestState.Head }
+        'show' { return $SkillTestState.CommitMessage }
         'switch' {
             $SkillTestState.GitWrites++
             $SkillTestState.SwitchArguments = @($args)
@@ -117,7 +124,16 @@ function gh {
         }
         'issue' {
             if ($args[1] -eq 'view') {
-                return (@{ number = 60; title = $SkillTestState.IssueTitle; body = 'Criteria'; comments = @(); url = $SkillTestState.IssueUrl } | ConvertTo-Json)
+                return (@{ number = 60; title = $SkillTestState.IssueTitle; body = 'Criteria'; comments = @(); url = $SkillTestState.IssueUrl; milestone = $SkillTestState.IssueMilestone } | ConvertTo-Json)
+            }
+            if ($args[1] -eq 'edit') {
+                $SkillTestState.GhWrites++
+                if ($SkillTestState.MilestoneWriteFailure) { $global:LASTEXITCODE = 1; return 'milestone edit denied' }
+                $Title = $args[[array]::IndexOf($args, '--milestone') + 1]
+                if (-not $SkillTestState.MilestoneVerificationFailure) {
+                    $SkillTestState.IssueMilestone = @{ title = $Title }
+                }
+                return $SkillTestState.IssueUrl
             }
             if ($args[1] -eq 'close') {
                 $IssueNumber = [int]$args[2]
@@ -179,7 +195,10 @@ function gh {
             }
             if ($Endpoint -like '*dependabot/alerts*') { return ConvertTo-TestPages $SkillTestState.Alerts }
             if ($Endpoint -like '*labels*') { return '[[{"name":"bug"}]]' }
-            if ($Endpoint -like '*milestones*') { return '[[{"title":"1.2.0"}]]' }
+            if ($Endpoint -like '*milestones*') {
+                Assert-Equal ($args -contains '--paginate' -and $args -contains '--slurp') $true 'paginated milestones'
+                return $SkillTestState.MilestonePages
+            }
             throw "Unexpected endpoint: $Endpoint"
         }
         default { throw "Unexpected gh invocation: $args" }
@@ -258,6 +277,7 @@ if ($MyInvocation.InvocationName -ne '.') {
     $IssueScript = Join-Path $Scripts 'create-github-issue/scripts/New-GitHubIssue.ps1'
     $ContextScript = Join-Path $Scripts 'implement-issue/scripts/Get-IssueContext.ps1'
     $BranchScript = Join-Path $Scripts 'create-issue-branch/scripts/New-IssueBranch.ps1'
+    $MilestoneScript = Join-Path $Scripts 'create-issue-branch/scripts/Set-IssueMilestone.ps1'
     $PrScript = Join-Path $Scripts 'create-pull-request/scripts/Invoke-PullRequest.ps1'
     $ResolutionScript = Join-Path $RepoRoot '.github/scripts/Resolve-PullRequestIssues.ps1'
     $SnapshotScript = Join-Path $Scripts 'functional-implementation-code-review/scripts/Get-ReviewSnapshot.ps1'
@@ -274,10 +294,28 @@ if ($MyInvocation.InvocationName -ne '.') {
         IssueUrl = 'https://github.com/owner/repo/issues/60'; Passed = 2; Skipped = 0; Alerts = @()
         Modes = @{}; PrTitle = 'Example'; PrBody = 'fixture'; ExistingBranches = @(); SwitchArguments = @()
         IsAncestor = $true; IssueTitle = 'Example'
+        CommitMessage = "feat: implement issue`n`nRefs #60"
+        IssueMilestone = @{ title = '1.2.0' }
+        MilestonePages = '[[{"title":"1.2.0","state":"open"}]]'
+        MilestoneWriteFailure = $false; MilestoneVerificationFailure = $false
         NpmConfig = @{ registry = 'https://approved.example/npm/' }
         LockRegistry = 'https://approved.example/npm/'; NpmInstalls = 0; NpmCi = 0
     }
     try {
+        . (Join-Path $Scripts '_shared/RepositoryTools.ps1')
+        foreach ($Type in @('feature', 'fix', 'doc', 'refactor')) {
+            Assert-Equal (Get-SkillCommitIssue -Source "$Type/60-example") 60 "$Type resolves commit issue"
+        }
+        Assert-Equal (Get-SkillCommitIssue -Source 'release/1.2.0') 0 'release does not imply an issue'
+        Assert-Equal (Get-SkillCommitIssue -Source 'test/hosted' -IssueNumber 60) 60 'explicit issue on non-issue branch'
+        Assert-Throws { Get-SkillCommitIssue -Source 'fix/60-example' -IssueNumber 61 } '*does not match source branch issue*'
+        foreach ($Message in @("fix: example`n`nRefs #60", "fix: example`r`n`r`nRefs #60`r`n")) {
+            Assert-SkillCommitIssueReference -Message $Message -IssueNumber 60
+            $script:Assertions++
+        }
+        foreach ($Message in @('', 'fix: no issue', 'Refs #600', 'Refs #61', 'Fixes #60', 'text Refs #60', 'Refs #60 trailing')) {
+            Assert-Throws { Assert-SkillCommitIssueReference -Message $Message -IssueNumber 60 } '*standalone*Refs #60*'
+        }
         $null = [IO.Directory]::CreateDirectory((Join-Path $Fixture 'Eklee.KeyVault.UI/src'))
         $null = [IO.Directory]::CreateDirectory((Join-Path $Fixture 'Eklee.KeyVault.Api.Tests'))
         Set-Content -LiteralPath (Join-Path $Fixture 'LICENSE') -Value 'fixture' -NoNewline
@@ -385,6 +423,56 @@ if ($MyInvocation.InvocationName -ne '.') {
         $SkillTestState.Branch = 'feature/60'
         $SkillTestState.Head = ('a' * 40)
 
+        $MilestoneArguments = @{ Issue = 60; Base = 'release/1.2.0'; RepoRoot = $Fixture }
+        $SkillTestState.IssueMilestone = @{ title = 'older-release' }
+        Assert-Equal (& $MilestoneScript @MilestoneArguments -Action Ensure).Status 'AlreadyAssigned' 'existing milestone preserved'
+        Assert-Equal $SkillTestState.GhWrites 0 'existing milestone causes no writes'
+        $SkillTestState.IssueMilestone = $null
+        $SkillTestState.MilestonePages = '[[{"title":"1.3.0","state":"open"}],[{"title":"1.2.0","state":"open"}]]'
+        Assert-Equal (& $MilestoneScript @MilestoneArguments).Milestone.title '1.2.0' 'release match on later page'
+        Assert-Equal (& $MilestoneScript @MilestoneArguments -Action Ensure -WhatIf).Status 'Preview' 'milestone WhatIf'
+        Assert-Equal (& $BranchScript -Issue 60 -Type fix -RepoRoot $Fixture).Milestone.Status 'Resolved' 'branch resolve plans assignment'
+        Assert-Equal (& $BranchScript @BranchArguments -WhatIf).Status 'Preview' 'branch preview without milestone'
+        Assert-Equal $SkillTestState.GhWrites 0 'resolution and previews do not assign'
+        $SkillTestState.MilestonePages = '[[{"title":"1.2.0","state":"closed"}]]'
+        Assert-Throws { & $MilestoneScript @MilestoneArguments -Action Ensure } '*Expected one open milestone*'
+        $SkillTestState.MilestonePages = '[[]]'
+        Assert-Throws { & $BranchScript @BranchArguments -Confirm:$false } '*Expected one open milestone*'
+        Assert-Equal $SkillTestState.GitWrites 0 'missing milestone blocks branch creation'
+        $SkillTestState.MilestonePages = '[[{"title":"1.2.0","state":"open"},{"title":"1.2.0","state":"open"}]]'
+        Assert-Throws { & $MilestoneScript @MilestoneArguments -Action Ensure } '*found 2*'
+        $SkillTestState.MilestonePages = '[[{"title":"1.2.0","state":"open"}]]'
+        $SkillTestState.MilestoneWriteFailure = $true
+        Assert-Throws { & $BranchScript @BranchArguments -Confirm:$false } '*milestone edit denied*'
+        Assert-Equal $SkillTestState.GitWrites 0 'assignment error blocks branch creation'
+        $SkillTestState.MilestoneWriteFailure = $false
+        $SkillTestState.MilestoneVerificationFailure = $true
+        Assert-Throws { & $MilestoneScript @MilestoneArguments -Action Ensure -Confirm:$false } '*could not be verified*'
+        $SkillTestState.MilestoneVerificationFailure = $false
+        $MilestoneBranch = & $BranchScript @BranchArguments -Confirm:$false
+        Assert-Equal $MilestoneBranch.Milestone.Status 'Assigned' 'branch create assigns missing milestone'
+        $SkillTestState.IssueMilestone = $null
+        $MilestoneResume = @{ Issue = 60; Type = 'fix'; Action = 'Resume'; CreationEvidence = $MilestoneBranch; RepoRoot = $Fixture }
+        Assert-Equal (& $BranchScript @MilestoneResume -WhatIf).Status 'Preview' 'resume preview blocks handoff without milestone'
+        Assert-Equal (& $BranchScript @MilestoneResume -Confirm:$false).Milestone.Status 'Assigned' 'resume repairs missing milestone'
+        Assert-Equal (& $BranchScript @MilestoneResume).Milestone.Status 'AlreadyAssigned' 'resume is idempotent'
+        $SkillTestState.IssueMilestone = $null
+        $SkillTestState.IssueUrl = 'https://github.com/other/repo/issues/60'
+        Assert-Throws { & $MilestoneScript @MilestoneArguments -Action Ensure } '*does not belong*'
+        $SkillTestState.IssueUrl = 'https://github.com/owner/repo/issues/60'
+        $SkillTestState.IssueMilestone = @{ title = '1.2.0' }
+        $SkillTestState.GhWrites = 0; $SkillTestState.GitWrites = 0
+        $SkillTestState.Branch = 'feature/60'; $SkillTestState.Head = ('a' * 40)
+
+        if ($Scope -eq 'Milestone') {
+            $BranchBody = Get-Content -LiteralPath (Join-Path $Scripts 'create-issue-branch/SKILL.md') -Raw
+            $AgentBody = Get-Content -LiteralPath (Join-Path $RepoRoot '.github/agents/implement-issue.agent.md') -Raw
+            Assert-Equal ($BranchBody -match '(?s)## Milestone Gate.*?Set-IssueMilestone.ps1.*?Require `Milestone.Status`') $true 'branch skill documents milestone gate'
+            Assert-Equal ($AgentBody -match '(?s)Require the skill.*?milestone gate.*?AlreadyAssigned.*?Assigned.*?before step 2') $true 'agent requires milestone handoff'
+            Assert-Equal ($AgentBody -match 'rerun the branch skill.*?milestone gate') $true 'agent reverifies milestone on resume'
+            return [pscustomobject]@{ Status = 'Passed'; Scope = $Scope; Assertions = $script:Assertions }
+        }
+
         Assert-Equal (& $ContextScript -Issue 60 -RepoRoot $Fixture).Status 'Ready' 'feature preflight'
         $SkillTestState.Branch = 'main'
         Assert-Equal (& $ContextScript -Issue 60 -RepoRoot $Fixture).Status 'FeatureBranchRequired' 'protected branch'
@@ -461,6 +549,13 @@ if ($MyInvocation.InvocationName -ne '.') {
         $PrArguments = @{ Action = 'Create'; Base = 'release/1.2.0'; Title = 'Example'; BodyFile = (Join-Path $Fixture 'LICENSE'); ReviewedFingerprint = $Snapshot.Fingerprint; RepoRoot = $Fixture }
         Assert-Equal (& $PrScript @PrArguments -WhatIf).Status 'Preview' 'PR creation preview'
         Assert-Equal $SkillTestState.GhWrites 0 'PR preview has no write'
+        $SkillTestState.CommitMessage = 'feat: no reference'
+        Assert-Throws { & $PrScript @PrArguments -WhatIf } '*Commit*standalone*Refs #60*'
+        $SkillTestState.CommitMessage = "feat: wrong reference`n`nRefs #600"
+        Assert-Throws { & $PrScript @PrArguments -Confirm:$false } '*Commit*standalone*Refs #60*'
+        Assert-Equal $SkillTestState.GhWrites 0 'missing or wrong commit issue blocks PR writes'
+        $SkillTestState.CommitMessage = "feat: implement issue`n`nRefs #60"
+        Assert-Throws { & $PrScript @PrArguments -IssueNumber 61 -WhatIf } '*does not match source branch issue*'
         $PrArguments.ReviewedFingerprint = 'stale'
         Assert-Throws { & $PrScript @PrArguments -WhatIf } '*changed after local review*'
         $PrArguments.ReviewedFingerprint = $Snapshot.Fingerprint
@@ -483,6 +578,7 @@ if ($MyInvocation.InvocationName -ne '.') {
         $SkillTestState.SourcePrs = @()
         Assert-Equal (& $PrScript @PrArguments -Confirm:$false).Status 'Created' 'mocked PR creation'
 
+        if ($Scope -ne 'CommitReference') {
         $ReviewArguments = @{ Repository = 'owner/repo'; Number = 61; Source = 'feature/60'; Base = 'release/1.2.0'; Head = $SkillTestState.Head; RepoRoot = $Fixture }
         Assert-Equal (& $ReviewScript @ReviewArguments -WhatIf).Status 'Preview' 'review preview'
         $SkillTestState.Pending = $true
@@ -533,7 +629,17 @@ if ($MyInvocation.InvocationName -ne '.') {
         Assert-Throws { & $ResolutionScript @ResolutionArguments -Action Close -CompletionVerified -Confirm:$false } '*must be merged*'
         $SkillTestState.ResolutionPr.merged_at = '2026-11-01T19:40:57Z'
         $SkillTestState.ResolutionPr.base.ref = 'release/1.2.0'
-        Assert-Throws { & $ResolutionScript @ResolutionArguments -Action Close -CompletionVerified -Confirm:$false } '*default branch*'
+        Assert-Equal (& $ResolutionScript @ResolutionArguments).Status 'Preview' 'verified release merge accepted'
+        $SkillTestState.ResolutionPr.merged_at = $null
+        Assert-Throws { & $ResolutionScript @ResolutionArguments -Action Close -CompletionVerified -Confirm:$false } '*must be merged*'
+        $SkillTestState.ResolutionPr.merged_at = '2026-11-01T19:40:57Z'
+        $SkillTestState.ResolutionPr.base.repo.full_name = 'other/repo'
+        Assert-Throws { & $ResolutionScript @ResolutionArguments } '*must be merged*'
+        $SkillTestState.ResolutionPr.base.repo.full_name = 'owner/repo'
+        foreach ($RejectedBase in @('feature/60', 'release/', 'Release/1.2.0', '')) {
+            $SkillTestState.ResolutionPr.base.ref = $RejectedBase
+            Assert-Throws { & $ResolutionScript @ResolutionArguments -Action Close -CompletionVerified -Confirm:$false } '*default branch*'
+        }
         $SkillTestState.ResolutionPr.base.ref = 'main'
         $SkillTestState.ResolutionPr.base.repo.full_name = 'other/repo'
         Assert-Throws { & $ResolutionScript @ResolutionArguments } '*default branch*'
@@ -565,6 +671,7 @@ if ($MyInvocation.InvocationName -ne '.') {
         Assert-Equal $SkillTestState.GhWrites $WritesAfterResolution 'rerun avoids duplicate issue and PR comments'
         Assert-Equal $SkillTestState.GitWrites $GitWritesBeforeResolution 'issue resolution never writes Git'
         $LinkedArguments = @{ PullRequest = 61; FromClosingLinks = $true; RepoRoot = $Fixture }
+        $SkillTestState.ResolutionPr.base.ref = 'release/1.2.0'
         $SkillTestState.ClosingLinkPages = @(foreach ($Numbers in @(@(59, 60), @(64, 59))) {
             @{
                 data = @{ repository = @{ pullRequest = @{
@@ -603,9 +710,9 @@ if ($MyInvocation.InvocationName -ne '.') {
         Assert-Equal $SkillTestState.GhWrites $WritesAfterLinkedResolution 'no closing links produces zero writes'
         $Workflow = Get-Content -LiteralPath (Join-Path $RepoRoot '.github/workflows/resolve-merged-pr-issues.yml') -Raw
         Assert-Equal ($Workflow -match '(?m)^  pull-requests: read\r?$') $true 'workflow only reads pull requests'
-        Assert-Equal ($Workflow -match '(?s)pull_request_target:\s+types: \[closed\]') $true 'trusted merge-event trigger'
+        Assert-Equal ($Workflow -match '(?s)pull_request_target:\s+branches: \[''release/\*''\]\s+types: \[closed\]') $true 'trusted release merge-event trigger'
         Assert-Equal ($Workflow -match 'github.event.pull_request.merged == true') $true 'closed without merge excluded'
-        Assert-Equal ($Workflow -match 'github.event.pull_request.base.ref == github.event.repository.default_branch') $true 'release branch merges excluded'
+        Assert-Equal ($Workflow -match 'github.event.pull_request.base.ref == github.event.repository.default_branch') $false 'release branch merges not excluded'
         Assert-Equal ($Workflow -match 'ref: \$\{\{ github.event.repository.default_branch \}\}') $true 'checkout named trusted default branch'
         Assert-Equal ($Workflow -match 'persist-credentials: false') $true 'checkout does not persist write credentials'
         Assert-Equal ($Workflow -match 'group: post-merge-issue-resolution-.*github.event.pull_request.number') $true 'distinct merge events have independent queues'
@@ -806,6 +913,7 @@ if ($MyInvocation.InvocationName -ne '.') {
         foreach ($Link in [regex]::Matches($AgentBody, '\]\(([^)#]+)(?:#[^)]*)?\)')) {
             Assert-Equal (Test-Path -LiteralPath (Join-Path (Split-Path $AgentPath -Parent) $Link.Groups[1].Value)) $true 'implementation agent reference'
         }
+        }
 
         & {
             $HostedScript = Join-Path $Scripts 'implement-ui-tests/scripts/Invoke-HostedUiTests.ps1'
@@ -821,6 +929,7 @@ if ($MyInvocation.InvocationName -ne '.') {
                 Head = ('a' * 40); Published = ('a' * 40); Parent = ('a' * 40)
                 Dirty = @(); Untracked = @(); Committed = @('LICENSE'); PushFailure = $false
                 NoChanges = $false; PushArguments = @(); LocalChecks = 0
+                CommitMessage = ''; RemoveIssueReference = $false
             }
             $EvidenceDirectories = [Collections.Generic.List[string]]::new()
             function gh {
@@ -903,8 +1012,10 @@ if ($MyInvocation.InvocationName -ne '.') {
                         $HostedState.Writes++
                         $HostedState.Parent = $HostedState.Head
                         $HostedState.Head = ('c' * 40)
+                        $HostedState.CommitMessage = if ($HostedState.RemoveIssueReference) { 'test: hook removed reference' } else { $args[2] }
                         return 'committed fixture'
                     }
+                    'show' { return $HostedState.CommitMessage }
                     'diff-tree' { return ($HostedState.Committed -join "`0") }
                     '-c' {
                         $HostedState.Writes++
@@ -1038,8 +1149,13 @@ if ($MyInvocation.InvocationName -ne '.') {
                 $PublishArgs = @{
                     Action = 'Publish'; Repository = 'owner/repo'; ExpectedBranch = 'feature/60'
                     TaskFiles = @('LICENSE'); TestFiles = $SpecFiles; TaskScope = $Begin
-                    PublishAuthorized = $true; Message = 'test: hosted iteration'; RepoRoot = $Fixture
+                    PublishAuthorized = $true; Message = "test: hosted iteration`n`nRefs #60"; RepoRoot = $Fixture
                 }
+                $ValidMessage = $PublishArgs.Message
+                $PublishArgs.Message = 'test: missing reference'
+                Assert-Throws { & $HostedScript @PublishArgs -Confirm:$false } '*standalone*Refs #60*'
+                Assert-Equal $HostedState.Writes 0 'missing commit issue blocks staging and publication'
+                $PublishArgs.Message = $ValidMessage
                 Assert-Equal (& $HostedScript @PublishArgs -WhatIf).Status 'Preview' 'publish preview does not commit or push'
                 Assert-Equal $HostedState.Writes 0 'publication preview has no Git mutations'
                 Assert-Equal $HostedState.LocalChecks 0 'publication preview has no local check side effects'
@@ -1061,6 +1177,10 @@ if ($MyInvocation.InvocationName -ne '.') {
                 Assert-Throws { & $HostedScript @PublishArgs -Confirm:$false } '*post-hook scope check*'
                 Assert-Equal $HostedState.Published ('a' * 40) 'hook-added unrelated changes never pushed'
                 $HostedState.Head = ('a' * 40); $HostedState.Staged = @()
+                $HostedState.Committed = @('LICENSE'); $HostedState.RemoveIssueReference = $true
+                Assert-Throws { & $HostedScript @PublishArgs -Confirm:$false } '*standalone*Refs #60*'
+                Assert-Equal $HostedState.Published ('a' * 40) 'hook-removed issue reference never pushed'
+                $HostedState.Head = ('a' * 40); $HostedState.Staged = @(); $HostedState.RemoveIssueReference = $false
                 $HostedState.Committed = @('LICENSE'); $HostedState.PushFailure = $true
                 Assert-Throws { & $HostedScript @PublishArgs -Confirm:$false } '*remains local*Ordinary push failed*stop without force-push*'
                 Assert-Equal $HostedState.Published ('a' * 40) 'rejected push preserves remote tip'

@@ -5,8 +5,8 @@ import { MemoryRouter } from 'react-router-dom';
 import { beforeEach, describe, expect, it, vi } from 'vitest';
 import { Dashboard } from './Dashboard';
 import { useUser } from '../auth/UserContext';
-import { getCategories } from '../services/categoriesService';
-import { getSecrets, setSecret } from '../services/secretsService';
+import { createCategory, getCategories } from '../services/categoriesService';
+import { exportSecrets, getSecrets, importSecrets, setSecret } from '../services/secretsService';
 import { getMetadata, updateMetadata } from '../services/metadataService';
 import type { SecretItemView } from '../types';
 
@@ -98,5 +98,117 @@ describe('category-first dashboard', () => {
     expect(screen.queryByRole('button', { name: 'Create Secret' })).not.toBeInTheDocument();
     expect(screen.getByRole('button', { name: 'Show secret' })).toBeEnabled();
     expect(screen.queryByRole('button', { name: 'Edit display name for Budget' })).not.toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Export category' })).toBeEnabled();
+    expect(screen.queryByRole('button', { name: 'Import secrets' })).not.toBeInTheDocument();
+  });
+
+  it('warns about unencrypted values before downloading only the selected category', async () => {
+    const user = userEvent.setup();
+    const blob = new Blob(['test export'], { type: 'application/json' });
+    vi.mocked(exportSecrets).mockResolvedValue(blob);
+    const createUrl = vi.fn(() => 'blob:test');
+    Object.defineProperty(URL, 'createObjectURL', { configurable: true, value: createUrl });
+    Object.defineProperty(URL, 'revokeObjectURL', { configurable: true, value: vi.fn() });
+    const click = vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(() => {});
+    render(<MemoryRouter><Dashboard /></MemoryRouter>);
+    await user.click(await screen.findByRole('button', { name: 'Finance' }));
+    await user.click(screen.getByRole('button', { name: 'Export category' }));
+    expect(screen.getByText(/The exported JSON is unencrypted and contains secret values/)).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Download JSON' })).toBeDisabled();
+    expect(exportSecrets).not.toHaveBeenCalled();
+    await user.click(screen.getByRole('checkbox', { name: 'I understand this file contains unencrypted secrets' }));
+    await user.click(screen.getByRole('button', { name: 'Download JSON' }));
+    expect(exportSecrets).toHaveBeenCalledWith(finance.id);
+    expect(createUrl).toHaveBeenCalledWith(blob);
+    expect(click).toHaveBeenCalledOnce();
+    click.mockRestore();
+  });
+
+  it('requires a destination and imports raw JSON into an existing category with value-free mixed results', async () => {
+    const user = userEvent.setup();
+    const raw = '{"formatVersion":1,"secrets":[{"name":"new","value":"sensitive-marker","tags":{"category":"keep"}}]}';
+    const file = new File([raw], 'export.json', { type: 'application/json' });
+    Object.defineProperty(file, 'text', { value: () => Promise.resolve(raw) });
+    vi.mocked(importSecrets).mockResolvedValue({ accessDenied: false, results: [
+      { name: 'new', status: 'imported' }, { name: 'existing', status: 'skipped', error: 'This name already exists in the vault.' },
+    ] });
+    render(<MemoryRouter><Dashboard /></MemoryRouter>);
+    await user.click(await screen.findByRole('button', { name: 'Finance' }));
+    await user.click(screen.getByRole('button', { name: 'Import secrets' }));
+    expect(screen.getByRole('button', { name: 'Import' })).toBeDisabled();
+    await user.upload(screen.getByLabelText('Import JSON file'), file);
+    expect(screen.getByRole('button', { name: 'Import' })).toBeDisabled();
+    await user.click(screen.getByRole('combobox', { name: 'Destination category' }));
+    await user.click(await screen.findByRole('option', { name: 'General' }));
+    await user.click(screen.getByRole('button', { name: 'Import' }));
+    expect(await screen.findByRole('status')).toHaveTextContent('1 imported; 1 skipped; 0 failed or not attempted.');
+    expect(importSecrets).toHaveBeenCalledWith(general.id, raw);
+    expect(screen.queryByText(/sensitive-marker/)).not.toBeInTheDocument();
+  });
+
+  it('creates and selects a category during import and makes it available after returning', async () => {
+    const user = userEvent.setup();
+    const created = { id: 'created', name: 'Imported', isDefault: false };
+    vi.mocked(createCategory).mockResolvedValue(created);
+    render(<MemoryRouter><Dashboard /></MemoryRouter>);
+    await user.click(await screen.findByRole('button', { name: 'Finance' }));
+    await user.click(screen.getByRole('button', { name: 'Import secrets' }));
+    await user.type(screen.getByRole('textbox', { name: 'New category name' }), 'Imported');
+    await user.click(screen.getByRole('button', { name: 'Create destination category' }));
+    expect(await screen.findByRole('combobox', { name: 'Destination category' })).toHaveTextContent('Imported');
+    expect(createCategory).toHaveBeenCalledWith('Imported');
+    await user.click(screen.getByRole('button', { name: 'Close' }));
+    await user.click(await screen.findByRole('button', { name: 'Back to categories' }));
+    expect(screen.getByRole('button', { name: 'Imported' })).toBeInTheDocument();
+  });
+
+  it('keeps a newly created destination selected when an older category-list request finishes', async () => {
+    const user = userEvent.setup();
+    const created = { id: 'created', name: 'Imported', isDefault: false };
+    let resolveCategories!: (items: typeof finance[]) => void;
+    vi.mocked(getCategories).mockResolvedValueOnce([finance, general]).mockImplementationOnce(() =>
+      new Promise((resolve) => { resolveCategories = resolve; }));
+    vi.mocked(createCategory).mockResolvedValue(created);
+    render(<MemoryRouter><Dashboard /></MemoryRouter>);
+    await user.click(await screen.findByRole('button', { name: 'Finance' }));
+    await user.click(screen.getByRole('button', { name: 'Import secrets' }));
+    await user.type(screen.getByRole('textbox', { name: 'New category name' }), 'Imported');
+    await user.click(screen.getByRole('button', { name: 'Create destination category' }));
+    expect(screen.getByRole('combobox', { name: 'Destination category' })).toHaveTextContent('Imported');
+    await act(async () => resolveCategories([finance, general]));
+    expect(screen.getByRole('combobox', { name: 'Destination category' })).toHaveTextContent('Imported');
+    await user.click(screen.getByRole('combobox', { name: 'Destination category' }));
+    expect(await screen.findByRole('option', { name: 'Imported' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Finance' })).toBeInTheDocument();
+  });
+
+  it('reports rejected malformed files without rendering parser or response secrets', async () => {
+    const user = userEvent.setup();
+    const raw = '{"value":"sensitive-marker"';
+    const file = new File([raw], 'invalid.json', { type: 'application/json' });
+    Object.defineProperty(file, 'text', { value: () => Promise.resolve(raw) });
+    vi.mocked(importSecrets).mockRejectedValue(new Error('sensitive-marker'));
+    render(<MemoryRouter><Dashboard /></MemoryRouter>);
+    await user.click(await screen.findByRole('button', { name: 'Finance' }));
+    await user.click(screen.getByRole('button', { name: 'Import secrets' }));
+    await user.upload(screen.getByLabelText('Import JSON file'), file);
+    await user.click(screen.getByRole('combobox', { name: 'Destination category' }));
+    await user.click(await screen.findByRole('option', { name: 'Finance' }));
+    await user.click(screen.getByRole('button', { name: 'Import' }));
+    expect(await screen.findByText(/Import failed. Use a valid application export/)).toBeInTheDocument();
+    expect(screen.queryByText(/sensitive-marker/)).not.toBeInTheDocument();
+  });
+
+  it('rejects oversized files before sending and clears the previous file selection', async () => {
+    const user = userEvent.setup();
+    render(<MemoryRouter><Dashboard /></MemoryRouter>);
+    await user.click(await screen.findByRole('button', { name: 'Finance' }));
+    await user.click(screen.getByRole('button', { name: 'Import secrets' }));
+    const file = new File(['{}'], 'large.json', { type: 'application/json' });
+    Object.defineProperty(file, 'size', { value: 10 * 1024 * 1024 + 1 });
+    await user.upload(screen.getByLabelText('Import JSON file'), file);
+    expect(screen.getByText('File exceeds the 10 MiB limit.')).toBeInTheDocument();
+    expect(screen.getByRole('button', { name: 'Import' })).toBeDisabled();
+    expect(importSecrets).not.toHaveBeenCalled();
   });
 });
