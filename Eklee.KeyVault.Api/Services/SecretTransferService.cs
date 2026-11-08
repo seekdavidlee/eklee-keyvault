@@ -1,6 +1,5 @@
 using System.Text;
 using System.Text.Json;
-using System.Runtime.ExceptionServices;
 using Azure;
 using Eklee.KeyVault.Api.Models;
 
@@ -11,6 +10,7 @@ public class SecretTransferService(KeyVaultService keyVaultService, BlobService 
 {
     public const int MaximumFileBytes = 10 * 1024 * 1024;
     public const int MaximumSecrets = 1000;
+    private const int OperationBatchSize = 100;
     private static readonly JsonSerializerOptions TransferJson = new(JsonSerializerDefaults.Web)
     {
         PropertyNameCaseInsensitive = false,
@@ -65,22 +65,43 @@ public class SecretTransferService(KeyVaultService keyVaultService, BlobService 
         var associations = (metadata.Items ?? []).Where(item => item.CategoryId == categoryId)
             .ToDictionary(item => item.Id!, StringComparer.OrdinalIgnoreCase);
         var names = (await keyVaultService.GetSecretsAsync()).Select(secret => secret.Name)
-            .Where(associations.ContainsKey).ToList();
+            .Where(associations.ContainsKey).Order(StringComparer.OrdinalIgnoreCase).ToList();
         if (names.Count > MaximumSecrets)
         {
             throw new ArgumentException("This category exceeds the 1000-secret transfer limit.");
         }
 
         var items = new List<SecretExportItem>();
-        foreach (var name in names)
+        foreach (var batch in names.Chunk(OperationBatchSize))
         {
-            var secret = await keyVaultService.GetSecretWithTagsAsync(name);
-            items.Add(new SecretExportItem
+            var operations = new List<IAsyncDisposable>();
+            try
             {
-                Name = secret.Name, Value = secret.Value,
-                Tags = new Dictionary<string, string>(secret.Properties.Tags),
-                DisplayName = associations[name].DisplayName
-            });
+                foreach (var name in batch)
+                {
+                    operations.Add(await blobService.AcquireSecretOperationAsync(name));
+                }
+
+                var (current, _) = await blobService.GetMetaAsync();
+                current.GetCategory(categoryId);
+                var currentAssociations = (current.Items ?? []).Where(item => item.CategoryId == categoryId)
+                    .ToDictionary(item => item.Id!, StringComparer.OrdinalIgnoreCase);
+                foreach (var name in batch)
+                {
+                    if (!currentAssociations.TryGetValue(name, out var association)) continue;
+                    var secret = await keyVaultService.GetSecretWithTagsAsync(name);
+                    items.Add(new SecretExportItem
+                    {
+                        Name = secret.Name, Value = secret.Value,
+                        Tags = new Dictionary<string, string>(secret.Properties.Tags),
+                        DisplayName = association.DisplayName
+                    });
+                }
+            }
+            finally
+            {
+                await Task.WhenAll(operations.Select(async operation => await operation.DisposeAsync()));
+            }
         }
 
         return Validate(new SecretExport { FormatVersion = 1, Secrets = items });
@@ -100,85 +121,160 @@ public class SecretTransferService(KeyVaultService keyVaultService, BlobService 
         var seen = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
         var results = new List<SecretImportItemResult>();
         var accessDenied = false;
-        foreach (var item in export.Secrets)
+        foreach (var batch in export.Secrets.Chunk(OperationBatchSize))
         {
             if (accessDenied)
             {
-                results.Add(new(item.Name, "notAttempted", "Import stopped because storage access was denied."));
+                results.AddRange(batch.Select(item => NotAttempted(item.Name)));
                 continue;
             }
 
-            if (!seen.Add(item.Name))
-            {
-                results.Add(new(item.Name, "skipped", "Duplicate name within the file."));
-                continue;
-            }
-
-            try
-            {
-                results.Add(await ImportItemAsync(item, categoryId));
-            }
-            catch (RequestFailedException exception)
-            {
-                accessDenied = exception.Status == 403;
-                results.Add(new(item.Name, "failed", accessDenied
-                    ? "Storage access denied. Contact your administrator."
-                    : "Storage operation failed. Check this secret and its category before retrying; a value or category reservation may have been saved."));
-            }
-            catch (Exception exception) when (exception is ArgumentException or KeyNotFoundException or InvalidOperationException)
-            {
-                results.Add(new(item.Name, "failed", "Category operation failed. Reload categories and check this secret before retrying."));
-            }
+            var response = await ImportBatchAsync(batch, categoryId, seen);
+            results.AddRange(response.Results);
+            accessDenied = response.AccessDenied;
         }
 
         return new SecretImportResponse(results, accessDenied);
     }
 
-    /// <summary>Completes lease cleanup before returning a single entry outcome to the batch.</summary>
-    private async Task<SecretImportItemResult> ImportItemAsync(SecretExportItem item, string categoryId)
+    /// <summary>Checks duplicates under leases, reserves metadata once, and completes cleanup before reporting each entry.</summary>
+    private async Task<SecretImportResponse> ImportBatchAsync(SecretExportItem[] batch, string categoryId, HashSet<string> seen)
     {
-        var operation = await blobService.AcquireSecretOperationAsync(item.Name);
-        SecretImportItemResult? outcome = null;
-        Exception? operationFailure = null;
-        Exception? cleanupFailure = null;
+        var operations = batch.Select(item => new ImportOperation(item)).ToArray();
+        var results = new List<SecretImportItemResult>();
+        var accessDenied = false;
         try
         {
-            if (await keyVaultService.SecretExistsAsync(item.Name))
+            foreach (var operation in operations)
             {
-                outcome = new(item.Name, "skipped", "This name already exists in the vault.");
+                if (!seen.Add(operation.Item.Name))
+                {
+                    operation.Outcome = new(operation.Item.Name, "skipped", "Duplicate name within the file.");
+                    continue;
+                }
+
+                try
+                {
+                    operation.Lease = await blobService.AcquireSecretOperationAsync(operation.Item.Name);
+                    if (await keyVaultService.SecretExistsAsync(operation.Item.Name))
+                    {
+                        operation.Outcome = new(operation.Item.Name, "skipped", "This name already exists in the vault.");
+                    }
+                }
+                catch (Exception exception)
+                {
+                    operation.Failure = exception;
+                    if (exception is RequestFailedException { Status: 403 })
+                    {
+                        accessDenied = true;
+                        break;
+                    }
+                }
             }
-            else
+
+            var pending = operations.Where(operation => operation.Outcome is null && operation.Failure is null && operation.Lease is not null).ToArray();
+            if (!accessDenied && pending.Length > 0)
             {
-                await categoryService.AssociateSecretAsync(item.Name, categoryId);
-                await keyVaultService.SetSecretWithTagsAsync(item.Name, item.Value, item.Tags);
-                await categoryService.SetImportedDisplayNameAsync(item.Name, item.DisplayName ?? item.Name);
-                outcome = new(item.Name, "imported");
+                try
+                {
+                    var conflicts = await categoryService.ReserveImportedSecretsAsync(pending.Select(operation => operation.Item).ToArray(), categoryId);
+                    foreach (var operation in pending.Where(operation => conflicts.Contains(operation.Item.Name)))
+                    {
+                        operation.Failure = new InvalidOperationException("Moving existing secrets between categories is not supported.");
+                    }
+                }
+                catch (Exception exception)
+                {
+                    if (exception is RequestFailedException { Status: 403 })
+                    {
+                        pending[0].Failure = exception;
+                        foreach (var operation in pending.Skip(1)) operation.Outcome = NotAttempted(operation.Item.Name);
+                    }
+                    else
+                    {
+                        foreach (var operation in pending) operation.Failure = exception;
+                    }
+                }
             }
-        }
-        catch (Exception exception)
-        {
-            operationFailure = exception;
+
+            foreach (var operation in operations)
+            {
+                Exception? cleanupFailure = null;
+                try
+                {
+                    if (accessDenied && operation.Failure is not RequestFailedException { Status: 403 })
+                    {
+                        operation.Failure = null;
+                        operation.Outcome = NotAttempted(operation.Item.Name);
+                    }
+                    else if (operation.Failure is null && operation.Outcome is null)
+                    {
+                        await keyVaultService.SetSecretWithTagsAsync(operation.Item.Name, operation.Item.Value, operation.Item.Tags);
+                        operation.Outcome = new(operation.Item.Name, "imported");
+                    }
+                }
+                catch (Exception exception)
+                {
+                    operation.Failure = exception;
+                }
+                finally
+                {
+                    if (operation.Lease is not null)
+                    {
+                        var lease = operation.Lease;
+                        operation.Lease = null;
+                        try
+                        {
+                            await lease.DisposeAsync();
+                        }
+                        catch (Exception exception)
+                        {
+                            cleanupFailure = exception;
+                        }
+                    }
+                }
+
+                var failure = operation.Failure is RequestFailedException { Status: 403 } ? operation.Failure
+                    : cleanupFailure is RequestFailedException { Status: 403 } ? cleanupFailure
+                    : operation.Failure ?? cleanupFailure;
+                if (failure is not null)
+                {
+                    accessDenied |= failure is RequestFailedException { Status: 403 };
+                    results.Add(FailureResult(operation.Item.Name, failure));
+                }
+                else
+                {
+                    results.Add(operation.Outcome ?? throw new InvalidOperationException("Import did not complete."));
+                }
+            }
         }
         finally
         {
-            try
-            {
-                await operation.DisposeAsync();
-            }
-            catch (Exception exception)
-            {
-                cleanupFailure = exception;
-            }
+            await Task.WhenAll(operations.Where(operation => operation.Lease is not null)
+                .Select(async operation => await operation.Lease!.DisposeAsync()));
         }
 
-        var failure = operationFailure is RequestFailedException { Status: 403 } ? operationFailure
-            : cleanupFailure is RequestFailedException { Status: 403 } ? cleanupFailure
-            : operationFailure ?? cleanupFailure;
-        if (failure is not null)
-        {
-            ExceptionDispatchInfo.Capture(failure).Throw();
-        }
+        return new SecretImportResponse(results, accessDenied);
+    }
 
-        return outcome ?? throw new InvalidOperationException("Import did not complete.");
+    /// <summary>Reports unattempted values while warning about metadata reserved earlier in the current batch.</summary>
+    private static SecretImportItemResult NotAttempted(string name) => new(name, "notAttempted",
+        "Import stopped because storage access was denied. A category reservation may have been saved; check this secret before retrying.");
+
+    /// <summary>Maps expected storage and category failures without exposing values or SDK messages.</summary>
+    private static SecretImportItemResult FailureResult(string name, Exception exception) => exception switch
+    {
+        RequestFailedException { Status: 403 } => new(name, "failed", "Storage access denied. A value or category reservation may have been saved. Contact your administrator."),
+        RequestFailedException => new(name, "failed", "Storage operation failed. Check this secret and its category before retrying; a value or category reservation may have been saved."),
+        ArgumentException or KeyNotFoundException or InvalidOperationException => new(name, "failed", "Category operation failed. Reload categories and check this secret before retrying."),
+        _ => throw exception
+    };
+
+    private sealed class ImportOperation(SecretExportItem item)
+    {
+        public SecretExportItem Item { get; } = item;
+        public IAsyncDisposable? Lease { get; set; }
+        public SecretImportItemResult? Outcome { get; set; }
+        public Exception? Failure { get; set; }
     }
 }

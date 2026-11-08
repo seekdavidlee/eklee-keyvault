@@ -100,6 +100,8 @@ transaction across Key Vault and blob storage. Ordinary storage/category failure
 are reported per entry and later entries continue. Storage access denial stops
 remaining writes and returns 403 with partial results. Check every failed entry
 before retrying: its value or category reservation may already have been saved.
+Check `notAttempted` entries too: their values were not written, but the current
+batch may already have reserved their categories and display names.
 Lease release can fail after a successful write or duplicate check; each input
 still has exactly one result. Recover a failed lease using the procedure below
 before retrying that name. Access denial from either the secret operation or
@@ -108,11 +110,21 @@ If only a reservation exists, retry in the same category or delete the absent
 name to clear it. If a value exists, a retry skips it; inspect the value, tags,
 and display metadata, then repair through the existing secret/metadata APIs.
 
-Imports use the same per-secret operation leases as normal create/delete. This
-prevents competing application imports and writes from overwriting existing
-secrets. Direct vault writers outside this application do not honor those leases;
-pause them during import. Soft-deleted names can fail creation until recovered
-or purged through existing vault administration procedures. Import does neither.
+Exports and imports use the same per-secret operation leases as normal
+create/delete, holding at most 100 leases per batch. Export reloads category
+membership under those leases before reading values, so a reassigned name cannot
+export another category's value. Import checks vault-wide duplicates under the
+leases and reserves each batch's categories and display names in one
+ETag-protected metadata update before writing values. A 1000-entry import needs
+10 metadata uploads without contention, rather than two uploads per new secret.
+An access denial stops later value writes and prevents subsequent batches from
+acquiring leases or reserving metadata.
+
+The leases prevent competing application imports and writes from overwriting
+existing secrets. Direct vault writers outside this application do not honor
+those leases; pause them during transfers. Soft-deleted names can fail creation
+until recovered or purged through existing vault administration procedures.
+Import does neither.
 
 ### API Contracts
 

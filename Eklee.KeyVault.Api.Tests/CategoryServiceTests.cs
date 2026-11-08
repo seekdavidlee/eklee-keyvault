@@ -494,6 +494,7 @@ public class CategoryServiceTests
         private readonly HashSet<string> operations = new(StringComparer.OrdinalIgnoreCase);
 
         public int Attempts { get; private set; }
+        public int Reads { get; private set; }
         public int ConflictsRemaining { get; set; }
         public Action<SecretItemMetaList>? OnConflict { get; set; }
         public int SuccessfulWrites { get; private set; }
@@ -552,8 +553,11 @@ public class CategoryServiceTests
 
         public SecretItemMetaList Read() => BinaryData.FromString(serialized).ToObjectFromJson<SecretItemMetaList>()!;
 
-        public override Task<(SecretItemMetaList MetaList, string? ETag)> GetMetaAsync() =>
-            Task.FromResult<(SecretItemMetaList, string?)>((Read(), version.ToString()));
+        public override Task<(SecretItemMetaList MetaList, string? ETag)> GetMetaAsync()
+        {
+            Reads++;
+            return Task.FromResult<(SecretItemMetaList, string?)>((Read(), version.ToString()));
+        }
 
         public override Task<string> UpdateMetaAsync(SecretItemMetaList state, string? ifMatchEtag)
         {

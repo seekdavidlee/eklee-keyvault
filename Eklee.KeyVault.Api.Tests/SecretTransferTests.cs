@@ -26,6 +26,85 @@ public class SecretTransferTests
     private static readonly JsonSerializerOptions Json = new(JsonSerializerDefaults.Web);
 
     [Fact]
+    public async Task GivenReassignedReservation_WhenExporting_DoesNotReadOtherCategoryValue()
+    {
+        var store = new CategoryServiceTests.MetadataStore();
+        var vault = new TransferVault();
+        var categories = new CategoryService(store, vault);
+        var source = await categories.CreateAsync("Source");
+        var other = await categories.CreateAsync("Other");
+        await categories.AssociateSecretAsync("reserved", source.Id);
+        vault.BeforeListing = async () =>
+        {
+            await using var operation = await store.AcquireSecretOperationAsync("reserved");
+            await categories.RemoveSecretAsync("reserved");
+            await categories.AssociateSecretAsync("reserved", other.Id);
+            await vault.SetSecretWithTagsAsync("reserved", "other-category-value", new Dictionary<string, string>());
+        };
+        vault.OnRead = _ => Assert.Fail("A reassigned secret must not be read.");
+
+        var export = await new SecretTransferService(vault, store, categories).ExportAsync(source.Id);
+
+        Assert.Empty(export.Secrets);
+        Assert.False(store.IsSecretLeased("reserved"));
+    }
+
+    [Fact]
+    public async Task GivenLargeCategory_WhenExporting_HoldsBoundedLeasesWhileReadingValues()
+    {
+        var store = new CategoryServiceTests.MetadataStore();
+        var vault = new TransferVault();
+        var categories = new CategoryService(store, vault);
+        var source = await categories.CreateAsync("Source");
+        for (var index = 0; index < 101; index++)
+        {
+            var name = "secret-" + index;
+            await categories.AssociateSecretAsync(name, source.Id);
+            await vault.SetSecretWithTagsAsync(name, "test-value", new Dictionary<string, string>());
+        }
+        vault.OnRead = name => Assert.True(store.IsSecretLeased(name));
+        var reads = store.Reads;
+
+        var export = await new SecretTransferService(vault, store, categories).ExportAsync(source.Id);
+
+        Assert.Equal(101, export.Secrets.Count);
+        Assert.InRange(store.MaximumLeases, 2, 100);
+        Assert.InRange(store.Reads - reads, 1, 3);
+        Assert.All(export.Secrets, item => Assert.False(store.IsSecretLeased(item.Name)));
+    }
+
+    [Fact]
+    public async Task GivenThousandNewSecrets_WhenImporting_PersistsAssociationsAndDisplayNamesInBoundedBatches()
+    {
+        var store = new CategoryServiceTests.MetadataStore();
+        var vault = new TransferVault();
+        var categories = new CategoryService(store, vault);
+        var destination = await categories.CreateAsync("Destination");
+        var writes = store.SuccessfulWrites;
+        var reads = store.Reads;
+        vault.OnSet = name =>
+        {
+            Assert.True(store.IsSecretLeased(name));
+            var metadata = store.Read().Items!.Single(item => item.Id == name);
+            Assert.Equal(destination.Id, metadata.CategoryId);
+            Assert.Equal("Display " + name, metadata.DisplayName);
+        };
+        var items = Enumerable.Range(0, 1000).Select(index => Item("secret-" + index) with
+        {
+            DisplayName = "Display secret-" + index
+        }).ToArray();
+
+        var result = await new SecretTransferService(vault, store, categories).ImportAsync(destination.Id, Document(items));
+
+        Assert.Equal(1000, result.Results.Count);
+        Assert.All(result.Results, item => Assert.Equal("imported", item.Status));
+        Assert.InRange(store.MaximumLeases, 2, 100);
+        Assert.InRange(store.SuccessfulWrites - writes, 1, 10);
+        Assert.InRange(store.Reads - reads, 1, 11);
+        Assert.All(items, item => Assert.False(store.IsSecretLeased(item.Name)));
+    }
+
+    [Fact]
     public async Task GivenCategoryExport_WhenImporting_PreservesNamesValuesAndAllTagsInDestination()
     {
         var sourceStore = new CategoryServiceTests.MetadataStore();
@@ -59,6 +138,168 @@ public class SecretTransferTests
             Assert.Equal(item.Value, destinationVault.Secrets[item.Name].Value);
             Assert.Equal(item.Tags.OrderBy(tag => tag.Key), destinationVault.Secrets[item.Name].Properties.Tags.OrderBy(tag => tag.Key));
         }
+    }
+
+    [Theory]
+    [InlineData(403, "notAttempted")]
+    [InlineData(500, "failed")]
+    public async Task GivenBatchMetadataFailure_WhenImporting_DoesNotWriteValuesAndReleasesAllLeases(int status, string followingStatus)
+    {
+        var store = new CategoryServiceTests.MetadataStore();
+        var vault = new TransferVault();
+        var categories = new CategoryService(store, vault);
+        var destination = await categories.CreateAsync("Destination");
+        store.OnWrite = _ => throw new RequestFailedException(status, "sensitive-marker");
+
+        var result = await new SecretTransferService(vault, store, categories).ImportAsync(destination.Id,
+            Document(Item("first"), Item("second"), Item("third")));
+
+        Assert.Equal(new[] { "failed", followingStatus, followingStatus }, result.Results.Select(item => item.Status));
+        Assert.Equal(status == 403, result.AccessDenied);
+        Assert.Equal(0, vault.Writes);
+        Assert.Empty(store.Read().Items ?? []);
+        Assert.All(result.Results, item => Assert.False(store.IsSecretLeased(item.Name)));
+        Assert.DoesNotContain("sensitive-marker", JsonSerializer.Serialize(result));
+    }
+
+    [Fact]
+    public async Task GivenAccessDenialInFirstBatch_WhenImporting_DoesNotAcquireOrReserveLaterBatches()
+    {
+        var store = new CategoryServiceTests.MetadataStore();
+        var vault = new TransferVault { FailureStatus = 403 };
+        var categories = new CategoryService(store, vault);
+        var destination = await categories.CreateAsync("Destination");
+        var writes = store.SuccessfulWrites;
+        var items = Enumerable.Range(0, 105).Select(index => Item(index == 1 ? "failure" : "secret-" + index)).ToArray();
+
+        var result = await new SecretTransferService(vault, store, categories).ImportAsync(destination.Id, Document(items));
+
+        Assert.True(result.AccessDenied);
+        Assert.Equal("imported", result.Results[0].Status);
+        Assert.Equal("failed", result.Results[1].Status);
+        Assert.All(result.Results.Skip(2), item => Assert.Equal("notAttempted", item.Status));
+        Assert.Equal(1, vault.Writes);
+        Assert.Equal(100, store.LeaseAttempts);
+        Assert.Equal(1, store.SuccessfulWrites - writes);
+        Assert.Equal(100, store.Read().Items!.Count);
+        Assert.All(items, item => Assert.False(store.IsSecretLeased(item.Name)));
+    }
+
+    [Fact]
+    public async Task GivenAccessDenialDuringBatchPreparation_WhenImporting_DoesNotReserveOrWriteAndReleasesAcquiredLeases()
+    {
+        var store = new CategoryServiceTests.MetadataStore();
+        var vault = new TransferVault
+        {
+            OnExists = name => { if (name == "denied") throw new RequestFailedException(403, "sensitive-marker"); }
+        };
+        var categories = new CategoryService(store, vault);
+        var destination = await categories.CreateAsync("Destination");
+
+        var result = await new SecretTransferService(vault, store, categories).ImportAsync(destination.Id,
+            Document(Item("first"), Item("denied"), Item("last")));
+
+        Assert.True(result.AccessDenied);
+        Assert.Equal(new[] { "notAttempted", "failed", "notAttempted" }, result.Results.Select(item => item.Status));
+        Assert.Equal(2, store.LeaseAttempts);
+        Assert.Equal(0, vault.Writes);
+        Assert.Empty(store.Read().Items ?? []);
+        Assert.All(result.Results, item => Assert.False(store.IsSecretLeased(item.Name)));
+    }
+
+    [Fact]
+    public async Task GivenConcurrentMetadataWriter_WhenImporting_RetriesBatchWithoutLosingUnrelatedChanges()
+    {
+        var store = new CategoryServiceTests.MetadataStore();
+        var vault = new TransferVault();
+        var categories = new CategoryService(store, vault);
+        var destination = await categories.CreateAsync("Destination");
+        var other = await categories.CreateAsync("Other");
+        store.ConflictsRemaining = 1;
+        store.OnConflict = current => (current.Items ??= []).Add(new SecretItemMeta
+        {
+            Id = "concurrent", DisplayName = "Keep this display", CategoryId = other.Id
+        });
+        store.OnWrite = _ =>
+        {
+            Assert.True(store.IsSecretLeased("first"));
+            Assert.True(store.IsSecretLeased("second"));
+        };
+        var attempts = store.Attempts;
+
+        var result = await new SecretTransferService(vault, store, categories).ImportAsync(destination.Id,
+            Document(Item("first") with { DisplayName = "First display" }, Item("second")));
+
+        Assert.All(result.Results, item => Assert.Equal("imported", item.Status));
+        Assert.Equal(2, store.Attempts - attempts);
+        var concurrent = store.Read().Items!.Single(item => item.Id == "concurrent");
+        Assert.Equal(other.Id, concurrent.CategoryId);
+        Assert.Equal("Keep this display", concurrent.DisplayName);
+        Assert.Equal("First display", store.Read().Items!.Single(item => item.Id == "first").DisplayName);
+    }
+
+    [Fact]
+    public async Task GivenOtherCategoryReservation_WhenImporting_FailsOnlyConflictingEntryWithoutMovingOrRenamingIt()
+    {
+        var store = new CategoryServiceTests.MetadataStore();
+        var vault = new TransferVault();
+        var categories = new CategoryService(store, vault);
+        var destination = await categories.CreateAsync("Destination");
+        var other = await categories.CreateAsync("Other");
+        await categories.AssociateSecretAsync("reserved", other.Id);
+        await categories.SetImportedDisplayNameAsync("reserved", "Keep this display");
+
+        var result = await new SecretTransferService(vault, store, categories).ImportAsync(destination.Id,
+            Document(Item("reserved") with { DisplayName = "Replacement" }, Item("valid")));
+
+        Assert.Equal(new[] { "failed", "imported" }, result.Results.Select(item => item.Status));
+        Assert.False(vault.Secrets.ContainsKey("reserved"));
+        var reserved = store.Read().Items!.Single(item => item.Id == "reserved");
+        Assert.Equal(other.Id, reserved.CategoryId);
+        Assert.Equal("Keep this display", reserved.DisplayName);
+        Assert.All(result.Results, item => Assert.False(store.IsSecretLeased(item.Name)));
+    }
+
+    [Fact]
+    public async Task GivenLeaseAcquisitionConflict_WhenExporting_ReleasesPreviouslyAcquiredLeasesWithoutReadingValues()
+    {
+        var store = new CategoryServiceTests.MetadataStore();
+        var vault = new TransferVault();
+        var categories = new CategoryService(store, vault);
+        var source = await categories.CreateAsync("Source");
+        foreach (var name in new[] { "first", "last" })
+        {
+            await categories.AssociateSecretAsync(name, source.Id);
+            await vault.SetSecretWithTagsAsync(name, "test-value", new Dictionary<string, string>());
+        }
+        await using var competing = await store.AcquireSecretOperationAsync("last");
+        vault.OnRead = _ => Assert.Fail("Values must not be read before all batch leases are acquired.");
+
+        var exception = await Assert.ThrowsAsync<RequestFailedException>(() =>
+            new SecretTransferService(vault, store, categories).ExportAsync(source.Id));
+
+        Assert.Equal(409, exception.Status);
+        Assert.False(store.IsSecretLeased("first"));
+        Assert.True(store.IsSecretLeased("last"));
+    }
+
+    [Fact]
+    public async Task GivenLeaseReleaseFailure_WhenExporting_AttemptsToReleaseEveryBatchLease()
+    {
+        var store = new CategoryServiceTests.MetadataStore { LeaseReleaseFailureName = "first", LeaseReleaseFailureStatus = 500 };
+        var vault = new TransferVault();
+        var categories = new CategoryService(store, vault);
+        var source = await categories.CreateAsync("Source");
+        foreach (var name in new[] { "first", "last" })
+        {
+            await categories.AssociateSecretAsync(name, source.Id);
+            await vault.SetSecretWithTagsAsync(name, "test-value", new Dictionary<string, string>());
+        }
+
+        await Assert.ThrowsAsync<RequestFailedException>(() => new SecretTransferService(vault, store, categories).ExportAsync(source.Id));
+
+        Assert.True(store.IsSecretLeased("first"));
+        Assert.False(store.IsSecretLeased("last"));
     }
 
     [Theory]
@@ -316,13 +557,29 @@ public class SecretTransferTests
         public Dictionary<string, KeyVaultSecret> Secrets { get; } = new(StringComparer.OrdinalIgnoreCase);
         public int Writes { get; private set; }
         public int? FailureStatus { get; init; }
-        public override Task<bool> SecretExistsAsync(string name) => Task.FromResult(Secrets.ContainsKey(name));
-        public override Task<IEnumerable<SecretItem>> GetSecretsAsync() => Task.FromResult<IEnumerable<SecretItem>>(
-            Secrets.Keys.Select(name => new SecretItem { Id = $"https://vault.example.test/secrets/{name}", Enabled = true }).ToArray());
-        public override Task<KeyVaultSecret> GetSecretWithTagsAsync(string name) => Task.FromResult(Secrets[name]);
+        public Func<Task>? BeforeListing { get; set; }
+        public Action<string>? OnRead { get; set; }
+        public Action<string>? OnSet { get; set; }
+        public Action<string>? OnExists { get; init; }
+        public override Task<bool> SecretExistsAsync(string name)
+        {
+            OnExists?.Invoke(name);
+            return Task.FromResult(Secrets.ContainsKey(name));
+        }
+        public override async Task<IEnumerable<SecretItem>> GetSecretsAsync()
+        {
+            if (BeforeListing is not null) await BeforeListing();
+            return Secrets.Keys.Select(name => new SecretItem { Id = $"https://vault.example.test/secrets/{name}", Enabled = true }).ToArray();
+        }
+        public override Task<KeyVaultSecret> GetSecretWithTagsAsync(string name)
+        {
+            OnRead?.Invoke(name);
+            return Task.FromResult(Secrets[name]);
+        }
         public override Task SetSecretWithTagsAsync(string name, string value, IReadOnlyDictionary<string, string> tags)
         {
             if (name == "failure" && FailureStatus is int status) throw new RequestFailedException(status, "sensitive-marker");
+            OnSet?.Invoke(name);
             var secret = new KeyVaultSecret(name, value);
             foreach (var tag in tags) secret.Properties.Tags.Add(tag.Key, tag.Value);
             Secrets[name] = secret;

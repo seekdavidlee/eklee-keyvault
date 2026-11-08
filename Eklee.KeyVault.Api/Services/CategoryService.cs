@@ -131,6 +131,33 @@ public class CategoryService(BlobService blobService, KeyVaultService keyVaultSe
         return (true, true);
     });
 
+    /// <summary>Reserves a leased import batch and its display names in one ETag-protected mutation without moving existing associations.</summary>
+    public Task<HashSet<string>> ReserveImportedSecretsAsync(IReadOnlyList<SecretExportItem> items, string categoryId) => MutateAsync(metadata =>
+    {
+        metadata.GetCategory(categoryId);
+        var existingItems = (metadata.Items ?? []).ToDictionary(item => item.Id!, StringComparer.OrdinalIgnoreCase);
+        var conflicts = new HashSet<string>(StringComparer.OrdinalIgnoreCase);
+        var changed = false;
+        foreach (var imported in items)
+        {
+            existingItems.TryGetValue(imported.Name, out var existing);
+            if (!string.IsNullOrEmpty(existing?.CategoryId) && existing.CategoryId != categoryId)
+            {
+                conflicts.Add(imported.Name);
+                continue;
+            }
+
+            var item = existing ?? new SecretItemMeta { Id = imported.Name };
+            if (existing is null) (metadata.Items ??= []).Add(item);
+            item.CategoryId = categoryId;
+            item.DisplayName = imported.DisplayName ?? imported.Name;
+            existingItems[imported.Name] = item;
+            changed = true;
+        }
+
+        return (conflicts, changed);
+    });
+
     /// <summary>Removes an association after deletion; callers must hold the per-secret lease through delete and cleanup.</summary>
     /// <param name="name">Deleted secret name.</param>
     /// <returns>A task completing after metadata cleanup.</returns>
