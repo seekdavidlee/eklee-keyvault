@@ -162,6 +162,26 @@ describe('category-first dashboard', () => {
     expect(screen.getByRole('button', { name: 'Imported' })).toBeInTheDocument();
   });
 
+  it('keeps a newly created destination selected when an older category-list request finishes', async () => {
+    const user = userEvent.setup();
+    const created = { id: 'created', name: 'Imported', isDefault: false };
+    let resolveCategories!: (items: typeof finance[]) => void;
+    vi.mocked(getCategories).mockResolvedValueOnce([finance, general]).mockImplementationOnce(() =>
+      new Promise((resolve) => { resolveCategories = resolve; }));
+    vi.mocked(createCategory).mockResolvedValue(created);
+    render(<MemoryRouter><Dashboard /></MemoryRouter>);
+    await user.click(await screen.findByRole('button', { name: 'Finance' }));
+    await user.click(screen.getByRole('button', { name: 'Import secrets' }));
+    await user.type(screen.getByRole('textbox', { name: 'New category name' }), 'Imported');
+    await user.click(screen.getByRole('button', { name: 'Create destination category' }));
+    expect(screen.getByRole('combobox', { name: 'Destination category' })).toHaveTextContent('Imported');
+    await act(async () => resolveCategories([finance, general]));
+    expect(screen.getByRole('combobox', { name: 'Destination category' })).toHaveTextContent('Imported');
+    await user.click(screen.getByRole('combobox', { name: 'Destination category' }));
+    expect(await screen.findByRole('option', { name: 'Imported' })).toBeInTheDocument();
+    expect(screen.getByRole('option', { name: 'Finance' })).toBeInTheDocument();
+  });
+
   it('reports rejected malformed files without rendering parser or response secrets', async () => {
     const user = userEvent.setup();
     const raw = '{"value":"sensitive-marker"';

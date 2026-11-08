@@ -41,7 +41,11 @@ export function SecretTransferControls({ category, onCategoryCreated, onImported
   useEffect(() => {
     if (mode !== 'import') return;
     let ignore = false;
-    getCategories().then((items) => { if (!ignore) setCategories(items); }).catch(() => {
+    getCategories().then((items) => {
+      if (!ignore) setCategories((current) => [
+        ...new Map([...current, ...items].map((item) => [item.id, item] as const)).values(),
+      ]);
+    }).catch(() => {
       if (!ignore) setError('Unable to load destination categories. Close and retry.');
     });
     return () => { ignore = true; };

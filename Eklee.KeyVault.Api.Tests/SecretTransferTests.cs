@@ -283,7 +283,12 @@ public class SecretTransferTests
         Assert.Equal(HttpStatusCode.BadRequest, rejected.StatusCode);
         Assert.DoesNotContain("sensitive-marker", await rejected.Content.ReadAsStringAsync());
         using var oversized = new StringContent(new string(' ', SecretTransferService.MaximumFileBytes + 1), System.Text.Encoding.UTF8, "application/json");
-        using var tooLarge = await client.PostAsync($"/api/secret-transfers/import?categoryId={destination.Id}", oversized);
+        using var oversizedRequest = new HttpRequestMessage(HttpMethod.Post, $"/api/secret-transfers/import?categoryId={destination.Id}")
+        {
+            Content = oversized
+        };
+        oversizedRequest.Headers.ExpectContinue = true;
+        using var tooLarge = await client.SendAsync(oversizedRequest);
         Assert.Equal(HttpStatusCode.RequestEntityTooLarge, tooLarge.StatusCode);
         Assert.Equal(0, vault.Writes);
         await app.StopAsync();
