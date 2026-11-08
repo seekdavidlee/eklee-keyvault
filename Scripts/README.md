@@ -18,7 +18,6 @@ folder, which contains infrastructure-as-code and CI/CD deployment helpers.
 
 | Script | Purpose |
 | --- | --- |
-| [`copy-keyvault-secrets.ps1`](copy-keyvault-secrets.ps1) | Copies enabled secrets from an Azure Key Vault into the Eklee KeyVault API without overwriting existing secrets. |
 | [`../Setup-Dev.ps1`](../Setup-Dev.ps1) | Deploys the single maintainer dev profile with `azd` and configures its dedicated API registration and Reader-scoped GitHub OIDC E2E identity. |
 | [`Invoke-HostedE2E.ps1`](Invoke-HostedE2E.ps1) | Updates the permanent branch Container App from the checked-out feature or bugfix commit, then runs local Playwright tests. |
 | [`setup-gh-deploy.ps1`](setup-gh-deploy.ps1) | Creates the GitHub Actions OIDC deployment identity, resource groups, role assignments, and environment variables. |
