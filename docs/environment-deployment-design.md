@@ -219,10 +219,13 @@ themselves remain separate resources. The cleanup action must remove only the
 Container App associated with the merged branch or release and must leave the
 managed identity in place for future deployments.
 
-[`setup-gh-deploy.ps1`](../Scripts/setup-gh-deploy.ps1) defines an intended
-OIDC federated-credential subject for the `dev` GitHub Environment. The script
-is not evidence that the identity exists or that its settings remain current in
-Microsoft Entra ID.
+[`Setup-Dev.ps1`](../Setup-Dev.ps1) creates or reuses the deployment identity,
+reconciles the OIDC federated credential for the `dev` GitHub Environment,
+assigns Contributor on the maintainer profile's exact resource group, and sets
+the Azure deployment variables before assigning the hosted E2E role. It reuses
+an existing `AZURE_CLIENT_ID` and repairs a missing service principal. The script
+does not configure GitHub environment protections or prove that external
+settings remain unchanged after setup.
 
 Before relying on this model, maintainers must verify these repository-external
 controls:
@@ -315,5 +318,5 @@ for those changes.
 * [GHCR image cleanup workflow](../.github/workflows/cleanup-container-app.yml)
 * [Local infrastructure deployment](../Deployment/README.md#development-environment)
 * [Bicep environment parameter](../Deployment/main.bicep)
-* [GitHub deployment setup](../Scripts/setup-gh-deploy.ps1)
+* [GitHub deployment setup](../Setup-Dev.ps1)
 * [GitHub Release and Container Versioning Design](release-versioning-design.md)

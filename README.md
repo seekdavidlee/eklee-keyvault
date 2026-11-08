@@ -295,7 +295,6 @@ The API listens on `http://localhost:5000` by default.
 ## Automated Deployment
 
 1. Fork this repo.
-1. Run `Scripts/setup-gh-deploy.ps1` to create the deployment service principal, resource groups, RBAC assignments, and set the deployment-related GitHub environment variables (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `RESOURCE_GROUP`).
 1. Run `Eklee.KeyVault.Api/setup-app-registration.ps1` with the
   `-GitHubOrganization`, `-GitHubRepoName`, and `-AzureAdRedirectUriDev`
   parameters to create the maintainer dev app registration and set the
@@ -304,7 +303,16 @@ The API listens on `http://localhost:5000` by default.
   registrations are configured by the customer deployment process.
 
 1. Provision infrastructure locally using the [development infrastructure deployment instructions](Deployment/README.md#development-environment), including the required [managed identity RBAC script](Deployment/assign-mi-rbac.ps1). Infrastructure provisioning is separate from application CI/CD.
-1. Run `Setup-Dev.ps1` for the repository maintainer dev environment. It provisions the permanent main, release, and branch Container Apps; binds their custom HTTPS domains; and reconciles the three SPA redirect URLs locally.
+1. Run `Setup-Dev.ps1` for the repository maintainer dev environment. It provisions
+  the permanent main, release, and branch Container Apps; binds their custom HTTPS
+  domains; and reconciles the three SPA redirect URLs locally. It also creates or
+  reuses the deployment identity, reconciles its GitHub `dev` OIDC credential,
+  assigns Contributor on the profile's exact resource group, and sets the Azure
+  deployment variables. An existing `AZURE_CLIENT_ID` is reused rather than replaced.
+1. Configure the GitHub `dev` environment's branch restrictions and required
+  reviewers before running deployments or hosted E2E. These protections are not
+  configured by the setup script. The Azure CLI user running setup needs permission
+  to manage app registrations and assign roles on the development resource group.
 1. Push changes matching the [CI/CD path filters](.github/workflows/cicd.yml)
   to trigger image publication, deployment, and hosted E2E. `main` selects the
   permanent main/dev target, `release/*` selects the release target, and other
@@ -322,16 +330,16 @@ release promotion publishes the semantic release artifacts and deletes the
 matching `release-<normalized-version>` GHCR image. No workflow deletes a
 permanent Container App.
 
-The two setup scripts configure the following GitHub environment variables in `dev`:
+The setup scripts configure the following GitHub environment variables in `dev`:
 
 | Variable | Set by |
 | --- | --- |
-| `AZURE_CLIENT_ID` | `setup-gh-deploy.ps1` |
-| `AZURE_TENANT_ID` | `setup-gh-deploy.ps1` |
-| `AZURE_SUBSCRIPTION_ID` | `setup-gh-deploy.ps1` |
-| `RESOURCE_GROUP` | `setup-gh-deploy.ps1` |
-| `VITE_AZURE_AD_CLIENT_ID` | `setup-app-registration.ps1` |
-| `VITE_AZURE_AD_AUTHORITY` | `setup-app-registration.ps1` |
+| `AZURE_CLIENT_ID` | `Setup-Dev.ps1` |
+| `AZURE_TENANT_ID` | `Setup-Dev.ps1` |
+| `AZURE_SUBSCRIPTION_ID` | `Setup-Dev.ps1` |
+| `RESOURCE_GROUP` | `Setup-Dev.ps1` |
+| `VITE_AZURE_AD_CLIENT_ID` | `Setup-Dev.ps1` |
+| `VITE_AZURE_AD_AUTHORITY` | `Setup-Dev.ps1` |
 | `VITE_AZURE_AD_REDIRECT_URI` | `setup-app-registration.ps1` |
 
 ## Custom Domain
