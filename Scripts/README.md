@@ -19,7 +19,6 @@ folder, which contains infrastructure-as-code and CI/CD deployment helpers.
 | Script | Purpose |
 | --- | --- |
 | [`../Setup-Dev.ps1`](../Setup-Dev.ps1) | Deploys the single maintainer dev profile with `azd` and configures its dedicated API registration and Reader-scoped GitHub OIDC E2E identity. |
-| [`Invoke-HostedE2E.ps1`](Invoke-HostedE2E.ps1) | Updates the permanent branch Container App from the checked-out feature or bugfix commit, then runs local Playwright tests. |
 | [`setup-gh-deploy.ps1`](setup-gh-deploy.ps1) | Creates the GitHub Actions OIDC deployment identity, resource groups, role assignments, and environment variables. |
 
 ## Container App Resource Tags
@@ -53,28 +52,16 @@ ambiguity before provisioning; do not select or retag an app heuristically.
 
 ## Hosted E2E Tests
 
-Run the local Playwright authentication test from a checked-out feature or
-bugfix branch after its CI image has been published:
+Push changes matching the path filters in the
+[CI/CD workflow](../.github/workflows/cicd.yml) to publish an immutable image,
+deploy it, and run hosted Playwright tests. `main` uses the permanent main/dev
+app, `release/*` uses the release app, and other branches use the shared branch
+app. Documentation-only pushes do not trigger this workflow.
 
-```powershell
-./Scripts/Invoke-HostedE2E.ps1 -Current
-```
-
-The command reads the single maintainer profile at
-`$HOME/.eklee-keyvault/setup-dev.json`, which is configured by
-[`../Setup-Dev.ps1`](../Setup-Dev.ps1). Its `environmentName` identifies the
-azd environment that supplies the resource group, API client ID, tenant, and
-subscription. It verifies the approved GitHub origin and active subscription,
-resolves the CI image tagged for the exact checked-out commit to an immutable
-digest, updates only the permanent branch app, waits for `/healthz`, acquires
-an API token through the signed-in Azure CLI identity, and runs `login.spec.ts`.
-It rejects detached checkouts, `main`, and `release/*` before any Azure update.
-The permanent redirects are registered by `Setup-Dev.ps1`; this command never
-modifies Microsoft Entra redirect URIs.
-
-Use `-Filter secrets-crud` for the Admin CRUD test or `-Headed` to show the
-browser. Use `-NoDeps` when the UI dependencies and Chromium are already
-installed.
+Review the corresponding GitHub Actions run for test results and Playwright
+artifacts. A later qualifying branch push can replace the shared branch app's
+deployed image. Permanent redirects are registered by
+[`../Setup-Dev.ps1`](../Setup-Dev.ps1).
 
 ## Dev E2E Identity
 
@@ -87,7 +74,7 @@ prompts for and persists the HTTPS hostnames for the main/dev, release, and
 branch apps as `customDevDomainName`, `customReleaseDomainName`, and
 `customBranchDomainName`. These fields are maintainer-only and are not part of
 the customer `Setup.ps1` profile contract. It also records the approved GitHub
-repository used by the local branch deployment command.
+repository used by the maintainer setup process.
 Supplying both `-LegacyApiClientId` and `-LegacyCallerAppId` inspects that exact
 legacy role assignment without changing it. Removal requires
 `-RemoveLegacyE2ERole` and `-ConfirmLegacyRemoval` in addition to both IDs.

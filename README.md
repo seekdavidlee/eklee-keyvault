@@ -310,9 +310,8 @@ The API listens on `http://localhost:5000` by default.
   permanent main/dev target, `release/*` selects the release target, and other
   branches select the shared branch target. Documentation-only pushes do not
   trigger this workflow. Branch deployments share one permanent Container App;
-  a later qualifying branch push can replace its deployed image. To redeploy
-  and locally test a specific feature or bugfix commit after its image is
-  published, run `./Scripts/Invoke-HostedE2E.ps1 -Current` from that checkout.
+  a later qualifying branch push can replace its deployed image. Review the
+  corresponding GitHub Actions run for deployment and hosted E2E results.
 
 1. Perform user role assignments per [Post Deployment RBAC](#post-deployment-rbac).
 

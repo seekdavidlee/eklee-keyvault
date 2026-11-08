@@ -269,14 +269,14 @@ flowchart LR
 
 ## Operational Guidance
 
-Any non-`main` branch push creates a dedicated development Container App, but
-does not trigger hosted E2E unless the branch is `release/**`. The app reuses
-the existing `dev` managed identity and remains available until the branch is
-merged into a release branch, after which the cleanup action removes its branch
-GHCR image. Main and `release/*` pushes update the corresponding permanent
-Container App by immutable digest, then run hosted E2E under a target-scoped
-FIFO queue. A feature or bugfix branch image is deployed only when a maintainer
-runs `Invoke-HostedE2E.ps1 -Current` locally against the permanent branch app.
+Pushes matching the CI/CD path filters update a permanent Container App by
+immutable digest, then run hosted E2E under a target-scoped FIFO queue. `main`
+uses the main/dev app, `release/*` uses the release app, and other branches use
+the shared branch app. All targets use the `dev` GitHub Environment and its
+existing managed identity. Documentation-only pushes do not trigger CI/CD.
+A later qualifying branch push can replace the shared branch app's deployed
+image. When a branch is merged into a release branch, the cleanup action removes
+its branch GHCR image, not the permanent Container App.
 
 Use a semantic GHCR version or digest to identify a public release; do not infer
 that identity from the mutable GHCR `latest` tag.
@@ -290,12 +290,10 @@ for those changes.
 
 * Confirm `Setup-Dev.ps1` configures the main, release, and branch custom domains
   and reconciles all three redirect URLs.
-* Confirm `main` and `release/*` runs select the `dev` GitHub Environment, deploy
+* Confirm all qualifying branch runs select the `dev` GitHub Environment, deploy
   only their matching permanent target, and complete E2E before their target queue advances.
-* Confirm a feature or bugfix CI run publishes an immutable commit image without
-  selecting a GitHub Environment or deploying Azure resources.
-* Confirm the local branch command verifies its approved origin and commit digest
-  before updating only the permanent branch app.
+* Confirm a feature or bugfix CI run publishes an immutable commit image,
+  deploys only the permanent branch app, and runs hosted E2E.
 * Confirm the customer deployment process selects an immutable main image tag or
   digest before updating production.
 * Confirm a release merge publishes semantic release artifacts only after the
