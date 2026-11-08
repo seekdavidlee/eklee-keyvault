@@ -44,6 +44,88 @@ soft deletion remain available under the existing roles. Moving an existing
 secret to another category is not supported. User-role accounts can browse
 categories and read secrets, but cannot manage categories or modify secrets.
 
+### Export and Import
+
+Open a category and choose **Export category**. Confirm the warning before
+downloading `secrets-export.json`; only that category's secrets are included.
+Admin and User accounts can export. Only Admin accounts can import.
+
+> [!WARNING]
+> Exported JSON is unencrypted and contains actual secret values and all tags.
+> Store it securely, do not commit it or attach it to issues, and delete it when
+> no longer needed. Export responses are marked `Cache-Control: no-store`.
+
+Choose **Import secrets**, select an application-generated JSON file, and select
+a destination category. No destination is selected automatically. You can enter
+a unique **New category name** and choose **Create destination category**;
+creation selects the new category without importing anything yet. Import assigns
+all new secrets to that destination. Original vault names, values, display names,
+and all Key Vault tag keys and values are preserved, including tags named
+`category`. Category associations live in blob metadata, not in user-defined tags.
+
+The format is versioned and includes empty tag objects for secrets without tags:
+
+```json
+{
+  "formatVersion": 1,
+  "secrets": [
+    {
+      "name": "example-secret",
+      "value": "example-value-not-a-real-secret",
+      "tags": { "environment": "test", "category": "user-defined" },
+      "displayName": "Example"
+    }
+  ]
+}
+```
+
+Files are limited to 10 MiB and 1000 entries. Names require 1-127 ASCII letters,
+digits, or hyphens; values allow up to 25 KiB in UTF-8. Tags allow at most 15
+string pairs per secret, with keys of 1-512 characters and values of 0-256
+characters. Display names are preserved without truncation within the file-size
+limit. Outgoing records must satisfy the same constraints as imports. Unknown fields,
+duplicate JSON properties, unsupported versions, invalid types, and invalid
+entries reject the entire file before any secret or association writes. Errors
+never echo secret values or SDK response bodies.
+
+Duplicate names are compared without regard to case across the entire vault,
+including enabled and disabled secrets in other categories. They are skipped
+without changing values, tags, or associations. Within a file, the first entry
+is attempted and later case-insensitive matches are skipped. Nonduplicates
+continue importing. The result lists each name as `imported`, `skipped`, `failed`,
+or `notAttempted`, without values or tags.
+
+Operational failures after validation can leave partial results; import is not a
+transaction across Key Vault and blob storage. Ordinary storage/category failures
+are reported per entry and later entries continue. Storage access denial stops
+remaining writes and returns 403 with partial results. Check every failed entry
+before retrying: its value or category reservation may already have been saved.
+Check `notAttempted` entries too: their values were not written, but the current
+batch may already have reserved their categories and display names.
+Lease release can fail after a successful write or duplicate check; each input
+still has exactly one result. Recover a failed lease using the procedure below
+before retrying that name. Access denial from either the secret operation or
+lease cleanup stops remaining writes, even when the other operation also fails.
+If only a reservation exists, retry in the same category or delete the absent
+name to clear it. If a value exists, a retry skips it; inspect the value, tags,
+and display metadata, then repair through the existing secret/metadata APIs.
+
+Exports and imports use the same per-secret operation leases as normal
+create/delete, holding at most 100 leases per batch. Export reloads category
+membership under those leases before reading values, so a reassigned name cannot
+export another category's value. Import checks vault-wide duplicates under the
+leases and reserves each batch's categories and display names in one
+ETag-protected metadata update before writing values. A 1000-entry import needs
+10 metadata uploads without contention, rather than two uploads per new secret.
+An access denial stops later value writes and prevents subsequent batches from
+acquiring leases or reserving metadata.
+
+The leases prevent competing application imports and writes from overwriting
+existing secrets. Direct vault writers outside this application do not honor
+those leases; pause them during transfers. Soft-deleted names can fail creation
+until recovered or purged through existing vault administration procedures.
+Import does neither.
+
 ### API Contracts
 
 | Endpoint | Role | Contract |
@@ -54,6 +136,13 @@ categories and read secrets, but cannot manage categories or modify secrets.
 | `DELETE /api/categories/{id}` | Admin | Deletes only an empty, nondefault category |
 | `GET /api/secrets?categoryId={id}` | Admin or User | Only secrets associated with that category; unknown ID returns 404 |
 | `PUT /api/secrets/{name}` | Admin | New secrets require `{ "value": "...", "categoryId": "..." }` |
+| `GET /api/secret-transfers/export?categoryId={id}` | Admin or User | Downloads unencrypted version-1 JSON from an existing category; no-store |
+| `POST /api/secret-transfers/import?categoryId={id}` | Admin | Raw export JSON body; required existing destination; value-free per-entry results |
+
+Transfer validation and missing categories return 400. Unauthorized roles return
+401/403; storage access denial returns 403, and preflight storage unavailability
+returns 503. Requests above 10 MiB return 413. A validated import may return 200
+with per-entry failures; always inspect every result rather than only HTTP status.
 
 Existing secret value updates can omit `categoryId`; supplying another category
 returns 409 rather than moving the secret. Invalid names or creation categories
@@ -185,8 +274,8 @@ From the repository root, run the focused test wrappers without live identities
 or APIs:
 
 ```powershell
-./.github/skills/unit-test-backend/scripts/Invoke-BackendUnitTests.ps1 -Filter 'FullyQualifiedName~Category'
-./.github/skills/unit-test-frontend/scripts/Invoke-FrontendUnitTests.ps1 -TestFiles src/services/categoriesService.test.ts,src/pages/CategoryManagement.test.tsx,src/pages/Dashboard.test.tsx -Build -Lint
+./.github/skills/unit-test-backend/scripts/Invoke-BackendUnitTests.ps1 -Filter 'FullyQualifiedName~Category|FullyQualifiedName~SecretTransferTests'
+./.github/skills/unit-test-frontend/scripts/Invoke-FrontendUnitTests.ps1 -TestFiles src/services/categoriesService.test.ts,src/pages/CategoryManagement.test.tsx,src/pages/Dashboard.test.tsx,src/services/secretsService.test.ts -Build -Lint
 ```
 
 These checks do not run hosted E2E. The existing hosted CRUD test enters the
