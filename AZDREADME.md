@@ -75,11 +75,11 @@ the digest, `CONTAINER_IMAGE` retains the selected image for a retry. Run
 
 With `-WhatIf`, version-only mode selects and reads the environment and verifies
 the app, but skips release resolution, setting `CONTAINER_IMAGE`, and the Azure
-image update. To run the dependency-free setup regression checks:
+image update.
 
-```powershell
-./Scripts/tests/Invoke-SetupTests.ps1
-```
+The checkout does not include a dedicated setup regression test suite. Automated
+setup regression coverage is unavailable; `-WhatIf` checks are not a substitute
+for validating an actual version-only update in a test environment.
 
 ## Provisioning Configuration
 
