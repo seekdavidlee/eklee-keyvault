@@ -292,20 +292,6 @@ dotnet run
 
 The API listens on `http://localhost:5000` by default.
 
-### Updating NuGet Packages
-
-Run the update script from the repo root to update all NuGet packages in the API project to their latest stable versions:
-
-```powershell
-.\UpdateNuget.ps1
-```
-
-To target a different project file:
-
-```powershell
-.\UpdateNuget.ps1 -ProjectPath "path/to/Project.csproj"
-```
-
 ## Automated Deployment
 
 1. Fork this repo.
