@@ -70,9 +70,10 @@ that role.
 ## Required Setup
 
 Only the maintainer-owned dev API application registration may expose the
-application-only `E2E.Tester` role. `Setup-Dev.ps1` assigns that role to the
-existing `dev` GitHub Environment deployment principal. The role is never added
-to a customer-created or production API registration.
+application-only `E2E.Tester` role.
+[Setup-Maintainer.ps1](../Deployment/Setup-Maintainer.ps1) assigns that role to
+the existing `dev` GitHub Environment deployment principal. The role is never
+added to a customer-created or production API registration.
 
 The shared principal retains its existing deployment permissions, including its
 dev Contributor assignment. Protect the `dev` environment and its release
@@ -81,10 +82,10 @@ surface. The maintainer-only provisioning path is intentionally excluded from
 customer setup and `azd` deployment workflows.
 
 Deploy the maintainer development target with `azd` and reconcile its identities
-with:
+from the repository root with:
 
 ```powershell
-./Setup-Dev.ps1
+./Deployment/Setup-Maintainer.ps1
 ```
 
 The script reads exactly one target from

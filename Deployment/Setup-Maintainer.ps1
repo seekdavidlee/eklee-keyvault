@@ -4,7 +4,7 @@
 
 <#!
 .SYNOPSIS
-    Deploys the maintainer dev target and configures its hosted E2E identity.
+    Deploys the maintainer dev target and configures GitHub deployment and hosted E2E.
 
 .DESCRIPTION
     Loads exactly one maintainer target from the current user's setup-dev.json,
@@ -12,12 +12,13 @@
     deployment, it creates or reconciles the dedicated development API
     application registration and service principal. The application-only
     E2E.Tester role is created only for that registration and assigned to the
-    existing dev deployment principal.
+    dev deployment principal, creating it when needed.
 
     The script updates the dev GitHub Environment with the development API
     audience used by deployed Container Apps. It assigns the dedicated dev API
-    test role to the existing dev deployment principal, identified by the
-    environment's AZURE_CLIENT_ID variable. Configure the environment's
+    test role to the dev deployment principal. It configures the GitHub OIDC
+    credential, resource-group Contributor access, and deployment variables.
+    An existing AZURE_CLIENT_ID is reused. Configure the environment's
     repository, release-branch, and reviewer protections in GitHub before using
     that principal for hosted E2E.
 
@@ -52,10 +53,10 @@
     Confirms the requested legacy-role mutation.
 
 .EXAMPLE
-    ./Setup-Dev.ps1
+    ./Deployment/Setup-Maintainer.ps1
 
 .EXAMPLE
-    ./Setup-Dev.ps1 -RemoveLegacyE2ERole -LegacyApiClientId <api-client-id> -LegacyCallerAppId <caller-client-id> -ConfirmLegacyRemoval
+    ./Deployment/Setup-Maintainer.ps1 -RemoveLegacyE2ERole -LegacyApiClientId <api-client-id> -LegacyCallerAppId <caller-client-id> -ConfirmLegacyRemoval
 #>
 
 [CmdletBinding(SupportsShouldProcess)]
@@ -628,6 +629,86 @@ function Get-GitHubEnvironmentVariable {
     return $value
 }
 
+function Set-GitHubDeploymentIdentity {
+    [CmdletBinding()]
+    param(
+        [Parameter(Mandatory = $true)]
+        [string]$Repository,
+
+        [Parameter(Mandatory = $true)]
+        [psobject]$Target
+    )
+
+    $variablesOutput = & gh api "repos/$Repository/environments/dev/variables" --paginate --slurp 2>&1
+    if ($LASTEXITCODE -ne 0) {
+        throw "Failed to list dev GitHub Environment variables: $($variablesOutput -join ' ')"
+    }
+    $variables = ($variablesOutput -join [Environment]::NewLine) | ConvertFrom-Json
+    $clientVariable = @($variables.variables | Where-Object { $_.name -eq 'AZURE_CLIENT_ID' }) | Select-Object -First 1
+    if ($null -ne $clientVariable) {
+        if ([string]::IsNullOrWhiteSpace([string]$clientVariable.value)) {
+            throw 'The existing dev AZURE_CLIENT_ID is empty. Correct it before continuing.'
+        }
+        $application = Invoke-AzJson -Arguments @('ad', 'app', 'show', '--id', $clientVariable.value, '--output', 'json')
+    }
+    else {
+        $application = Get-OrCreateApplication -DisplayName 'eklee-azkeyvault-viewer-gh-deploy'
+    }
+    if ($application.displayName -eq $Target.appRegistrationName) {
+        throw 'The deployment identity must differ from the development API registration.'
+    }
+    $principal = Get-OrCreateServicePrincipal -ApplicationId $application.appId
+    $scope = "/subscriptions/$($Target.subscriptionId)/resourceGroups/$($Target.resourceGroupName)"
+    $assignments = @(Invoke-AzJson -Arguments @(
+        'role', 'assignment', 'list', '--assignee', $principal.id,
+        '--role', 'Contributor', '--scope', $scope, '--output', 'json'
+    ))
+    if ($assignments.Count -eq 0) {
+        $null = Invoke-AzJson -Arguments @(
+            'role', 'assignment', 'create', '--assignee-object-id', $principal.id,
+            '--assignee-principal-type', 'ServicePrincipal', '--role', 'Contributor',
+            '--scope', $scope, '--output', 'json'
+        )
+    }
+
+    $credentialName = 'github-actions-env-dev'
+    $credentials = @(Invoke-AzJson -Arguments @('ad', 'app', 'federated-credential', 'list', '--id', $application.id, '--output', 'json'))
+    $credential = $credentials | Where-Object { $_.name -eq $credentialName } | Select-Object -First 1
+    $credentialBody = @{
+        name = $credentialName
+        issuer = 'https://token.actions.githubusercontent.com'
+        subject = "repo:${Repository}:environment:dev"
+        description = 'GitHub Actions deployment for dev environment'
+        audiences = @('api://AzureADTokenExchange')
+    }
+    $credentialPath = [System.IO.Path]::GetTempFileName()
+    try {
+        $credentialBody | ConvertTo-Json -Depth 5 | Set-Content -LiteralPath $credentialPath -Encoding utf8NoBOM
+        $arguments = @('ad', 'app', 'federated-credential')
+        if ($null -eq $credential) {
+            $arguments += @('create')
+        }
+        else {
+            $arguments += @('update', '--federated-credential-id', $credential.id)
+        }
+        $null = Invoke-AzJson -Arguments ($arguments + @('--id', $application.id, '--parameters', "@$credentialPath", '--output', 'json'))
+    }
+    finally {
+        Remove-Item -LiteralPath $credentialPath -Force
+    }
+
+    $deploymentVariables = @{
+        AZURE_CLIENT_ID = [string]$application.appId
+        AZURE_TENANT_ID = [string]$Target.tenantId
+        AZURE_SUBSCRIPTION_ID = [string]$Target.subscriptionId
+        RESOURCE_GROUP = [string]$Target.resourceGroupName
+    }
+    foreach ($variable in $deploymentVariables.GetEnumerator()) {
+        Set-GitHubEnvironmentVariable -Repository $Repository -Environment 'dev' -Name $variable.Key -Value $variable.Value
+    }
+    return $principal
+}
+
 function Get-AzdEnvironmentValue {
     [CmdletBinding()]
     [OutputType([string])]
@@ -754,7 +835,8 @@ if ($MyInvocation.InvocationName -eq '.') {
 $maintainerTarget = Get-MaintainerDevTarget -Path $ProfilePath
 Assert-DevRegistrationIsDistinct -Target $maintainerTarget -CustomerPath $CustomerProfilePath
 
-$setupScriptPath = Join-Path $PSScriptRoot 'Setup.ps1'
+$repositoryPath = Split-Path -Parent $PSScriptRoot
+$setupScriptPath = Join-Path $repositoryPath 'Setup.ps1'
 if (-not (Test-Path -LiteralPath $setupScriptPath)) {
     throw "Required customer setup helper '$setupScriptPath' was not found."
 }
@@ -768,7 +850,7 @@ foreach ($domainPropertyName in @('customDevDomainName', 'customReleaseDomainNam
 $githubRepository = Resolve-GitHubRepository `
     -Organization $GitHubOrganization `
     -RepositoryName $GitHubRepoName `
-    -RepositoryPath $PSScriptRoot
+    -RepositoryPath $repositoryPath
 $GitHubOrganization = $githubRepository.Organization
 $GitHubRepoName = $githubRepository.Repository
 Set-MaintainerApprovedGitHubRepository `
@@ -787,10 +869,10 @@ if ($WhatIfPreference) {
     return
 }
 
-Push-Location $PSScriptRoot
+Push-Location $repositoryPath
 try {
     Connect-ToTarget -Target $maintainerTarget
-    Set-MaintainerDevAzdEnvironment -Target $maintainerTarget -RepositoryPath $PSScriptRoot
+    Set-MaintainerDevAzdEnvironment -Target $maintainerTarget -RepositoryPath $repositoryPath
 
     if (-not $PSCmdlet.ShouldProcess("azd environment '$($maintainerTarget.environmentName)'", 'Run azd up')) {
         return
@@ -804,7 +886,7 @@ finally {
 
 if (-not $PSCmdlet.ShouldProcess(
         "maintainer API '$($maintainerTarget.appRegistrationName)'",
-    'Configure the dev deployment principal for hosted E2E')) {
+    'Configure GitHub deployment and the dev deployment principal for hosted E2E')) {
     return
 }
 
@@ -840,8 +922,8 @@ if ($LASTEXITCODE -ne 0) {
     throw "Failed to ensure GitHub Environment 'dev': $($output -join ' ')"
 }
 Set-GitHubPermanentTargetVariables -Repository $repository -Environment 'dev'
-$deploymentClientId = Get-GitHubEnvironmentVariable -Repository $repository -Environment 'dev' -Name 'AZURE_CLIENT_ID'
-$deploymentServicePrincipal = Get-ExistingServicePrincipal -ApplicationId $deploymentClientId
+$deploymentServicePrincipal = Set-GitHubDeploymentIdentity -Repository $repository -Target $maintainerTarget
+$deploymentClientId = $deploymentServicePrincipal.appId
 Set-E2eApplicationRole -ApiApplication $apiApplication -CallerServicePrincipal $deploymentServicePrincipal -ApiServicePrincipal $apiServicePrincipal
 
 Set-GitHubEnvironmentVariable -Repository $repository -Environment 'dev' -Name 'VITE_AZURE_AD_CLIENT_ID' -Value $apiApplication.appId

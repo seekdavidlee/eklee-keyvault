@@ -11,7 +11,7 @@ tags:
   - keyvault
   - development
 ai_note: Updated with AI assistance and requires maintainer review
-summary: Setup and operations for the KeyVault client, including shared categories and startup migration.
+summary: Local setup, customer and maintainer deployment, application access, and category-based secret management with import/export and startup migration.
 post_date: 2026-11-01
 ---
 
@@ -115,8 +115,8 @@ create/delete, holding at most 100 leases per batch. Export reloads category
 membership under those leases before reading values, so a reassigned name cannot
 export another category's value. Import checks vault-wide duplicates under the
 leases and reserves each batch's categories and display names in one
-ETag-protected metadata update before writing values. A 1000-entry import needs
-10 metadata uploads without contention, rather than two uploads per new secret.
+ETag-protected metadata update before writing values. A 1000-entry import of new
+names needs 10 metadata uploads without contention, rather than two per secret.
 An access denial stops later value writes and prevents subsequent batches from
 acquiring leases or reserving metadata.
 
@@ -134,10 +134,19 @@ Import does neither.
 | `POST /api/categories` | Admin | `{ "name": "Finance" }`; returns the new category |
 | `PUT /api/categories/{id}` | Admin | Renames using `{ "name": "Finance" }`, preserving identity |
 | `DELETE /api/categories/{id}` | Admin | Deletes only an empty, nondefault category |
+| `GET /api/secrets` | Admin or User | Lists all secrets; categories do not restrict authorization |
 | `GET /api/secrets?categoryId={id}` | Admin or User | Only secrets associated with that category; unknown ID returns 404 |
+| `GET /api/secrets/{name}/value` | Admin or User | Returns `{ "value": "..." }`; missing secret returns 404 |
 | `PUT /api/secrets/{name}` | Admin | New secrets require `{ "value": "...", "categoryId": "..." }` |
+| `POST /api/secrets/generate` | Admin | Validates a generation policy and returns an unsaved candidate; does not create or update a secret |
+| `DELETE /api/secrets/{name}` | Admin | Soft-deletes the secret and removes its association; success returns 204 |
+| `GET /api/metadata` | Admin | Complete metadata inventory with its ETag response header |
+| `PUT /api/metadata` | Admin | Complete document with display-name edits and matching `If-Match`; association changes are rejected |
 | `GET /api/secret-transfers/export?categoryId={id}` | Admin or User | Downloads unencrypted version-1 JSON from an existing category; no-store |
-| `POST /api/secret-transfers/import?categoryId={id}` | Admin | Raw export JSON body; required existing destination; value-free per-entry results |
+| `POST /api/secret-transfers/import?categoryId={id}` | Admin | Export JSON body with `Content-Type: application/json`; required existing destination; value-free per-entry results |
+| `GET /api/useraccess/me` | Authenticated user | Current access record; bootstraps Admin only while the access list is empty; unregistered users otherwise receive 403 |
+| `GET /api/useraccess/users` | Admin | Complete user list and ETag for editing |
+| `PUT /api/useraccess/users` | Admin | Replaces the complete user list with matching `If-Match`; at least one Admin must remain |
 
 Transfer validation and missing categories return 400. Unauthorized roles return
 401/403; storage access denial returns 403, and preflight storage unavailability
@@ -149,9 +158,9 @@ returns 409 rather than moving the secret. Invalid names or creation categories
 return 400. Category uniqueness, nonempty/default deletion, and exhausted
 concurrent-write retries return actionable 409 problem details.
 
-`GET /api/metadata` returns the complete metadata inventory and its ETag. Its
-Admin-only PUT saves display-name changes with that `If-Match` ETag; it rejects
-inventory or association changes. Do not submit just a filtered category's
+The Admin-only `GET /api/metadata` returns the complete metadata inventory and
+its ETag response header. Its PUT saves display-name changes with that
+`If-Match` ETag; it rejects inventory or association changes. Do not submit just a filtered category's
 rows. Preserve all categories and associations in the full document. Concurrent
 writes return 409; reload before retrying.
 
@@ -210,25 +219,62 @@ write could otherwise complete after its association was removed.
 
 ## Cost
 
-The primary costs are Azure Container Apps, Azure Storage, and Azure Key Vault. The Container App is configured to scale to zero when idle, so you are only charged for compute when the app is actively handling requests. Expect a cold-start delay of a few seconds when the app scales up from zero. Overall cost should be minimal for light usage.
+Costs include Azure Container Apps, Azure Storage, Azure Key Vault, and Log
+Analytics, plus any optional private-network resources. CI/CD sets each permanent
+maintainer target to one minimum and one maximum replica; these apps do not scale
+to zero. The manual container example below uses zero minimum replicas, which
+allows scale-to-zero and introduces cold starts. Storage, logging, and networking
+can still incur charges while compute is idle. Estimate costs for your selected
+region and configuration rather than assuming all deployments are nearly free.
+
+## Which Setup Should I Use
+
+| Audience           | Entry Point                                                | Purpose                                                         |
+| ------------------ | ---------------------------------------------------------- | --------------------------------------------------------------- |
+| App consumers      | [Setup.ps1](Setup.ps1)                                     | Deploy or update a published release in your Azure environment. |
+| Maintainers        | [Setup-Maintainer.ps1](Deployment/Setup-Maintainer.ps1)    | Configure non-production CI/CD deployment and hosted E2E.       |
+| Local contributors | [Local Development](#local-development)                    | Run the frontend and API locally without maintainer setup.      |
+
+Run either deployment script from the repository root. Both use the shared
+[azure.yaml](azure.yaml) project configuration at the root; infrastructure and
+deployment helpers live under [Deployment](Deployment/README.md). Maintainer
+setup is not required for local development and must not target customer or
+production resources.
 
 ## Prerequisites
 
-- [Node.js](https://nodejs.org/) (LTS recommended)
-- [.NET SDK](https://dotnet.microsoft.com/download)
+- [Node.js](https://nodejs.org/) 22.22.2 or later on the Node 22 line (matching CI and the lockfile's engine requirements)
+- [.NET SDK](https://dotnet.microsoft.com/download) 10, matching the API's `net10.0` target
 - [Azure CLI](https://learn.microsoft.com/en-us/cli/azure/install-azure-cli) (logged in with `az login`)
-- [GitHub CLI](https://cli.github.com/) (optional; needed only for GitHub workflow administration)
+- [PowerShell](https://learn.microsoft.com/powershell/scripting/install/installing-powershell) 7.4 or later for the deployment scripts
+- [Azure Developer CLI](https://learn.microsoft.com/azure/developer/azure-developer-cli/install-azd) for [Setup.ps1](Setup.ps1) and [Setup-Maintainer.ps1](Deployment/Setup-Maintainer.ps1)
+- [GitHub CLI](https://cli.github.com/) (authenticated with `gh auth login`) for [maintainer setup](Deployment/Setup-Maintainer.ps1) and GitHub workflow administration; not required for [customer setup](Setup.ps1)
+- [Git](https://git-scm.com/) for cloning the repository and resolving its `origin` during scripted setup
 
 ## Local Development
 
 ### App Registration Setup
 
-Run the setup script to create (or look up) the Azure AD app registration and update both the API `appsettings.json` and the UI `.env` file automatically:
+For local development, run the setup script to create (or look up) a Microsoft
+Entra ID app registration and update the API `appsettings.json`. It registers
+`http://localhost:5173` as a SPA redirect URI.
 
 ```powershell
 cd Eklee.KeyVault.Api
-.\setup-app-registration.ps1
+.\setup-app-registration.ps1 -AppName "eklee-keyvault-local"
 ```
+
+The script does not create the UI `.env` file. In an existing file it replaces
+only existing `VITE_AZURE_AD_CLIENT_ID` and `VITE_AZURE_AD_AUTHORITY` lines; it
+does not add missing lines or set `VITE_AZURE_AD_REDIRECT_URI`. Configure all
+three values as shown below, using the client and tenant IDs printed by setup.
+
+> [!WARNING]
+> This local helper replaces the registration's SPA redirect URI list with
+> localhost and any explicitly supplied dev/prod URLs. Use a separate local
+> registration, or supply all required URLs to avoid removing deployed redirects.
+> Use [Setup-Maintainer.ps1](Deployment/Setup-Maintainer.ps1) for maintainer
+> deployment rather than this helper's optional GitHub-variable configuration.
 
 ### Running the React (Vite) Frontend
 
@@ -238,7 +284,7 @@ cd Eklee.KeyVault.Api
 cd Eklee.KeyVault.UI
 ```
 
-1. Create a `.env` file with the required Azure AD configuration (if not already created by the setup script):
+1. Create or update `.env` with all required Microsoft Entra ID configuration:
 
 ```txt
 VITE_AZURE_AD_CLIENT_ID=<your-client-id>
@@ -283,87 +329,183 @@ internally designated default category before creating its temporary secret.
 
 ### Running the ASP.NET Backend
 
-Start the API so the frontend proxy works:
+Configure your own Key Vault and Storage endpoints; the checked-in
+`appsettings.json` contains maintainer-specific resource values, not reusable
+defaults. The `configs` blob container must already exist. Local development
+uses `AuthenticationMode=azcli` (also the default) and therefore needs a signed-in
+Azure CLI user with Key Vault Secrets Officer and Storage Blob Data Contributor
+on the selected resources. If public network access is disabled, run from a
+network that can reach their private endpoints.
 
-```sh
+From the repository root, set process-local configuration overrides and start
+the API on the port expected by the frontend proxy:
+
+```powershell
+$env:KeyVaultUri = "https://<your-keyvault-name>.vault.azure.net/"
+$env:StorageUri = "https://<your-storage-account>.blob.core.windows.net/"
+$env:StorageContainerName = "configs"
+$env:AuthenticationMode = "azcli"
+$env:ASPNETCORE_ENVIRONMENT = "Development"
 cd Eklee.KeyVault.Api
-dotnet run
+dotnet run --urls http://localhost:5000
 ```
 
-The API listens on `http://localhost:5000` by default.
+Startup migration must succeed before the API serves requests. In development
+mode, Swagger is available at `/swagger`; `/healthz` is the health-check endpoint.
 
-### Updating NuGet Packages
+### Application User Access
 
-Run the update script from the repo root to update all NuGet packages in the API project to their latest stable versions:
+Azure resource RBAC controls the backend identity's access to Key Vault and
+Storage. Interactive users receive separate application roles stored in
+`configs/user_access.json`; signing in through Entra ID alone does not grant
+access to secrets.
 
-```powershell
-.\UpdateNuget.ps1
-```
+> [!IMPORTANT]
+> When the user-access list is empty, the first authenticated user to request
+> `GET /api/useraccess/me` becomes Admin automatically. Sign in as the intended
+> administrator before opening a new deployment to other users. Do not delete
+> or empty the user-access blob to reset access, as this reopens Admin bootstrap.
 
-To target a different project file:
+After bootstrap, an Admin uses **User Management** to add users and assign
+`Admin` or `User`. Unregistered users receive 403. At least one Admin must remain.
 
-```powershell
-.\UpdateNuget.ps1 -ProjectPath "path/to/Project.csproj"
-```
+## Maintainer Deployment
 
-## Automated Deployment
+These steps configure the repository maintainer's non-production CI/CD and hosted
+E2E environment. Customers should use [Customer Deployment](#customer-deployment)
+instead; do not run maintainer E2E setup against a customer or production vault.
 
-1. Fork this repo.
-1. Run `Scripts/setup-gh-deploy.ps1` to create the deployment service principal, resource groups, RBAC assignments, and set the deployment-related GitHub environment variables (`AZURE_CLIENT_ID`, `AZURE_TENANT_ID`, `AZURE_SUBSCRIPTION_ID`, `RESOURCE_GROUP`).
-1. Run `Eklee.KeyVault.Api/setup-app-registration.ps1` with the
-  `-GitHubOrganization`, `-GitHubRepoName`, and `-AzureAdRedirectUriDev`
-  parameters to create the maintainer dev app registration and set the
-  SPA-related GitHub environment variables (`VITE_AZURE_AD_CLIENT_ID`,
-  `VITE_AZURE_AD_AUTHORITY`, `VITE_AZURE_AD_REDIRECT_URI`). Customer production
-  registrations are configured by the customer deployment process.
-
-1. Provision infrastructure locally using the [development infrastructure deployment instructions](Deployment/README.md#development-environment), including the required [managed identity RBAC script](Deployment/assign-mi-rbac.ps1). Infrastructure provisioning is separate from application CI/CD.
-1. Run `Setup-Dev.ps1` for the repository maintainer dev environment. It provisions the permanent main, release, and branch Container Apps; binds their custom HTTPS domains; and reconciles the three SPA redirect URLs locally.
+1. Fork if needed, clone the repository, and authenticate Azure CLI and GitHub CLI
+  to the intended subscription and repository.
+1. Create `$HOME\.eklee-keyvault\setup-dev.json` with exactly one target object,
+  using the example below. It is not the customer `targets` catalog. The
+  `appRegistrationName` must be distinct from customer registrations in the same
+  tenant. Configure three distinct custom hostnames and their DNS records for
+  managed-certificate validation; setup prompts for missing hostnames.
+1. From the repository root, run `./Deployment/Setup-Maintainer.ps1`. It runs
+  `azd up` to provision infrastructure and the permanent main, release, and branch Container Apps,
+  applies managed-identity RBAC, binds custom HTTPS domains, and reconciles all
+  three SPA redirect URLs. A separate Azure CLI infrastructure deployment is not
+  required. It also creates or reuses the deployment identity, reconciles its
+  GitHub `dev` OIDC credential, assigns Contributor on the profile's exact resource
+  group, and sets deployment variables. An existing `AZURE_CLIENT_ID` is reused.
+1. Verify the GitHub `dev` environment's branch restrictions and required reviewers
+  before running deployments or hosted E2E. Allow the branch types you intend to
+  deploy. Setup does not configure these protections. The setup account needs
+  permission to provision resources, manage Entra applications/service principals,
+  and assign Azure roles on the development resource group.
 1. Push changes matching the [CI/CD path filters](.github/workflows/cicd.yml)
   to trigger image publication, deployment, and hosted E2E. `main` selects the
   permanent main/dev target, `release/*` selects the release target, and other
   branches select the shared branch target. Documentation-only pushes do not
   trigger this workflow. Branch deployments share one permanent Container App;
-  a later qualifying branch push can replace its deployed image. To redeploy
-  and locally test a specific feature or bugfix commit after its image is
-  published, run `./Scripts/Invoke-HostedE2E.ps1 -Current` from that checkout.
+  a later qualifying branch push can replace its deployed image. Review the
+  corresponding GitHub Actions run for deployment and hosted E2E results.
 
-1. Perform user role assignments per [Post Deployment RBAC](#post-deployment-rbac).
+1. Bootstrap the intended Admin and configure users as described in
+  [Application User Access](#application-user-access).
+
+Example maintainer profile (replace the IDs and hostnames with your own):
+
+```json
+{
+  "displayName": "Maintainer development",
+  "tenantId": "<your-tenant-id>",
+  "subscriptionId": "<your-subscription-id>",
+  "environmentName": "maintainer-dev",
+  "location": "eastus",
+  "prefix": "eklkvdev",
+  "resourceGroupName": "eklee-keyvault-dev-rg",
+  "appRegistrationName": "eklee-keyvault-maintainer-dev",
+  "enablePrivateNetworking": false,
+  "customDevDomainName": "keyvault-main.example.com",
+  "customReleaseDomainName": "keyvault-release.example.com",
+  "customBranchDomainName": "keyvault-branch.example.com"
+}
+```
+
+The three maintainer targets reuse the same managed identity, Key Vault, and
+Storage resources; they are not isolated data environments. Setup assigns the
+deployment principal the dedicated dev API's application-only `E2E.Tester` role
+for hosted API and browser tests. Keep test data separate from production and
+never assign that role to customer registrations. CI/CD deploys by immutable
+image digest and runs hosted E2E inside the same target-scoped FIFO deployment
+queue, including for `main` and ordinary branches.
 
 When a same-repository pull request is merged into a `release/*` branch, the
-cleanup workflow deletes the matching `branch-<normalized-branch>` GHCR image.
+cleanup workflow deletes the matching
+`branch-<normalized-branch>-<12-char-ref-hash>` GHCR image.
 After a release branch merge has passed the queued main deployment and E2E run,
 release promotion publishes the semantic release artifacts and deletes the
-matching `release-<normalized-version>` GHCR image. No workflow deletes a
-permanent Container App.
+matching `release-<normalized-version>-<12-char-ref-hash>` GHCR image. No workflow
+deletes a permanent Container App.
 
-The two setup scripts configure the following GitHub environment variables in `dev`:
+The [maintainer setup script](Deployment/Setup-Maintainer.ps1) configures the
+following GitHub environment variables in `dev`:
 
-| Variable | Set by |
-| --- | --- |
-| `AZURE_CLIENT_ID` | `setup-gh-deploy.ps1` |
-| `AZURE_TENANT_ID` | `setup-gh-deploy.ps1` |
-| `AZURE_SUBSCRIPTION_ID` | `setup-gh-deploy.ps1` |
-| `RESOURCE_GROUP` | `setup-gh-deploy.ps1` |
-| `VITE_AZURE_AD_CLIENT_ID` | `setup-app-registration.ps1` |
-| `VITE_AZURE_AD_AUTHORITY` | `setup-app-registration.ps1` |
-| `VITE_AZURE_AD_REDIRECT_URI` | `setup-app-registration.ps1` |
+| Variable                     | Set By                                                  |
+| ---------------------------- | ------------------------------------------------------- |
+| `AZURE_CLIENT_ID`            | [Setup-Maintainer.ps1](Deployment/Setup-Maintainer.ps1) |
+| `AZURE_TENANT_ID`            | [Setup-Maintainer.ps1](Deployment/Setup-Maintainer.ps1) |
+| `AZURE_SUBSCRIPTION_ID`      | [Setup-Maintainer.ps1](Deployment/Setup-Maintainer.ps1) |
+| `RESOURCE_GROUP`             | [Setup-Maintainer.ps1](Deployment/Setup-Maintainer.ps1) |
+| `VITE_AZURE_AD_CLIENT_ID`    | [Setup-Maintainer.ps1](Deployment/Setup-Maintainer.ps1) |
+| `VITE_AZURE_AD_AUTHORITY`    | [Setup-Maintainer.ps1](Deployment/Setup-Maintainer.ps1) |
+| `DEV_CONTAINER_APP_NAME`     | [Setup-Maintainer.ps1](Deployment/Setup-Maintainer.ps1) |
+| `DEV_E2E_BASE_URL`           | [Setup-Maintainer.ps1](Deployment/Setup-Maintainer.ps1) |
+| `RELEASE_CONTAINER_APP_NAME` | [Setup-Maintainer.ps1](Deployment/Setup-Maintainer.ps1) |
+| `RELEASE_E2E_BASE_URL`       | [Setup-Maintainer.ps1](Deployment/Setup-Maintainer.ps1) |
+| `BRANCH_CONTAINER_APP_NAME`  | [Setup-Maintainer.ps1](Deployment/Setup-Maintainer.ps1) |
+| `BRANCH_E2E_BASE_URL`        | [Setup-Maintainer.ps1](Deployment/Setup-Maintainer.ps1) |
+
+CI/CD selects the SPA redirect URI from the target's E2E base URL; it does not
+use a shared `VITE_AZURE_AD_REDIRECT_URI` GitHub environment variable.
+
+## Customer Deployment
+
+From a cloned checkout, run `./Setup.ps1` and choose full setup for the first
+deployment. It collects a customer target, stores non-secret settings in
+`$HOME\.eklee-keyvault\setup.json`, resolves a selected published stable release
+to an immutable GHCR digest, and runs `azd up`. App registration, infrastructure,
+managed-identity RBAC, and SPA redirect registration are handled by setup hooks.
+Node.js and the .NET SDK are not required to deploy a published image.
+
+For an existing environment, choose the script's version-only option to change
+only the application image without reprovisioning infrastructure. Customer
+registrations expose delegated user access, not the maintainer `E2E.Tester` role,
+and customer setup does not require GitHub CLI. See
+[Azure Developer CLI Deployment](AZDREADME.md) for detailed setup and update steps.
+Complete [Application User Access](#application-user-access) after deployment.
 
 ## Custom Domain
 
-Optionally, you can configure a custom domain for your Azure Container App. After the first deployment, add a CNAME record pointing your subdomain to the Container App's FQDN. Then configure the custom domain in the Azure portal under your Container App's settings. You will also need to update the SPA redirect URI in your Entra ID app registration to match the custom domain.
+Customer custom domains are optional; maintainer setup requires the three target
+hostnames above. For customer azd deployments, configure `CUSTOM_DOMAIN_NAME` in
+the selected azd environment and create the required CNAME record. Setup hooks
+bind the managed certificate, update the runtime frontend URLs, and append the
+custom HTTPS URL to the registration's SPA redirect URIs.
+
+For a manually created Container App, bind the domain in Azure and update both
+`VITE_AZURE_AD_REDIRECT_URI` and `VITE_API_BASE_URL` to its HTTPS URL. Add that URL
+as a SPA redirect URI in Entra ID while retaining required existing redirects.
 
 ## Deploy from GitHub Container Registry
 
 You can create an Azure Container App directly from the public GHCR image without
 building the Docker image yourself. This is useful for quick deployments or
-deployments that use the public GHCR release image.
+manually managed deployments.
 
 The public image is available at:
 
 ```text
 ghcr.io/seekdavidlee/eklee-keyvault:latest
 ```
+
+`latest` is updated by qualifying pushes to `main`; it is not a pinned semantic
+release and may precede release promotion. Prefer a published stable version tag
+or immutable digest for customer deployments. Forks publish under their own
+`ghcr.io/<owner>/<repository>` path; verify package visibility before assuming
+anonymous image pulls will work. The following shell examples use Bash syntax.
 
 ### Container App Prerequisites
 
@@ -374,7 +516,7 @@ Before you begin, ensure you have the following Azure resources already provisio
 - A Container Apps environment
 - A user-assigned managed identity (with Key Vault and Storage RBAC roles assigned)
 - An Azure Key Vault
-- An Azure Storage account
+- An Azure Storage account with a `configs` blob container
 - An Entra ID app registration (see [App Registration Setup](#app-registration-setup))
 
 ### Create the Container App
@@ -389,12 +531,13 @@ KEYVAULT_URI="https://<your-keyvault-name>.vault.azure.net/"
 STORAGE_BLOB_URI="https://<your-storage-account>.blob.core.windows.net/"
 TENANT_ID="<your-tenant-id>"
 APP_CLIENT_ID="<your-app-registration-client-id>"
+IMAGE="ghcr.io/seekdavidlee/eklee-keyvault:<published-release-version>"
 
 az containerapp create \
   --name eklee-keyvault \
   --resource-group "$RESOURCE_GROUP" \
   --environment "$ENV_NAME" \
-  --image ghcr.io/seekdavidlee/eklee-keyvault:latest \
+  --image "$IMAGE" \
   --target-port 8080 \
   --ingress external \
   --user-assigned "$IDENTITY_ID" \
@@ -420,8 +563,7 @@ az containerapp create \
 Because the GHCR package is public, no `--registry-server` or `--registry-identity`
 flags are required — Azure Container Apps pulls the image anonymously.
 
-After the container app is created, retrieve the FQDN and register it as a SPA
-redirect URI in your Entra ID app registration:
+After the container app is created, retrieve the FQDN:
 
 ```sh
 FQDN=$(az containerapp show \
@@ -430,37 +572,42 @@ FQDN=$(az containerapp show \
   --query "properties.configuration.ingress.fqdn" -o tsv)
 
 echo "App URL: https://$FQDN"
-
-az ad app update --id "$APP_CLIENT_ID" \
-  --spa-redirect-uris "https://$FQDN"
 ```
+
+In the Entra admin center, open the application's **Authentication** settings
+and add `https://<your-container-app-fqdn>` under **Single-page application**.
+Retain any existing required redirect URIs. Set the Container App's
+`VITE_AZURE_AD_REDIRECT_URI` to this same HTTPS URL if the creation command used
+a placeholder. Redirect registration is automatic in the recommended `Setup.ps1`
+flow.
 
 ### Update an Existing Container App
 
-To update the container app to the latest image:
+To update the container app to a selected published release:
 
 ```sh
 az containerapp update \
   --name eklee-keyvault \
   --resource-group "$RESOURCE_GROUP" \
-  --image ghcr.io/seekdavidlee/eklee-keyvault:latest
+  --image "ghcr.io/seekdavidlee/eklee-keyvault:<published-release-version>"
 ```
 
 ## Post-Deployment RBAC
 
 There are a few important roles to note:
 
-- **Key Vault Secrets Officer** — Allows the managed identity to read, write, and delete secrets. Assigned by `Deployment/assign-mi-rbac.ps1`.
-- **Storage Blob Data Contributor** — Allows the managed identity to read/write user-access config in blob storage.
+- Key Vault Secrets Officer allows the managed identity to read, write, and delete secrets. Assigned by `Deployment/assign-mi-rbac.ps1`.
+- Storage Blob Data Contributor allows the managed identity to read/write user-access configuration, category/display metadata, and operation-lock blobs and leases. Assigned by the same script.
 
 `azd provision` and `azd up` run the managed identity RBAC script automatically from
 the post-provision hook after Bicep provisioning. No separate command is required for
-those workflows. GitHub Actions infrastructure deployment uses Azure CLI directly, so it
-continues to require the same script after infrastructure deployment:
+those workflows. Direct Azure CLI infrastructure deployments do not run azd hooks,
+so run the same script explicitly afterward. Application CI/CD reuses already
+provisioned infrastructure; it does not provision resources or assign these roles:
 
 ```powershell
 cd Deployment
-.\assign-mi-rbac.ps1 -ResourceGroup <resource-group-name> -SubscriptionId <subscription-id>
+.\assign-mi-rbac.ps1 -ResourceGroup "<resource-group-name>" -SubscriptionId "<subscription-id>"
 ```
 
 See [Deployment/README.md](Deployment/README.md) for detailed instructions.
