@@ -107,6 +107,10 @@ jobs:
         working-directory: Eklee.KeyVault.UI
         run: npm run lint
 
+      - name: Run frontend unit tests
+        working-directory: Eklee.KeyVault.UI
+        run: npm run test:unit
+
       - name: Build UI
         working-directory: Eklee.KeyVault.UI
         run: npm run build
